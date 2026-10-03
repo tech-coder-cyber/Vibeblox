@@ -1,46 +1,43 @@
-// VibeBlox AI proxy (Netlify Edge Function, served at /api/ai)
+// VibeBlox AI proxy (Cloudflare Pages Function, served at /api/ai)
 // -----------------------------------------------------------------------
-// Your Gemini key lives HERE, on the server, as an environment variable,
-// never in the game's code. Players call /api/ai without any key.
-//
-// Setup (Netlify dashboard -> Site configuration -> Environment variables):
-//   GEMINI_API_KEY = your key from https://aistudio.google.com/apikey
-// Optional:
-//   AI_REQUESTS_PER_WINDOW = 20   (per player IP, per 10 minutes)
-//
-// Strongly recommended: in Google AI Studio / Google Cloud billing, set a
-// budget alert or stay on the free tier, so a flood of requests can't cost
-// you money. The rate limit below is best-effort (per server instance).
 import { buildGeminiRequest, geminiChunkText, AI_MODELS, type AiMode, type AiTurn } from '../../src/scripting.ts';
 
-declare const Netlify: { env: { get(name: string): string | undefined } };
+interface Env {
+  GEMINI_API_KEY: string;
+  AI_REQUESTS_PER_WINDOW?: string;
+}
 
 const WINDOW_MS = 10 * 60 * 1000;
 const hits = new Map<string, number[]>();
 
-function rateLimited(ip: string): boolean {
-  const limit = Number(Netlify.env.get('AI_REQUESTS_PER_WINDOW') ?? 20) || 20;
+function rateLimited(ip: string, maxRequests: string | undefined): boolean {
+  const limit = Number(maxRequests ?? 20) || 20;
   const now = Date.now();
   const list = (hits.get(ip) ?? []).filter((t) => now - t < WINDOW_MS);
   if (list.length >= limit) { hits.set(ip, list); return true; }
   list.push(now);
   hits.set(ip, list);
-  if (hits.size > 5000) hits.clear(); // keep memory bounded
+  if (hits.size > 5000) hits.clear(); 
   return false;
 }
 
 const json = (status: number, error: string) =>
   new Response(JSON.stringify({ error }), { status, headers: { 'content-type': 'application/json' } });
 
-export default async (req: Request, context: { ip?: string }) => {
-  if (req.method !== 'POST') return json(405, 'Use POST');
-  const key = Netlify.env.get('GEMINI_API_KEY');
+export const onRequestPost: PagesFunction<Env> = async (context) => {
+  const req = context.request;
+  const key = context.env.GEMINI_API_KEY;
+  const clientIp = req.headers.get('CF-Connecting-IP') ?? 'unknown';
+
   if (!key) return json(500, 'The server has no GEMINI_API_KEY set yet.');
-  if (rateLimited(context.ip ?? 'unknown')) return json(429, 'Too many requests. Wait a few minutes and try again.');
+  if (rateLimited(clientIp, context.env.AI_REQUESTS_PER_WINDOW)) {
+    return json(429, 'Too many requests. Wait a few minutes and try again.');
+  }
 
   let input: { mode?: string; history?: AiTurn[]; code?: string; names?: { blocks?: string[]; items?: string[] } };
   try { input = await req.json(); } catch { return json(400, 'Bad request'); }
-  const mode: AiMode = input.mode === 'high-effort' ? 'high-effort' : 'normal'; // only these two models can ever be used
+  
+  const mode: AiMode = input.mode === 'high-effort' ? 'high-effort' : 'normal'; 
   const history = Array.isArray(input.history) ? input.history.filter((t) => t && typeof t.text === 'string').slice(-10) : [];
   if (!history.length || history[history.length - 1].role !== 'user') return json(400, 'The last message must be from the player');
   if (JSON.stringify(input).length > 200_000) return json(413, 'That request is too big');
@@ -54,15 +51,15 @@ export default async (req: Request, context: { ip?: string }) => {
       body: JSON.stringify(body),
     });
   };
+
   let upstream = await call(true);
-  if (upstream.status === 400) upstream = await call(false); // model doesn't take the reasoning setting: try without
+  if (upstream.status === 400) upstream = await call(false); 
   if (!upstream.ok || !upstream.body) {
     const detail = await upstream.text().catch(() => '');
     console.error('Gemini error', upstream.status, AI_MODELS[mode].model, detail.slice(0, 500));
     return json(502, upstream.status === 429 ? 'The AI is busy right now. Try again in a minute.' : 'The AI request failed. Try again.');
   }
 
-  // Re-stream Gemini's answer as simple { text } events (the hidden reasoning is dropped)
   const enc = new TextEncoder();
   const dec = new TextDecoder();
   const stream = new ReadableStream({
@@ -97,5 +94,3 @@ export default async (req: Request, context: { ip?: string }) => {
   });
   return new Response(stream, { headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' } });
 };
-
-export const config = { path: '/api/ai' };
