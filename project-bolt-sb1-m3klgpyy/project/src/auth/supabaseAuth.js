@@ -25,7 +25,7 @@ export async function signInWithGoogle() {
     provider: 'google',
     options: {
       // Force Supabase to drop players off back at your live custom domain!
-      redirectTo: 'https://vibeblox.netlify.app',
+      redirectTo: 'https://vibeblox-jnb.pages.dev/',
     },
   });
   if (error) {
