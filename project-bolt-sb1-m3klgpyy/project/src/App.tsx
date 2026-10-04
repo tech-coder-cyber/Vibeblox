@@ -2993,7 +2993,7 @@ function AiSidePanel({ scriptName, getCode, onApply, names }: {
           : <button onClick={() => send(input)} className="px-3 rounded-lg bg-[#00e676] text-[#0a0e14] text-[11px] font-bold active:scale-95">Send</button>}
       </div>
       <button onClick={() => setShowDev((v) => !v)} className="text-left text-[10px] text-[#364860] hover:text-[#8ea0b8]">
-        {devKey ? '● Using a developer key (this browser only)' : 'Testing in Bolt? Use a developer key'}
+        {devKey ? '● Using a developer key (this browser only)' : 'Use a developer key to test locally'}
       </button>
       {showDev && (
         <div className="flex gap-1.5">

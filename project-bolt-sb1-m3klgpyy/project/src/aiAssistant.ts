@@ -3,7 +3,7 @@
 // 1. requestAssistant(): sends the request and streams the answer back.
 //    Normally it goes to YOUR server function (/api/ai), which holds the
 //    Gemini key, so players never need a key. A "developer key" can be used
-//    for testing in Bolt, where the server function doesn't run.
+//    for local testing, where the server function doesn't run.
 // 2. parseSearchReplace() + applySearchReplace(): turn the AI's
 //    SEARCH/REPLACE blocks into edits on the editor's code.
 // No framework code here, so it can be reused anywhere.
