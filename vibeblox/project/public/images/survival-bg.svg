@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="940" height="650" viewBox="0 0 940 650">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1a3a2a"/>
+      <stop offset="40%" stop-color="#2d6a3f"/>
+      <stop offset="100%" stop-color="#1a4a2a"/>
+    </linearGradient>
+    <linearGradient id="ground" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#3a7a3a"/>
+      <stop offset="100%" stop-color="#1a3a1a"/>
+    </linearGradient>
+    <pattern id="blocks" x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse">
+      <rect width="40" height="40" fill="#2d6a2d"/>
+      <rect width="38" height="38" x="1" y="1" fill="#3a7a3a" rx="2"/>
+      <rect width="36" height="36" x="2" y="2" fill="#4a8c3a" rx="1" opacity="0.5"/>
+    </pattern>
+  </defs>
+  <rect width="940" height="400" fill="url(#sky)"/>
+  <rect width="940" height="250" y="400" fill="url(#ground)"/>
+  <rect width="940" height="250" y="400" fill="url(#blocks)" opacity="0.3"/>
+  <circle cx="700" cy="120" r="50" fill="#5a9a4a" opacity="0.3"/>
+  <circle cx="200" cy="180" r="35" fill="#4a8a3a" opacity="0.25"/>
+  <polygon points="100,400 200,280 300,400" fill="#1a3a1a" opacity="0.6"/>
+  <polygon points="600,400 750,260 900,400" fill="#1a3a1a" opacity="0.5"/>
+  <polygon points="350,400 450,310 550,400" fill="#2d5a2d" opacity="0.5"/>
+</svg>
