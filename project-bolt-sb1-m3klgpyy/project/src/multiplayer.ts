@@ -69,8 +69,20 @@ export function normalizeServerUrl(input: string): string {
   return 'wss://' + t;
 }
 
+/** Anything that carries text messages like a WebSocket does (a hosted world's loopback or peer connection). */
+export type SocketLike = {
+  readyState: number;
+  send(data: string): void;
+  close(): void;
+  onopen: ((ev?: unknown) => void) | null;
+  onmessage: ((ev: { data: unknown }) => void) | null;
+  onclose: ((ev: { reason?: string; code?: number }) => void) | null;
+  onerror: ((ev?: unknown) => void) | null;
+};
+const OPEN = 1;
+
 export class MultiplayerClient {
-  private ws: WebSocket | null = null;
+  private ws: SocketLike | null = null;
   private welcomed = false;
   private closedByUs = false;
   private reported = false;
@@ -95,20 +107,30 @@ export class MultiplayerClient {
 
   /** `token` is your VibeBlox sign-in token (omit it as a guest): with it the server knows who you really are. */
   connect(url: string, name: string, token?: string | null) {
-    this.closedByUs = false;
-    this.welcomed = false;
-    this.reported = false;
-    let ws: WebSocket;
+    let ws: SocketLike;
     try {
-      ws = new WebSocket(normalizeServerUrl(url));
+      ws = new WebSocket(normalizeServerUrl(url)) as unknown as SocketLike;
     } catch {
+      this.closedByUs = false;
+      this.reported = false;
       this.report('That server address is not valid');
       return;
     }
+    this.attach(ws, name, token, 'Could not connect. Check the address, and that the server is running with wss:// set up', 8000);
+  }
+
+  /** Play over a connection made some other way (a world hosted in someone's browser, or your own). */
+  connectSocket(sock: SocketLike, name: string, token?: string | null, cantConnect = "Couldn't connect to that world", waitMs = 30_000) {
+    this.attach(sock, name, token, cantConnect, waitMs);
+  }
+
+  private attach(ws: SocketLike, name: string, token: string | null | undefined, cantConnect: string, waitMs: number) {
+    this.closedByUs = false;
+    this.welcomed = false;
+    this.reported = false;
     this.ws = ws;
-    const cantConnect = 'Could not connect. Check the address, and that the server is running with wss:// set up';
     // A firewall that silently drops packets can leave a socket hanging for minutes
-    this.connectTimer = setTimeout(() => { if (!this.welcomed) this.report(cantConnect); }, 8000);
+    this.connectTimer = setTimeout(() => { if (!this.welcomed) this.report(cantConnect); }, waitMs);
     // Some WebSocket implementations fire "error" without a "close" when refused
     ws.onerror = () => { if (!this.welcomed) this.report(cantConnect); };
     ws.onopen = () => ws.send(JSON.stringify({ t: 'hello', name, version: PROTOCOL_VERSION, ...(token ? { token } : {}) }));
@@ -161,11 +183,11 @@ export class MultiplayerClient {
   }
 
   private send(obj: unknown) {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(obj));
+    if (this.ws && this.ws.readyState === OPEN) this.ws.send(JSON.stringify(obj));
   }
 
   get connected(): boolean {
-    return this.welcomed && !!this.ws && this.ws.readyState === WebSocket.OPEN;
+    return this.welcomed && !!this.ws && this.ws.readyState === OPEN;
   }
 
   sendMove(x: number, y: number, z: number, yaw: number, pitch: number, mode: string, held = 0, act = 0) {

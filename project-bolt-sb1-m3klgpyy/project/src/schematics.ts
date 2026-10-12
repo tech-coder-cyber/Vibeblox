@@ -1,233 +1,191 @@
-// The schematic data model: a Grid (what's in memory while you're copying/pasting) and a Schematic
-// (what's saved to your library or exported as a .vbschem file). Kept apart from schemCommands.ts
-// so the format and storage can be tested on their own, without a browser.
-
-export type Grid = {
-  w: number; h: number; d: number;
-  /** Block ids, length w*h*d, ordered y outer, then z, then x: index = (y*d + z)*w + x. */
-  ids: Int32Array;
-  /** Where the player stood when this was copied/loaded, as an offset inside the box. */
-  ox: number; oy: number; oz: number;
-};
-
-/** A palette entry is a numeric id for a built-in block, or a string key for a mod block (so it survives even if the id numbers change). */
-type PaletteEntry = number | string;
+// Schematics: a box of blocks you can save, share as a file and paste anywhere (rotated or flipped).
+// This file is pure data handling (no game engine in here), so it is easy to test and safe to feed files from anyone.
+//
+// A grid is stored y-major: index = (y * d + z) * w + x, so every layer is one run of numbers.
+// The saved form uses a palette (the block ids that are used) and run-length encoding.
 
 export type Schematic = {
+  v: 1;
   name: string;
   w: number; h: number; d: number;
+  /** The point inside the box that lands where you paste (where you stood when you saved it). */
   ox: number; oy: number; oz: number;
-  palette: PaletteEntry[];
-  /** Index into palette for each cell, same order as Grid.ids. */
-  cells: number[];
+  /** Built-in blocks are numbers; blocks from mods are their key ("mymod:ruby_block"). */
+  palette: Array<number | string>;
+  /** [paletteIndex, count, paletteIndex, count, ...] */
+  runs: number[];
+  created: number;
 };
+export type Grid = { w: number; h: number; d: number; ids: Int32Array; ox: number; oy: number; oz: number };
 
-export const SCHEM_LIMITS = {
-  nameMax: 32,
-  maxCount: 40,
-  maxDim: 100,
-  maxVolume: 200_000,
-  maxBytes: 4_000_000,
-} as const;
+export const SCHEM_LIMITS = { maxDim: 128, maxVolume: 131072, maxCount: 60, maxStoreBytes: 3_000_000, nameMax: 32, maxPalette: 4096 };
+export const SCHEM_MAGIC = 'vibeblox-schematic';
 
-const AIR = 0;
-const STORE_KEY = 'vb-schematics';
-const FILE_MAGIC = 'vibeblox-schematic';
-const FILE_VERSION = 1;
+export const gridIndex = (g: { w: number; d: number }, x: number, y: number, z: number) => (y * g.d + z) * g.w + x;
 
-function idx(w: number, d: number, x: number, y: number, z: number): number {
-  return (y * d + z) * w + x;
+/** A name people can type: letters, numbers, spaces, dashes and underscores. */
+export function sanitizeName(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const n = raw.trim().replace(/\s+/g, ' ');
+  if (!n || n.length > SCHEM_LIMITS.nameMax) return null;
+  return /^[A-Za-z0-9 _.-]+$/.test(n) ? n : null;
 }
-
-export function nameKey(name: string): string {
-  return name.trim().toLowerCase().replace(/\s+/g, ' ');
-}
-
-export function sanitizeName(raw: string): string | null {
-  const s = raw.replace(/[^A-Za-z0-9 _-]/g, '').trim().slice(0, SCHEM_LIMITS.nameMax);
-  return s.length ? s : null;
-}
+export const nameKey = (n: string) => n.trim().toLowerCase();
 
 export function volumeError(w: number, h: number, d: number): string | null {
-  if (w <= 0 || h <= 0 || d <= 0) return 'That selection is empty.';
-  if (w > SCHEM_LIMITS.maxDim || h > SCHEM_LIMITS.maxDim || d > SCHEM_LIMITS.maxDim) {
-    return `That box is too big: no side can be over ${SCHEM_LIMITS.maxDim} blocks.`;
-  }
-  if (w * h * d > SCHEM_LIMITS.maxVolume) {
-    return `That box is too big: ${(w * h * d).toLocaleString()} blocks is over the ${SCHEM_LIMITS.maxVolume.toLocaleString()} limit.`;
-  }
+  const m = SCHEM_LIMITS.maxDim;
+  if (![w, h, d].every((n) => Number.isInteger(n) && n >= 1)) return 'That box is empty';
+  if (w > m || h > m || d > m) return `A schematic can be at most ${m} blocks in each direction (this one is ${w} x ${h} x ${d})`;
+  if (w * h * d > SCHEM_LIMITS.maxVolume) return `A schematic can hold at most ${SCHEM_LIMITS.maxVolume.toLocaleString()} blocks (this one is ${(w * h * d).toLocaleString()})`;
   return null;
 }
 
-export function countBlocks(g: Grid): number {
-  let n = 0;
-  for (let i = 0; i < g.ids.length; i++) if (g.ids[i] !== AIR) n++;
-  return n;
+/** Make the saved form of a grid. `keyOf` turns a block id into what is saved (a number, or a key for mod blocks). */
+export function encodeSchematic(name: string, g: Grid, keyOf: (id: number) => number | string, now = Date.now()): Schematic {
+  const palette: Array<number | string> = [];
+  const index = new Map<number, number>();
+  const runs: number[] = [];
+  let last = -1, count = 0;
+  for (let i = 0; i < g.ids.length; i++) {
+    const id = g.ids[i];
+    let p = index.get(id);
+    if (p === undefined) { p = palette.length; palette.push(keyOf(id)); index.set(id, p); }
+    if (p === last) count++;
+    else { if (count) runs.push(last, count); last = p; count = 1; }
+  }
+  if (count) runs.push(last, count);
+  return { v: 1, name, w: g.w, h: g.h, d: g.d, ox: g.ox, oy: g.oy, oz: g.oz, palette, runs, created: now };
 }
 
-export function describe(s: { w: number; h: number; d: number }): string {
-  return `${s.w} x ${s.h} x ${s.d}`;
+/** Check anything that claims to be a schematic (from a file or from storage). Returns the clean schematic, or why not. */
+export function validateSchematic(raw: unknown): Schematic | string {
+  if (!raw || typeof raw !== 'object') return 'That is not a schematic';
+  const s = raw as Record<string, unknown>;
+  if (s.v !== 1) return 'This schematic is from a newer version of the game';
+  const name = sanitizeName(s.name);
+  if (!name) return 'The schematic has no usable name';
+  const { w, h, d } = s as { w: number; h: number; d: number };
+  const ve = volumeError(w, h, d);
+  if (ve) return ve;
+  const palette = s.palette;
+  if (!Array.isArray(palette) || palette.length < 1 || palette.length > SCHEM_LIMITS.maxPalette) return 'The block list is damaged';
+  for (const p of palette) {
+    if (typeof p === 'number') { if (!Number.isInteger(p) || p < 0 || p > 65535) return 'The block list is damaged'; }
+    else if (typeof p !== 'string' || p.length > 80) return 'The block list is damaged';
+  }
+  const runs = s.runs;
+  if (!Array.isArray(runs) || runs.length % 2 !== 0 || runs.length > SCHEM_LIMITS.maxVolume * 2) return 'The block data is damaged';
+  let total = 0;
+  for (let i = 0; i < runs.length; i += 2) {
+    const p = runs[i], c = runs[i + 1];
+    if (!Number.isInteger(p) || p < 0 || p >= palette.length || !Number.isInteger(c) || c < 1) return 'The block data is damaged';
+    total += c;
+    if (total > w * h * d) return 'The block data is damaged';
+  }
+  if (total !== w * h * d) return 'The block data is damaged';
+  const cl = (v: unknown, max: number) => (Number.isInteger(v) ? Math.max(0, Math.min(max - 1, v as number)) : 0);
+  return { v: 1, name, w, h, d, ox: cl(s.ox, w), oy: cl(s.oy, h), oz: cl(s.oz, d), palette: palette.slice() as Array<number | string>, runs: runs.slice() as number[], created: Number.isFinite(s.created) ? (s.created as number) : 0 };
 }
 
-/** Absolute-position block list for pasting: [x, y, z, id] for every cell (optionally skipping air). */
-export function gridToList(g: Grid, atx: number, aty: number, atz: number, skipAir?: boolean): Array<[number, number, number, number]> {
+/**
+ * Unpack a schematic. `idOf` turns a saved key back into a block id on this game (null = unknown mod block, which becomes air).
+ * Returns the grid and how many blocks had to be skipped.
+ */
+export function decodeSchematic(s: Schematic, idOf: (key: string) => number | null): { grid: Grid; missing: number; missingKeys: string[] } {
+  const ids = new Int32Array(s.w * s.h * s.d);
+  const real = s.palette.map((p) => (typeof p === 'number' ? p : idOf(p)));
+  let at = 0, missing = 0;
+  const missingKeys = new Set<string>();
+  for (let i = 0; i < s.runs.length; i += 2) {
+    const id = real[s.runs[i]], c = s.runs[i + 1];
+    if (id === null) { missing += c; missingKeys.add(String(s.palette[s.runs[i]])); at += c; continue; }
+    ids.fill(id, at, at + c);
+    at += c;
+  }
+  return { grid: { w: s.w, h: s.h, d: s.d, ids, ox: s.ox, oy: s.oy, oz: s.oz }, missing, missingKeys: [...missingKeys] };
+}
+
+/** Turn the grid a quarter turn clockwise (seen from above), `quarters` times. `mapId(id, q)` turns facing blocks (doors, stairs...). */
+export function rotateGrid(g: Grid, quarters: number, mapId: (id: number, quarters: number) => number = (id) => id): Grid {
+  const q = ((Math.round(quarters) % 4) + 4) % 4;
+  if (q === 0) return g;
+  const odd = q % 2 === 1;
+  const w2 = odd ? g.d : g.w, d2 = odd ? g.w : g.d;
+  const ids = new Int32Array(g.ids.length);
+  const xz = (x: number, z: number): [number, number] => (q === 1 ? [g.d - 1 - z, x] : q === 2 ? [g.w - 1 - x, g.d - 1 - z] : [z, g.w - 1 - x]);
+  for (let y = 0; y < g.h; y++) for (let z = 0; z < g.d; z++) for (let x = 0; x < g.w; x++) {
+    const [nx, nz] = xz(x, z);
+    ids[(y * d2 + nz) * w2 + nx] = mapId(g.ids[(y * g.d + z) * g.w + x], q);
+  }
+  const [ox, oz] = xz(g.ox, g.oz);
+  return { w: w2, h: g.h, d: d2, ids, ox, oy: g.oy, oz };
+}
+
+/** Mirror the grid along an axis ('x' swaps east and west, 'z' swaps north and south, 'y' turns it upside down). */
+export function flipGrid(g: Grid, axis: 'x' | 'y' | 'z', mapId: (id: number, axis: 'x' | 'z') => number = (id) => id): Grid {
+  const ids = new Int32Array(g.ids.length);
+  for (let y = 0; y < g.h; y++) for (let z = 0; z < g.d; z++) for (let x = 0; x < g.w; x++) {
+    const nx = axis === 'x' ? g.w - 1 - x : x, ny = axis === 'y' ? g.h - 1 - y : y, nz = axis === 'z' ? g.d - 1 - z : z;
+    const id = g.ids[(y * g.d + z) * g.w + x];
+    ids[(ny * g.d + nz) * g.w + nx] = axis === 'y' ? id : mapId(id, axis);
+  }
+  return { w: g.w, h: g.h, d: g.d, ids, ox: axis === 'x' ? g.w - 1 - g.ox : g.ox, oy: axis === 'y' ? g.h - 1 - g.oy : g.oy, oz: axis === 'z' ? g.d - 1 - g.oz : g.oz };
+}
+
+/** The blocks to place, with the grid's origin point landing on (ax, ay, az). */
+export function gridToList(g: Grid, ax: number, ay: number, az: number, skipAir = false): Array<[number, number, number, number]> {
   const out: Array<[number, number, number, number]> = [];
-  for (let y = 0; y < g.h; y++) {
-    for (let z = 0; z < g.d; z++) {
-      for (let x = 0; x < g.w; x++) {
-        const id = g.ids[idx(g.w, g.d, x, y, z)];
-        if (skipAir && id === AIR) continue;
-        out.push([atx + (x - g.ox), aty + (y - g.oy), atz + (z - g.oz), id]);
-      }
-    }
+  for (let y = 0; y < g.h; y++) for (let z = 0; z < g.d; z++) for (let x = 0; x < g.w; x++) {
+    const id = g.ids[(y * g.d + z) * g.w + x];
+    if (skipAir && id === 0) continue;
+    out.push([ax - g.ox + x, ay - g.oy + y, az - g.oz + z, id]);
   }
   return out;
 }
 
-/** Turns the grid `quarters` * 90 degrees clockwise, seen from above (around the Y axis). */
-export function rotateGrid(g: Grid, quarters: number, rotateId: (id: number, quarters: number) => number): Grid {
-  const q = ((quarters % 4) + 4) % 4;
-  if (q === 0) return g;
-  let cur = g;
-  for (let n = 0; n < q; n++) {
-    const { w, h, d } = cur;
-    const nw = d, nd = w;
-    const ids = new Int32Array(nw * h * nd);
-    for (let y = 0; y < h; y++) {
-      for (let z = 0; z < d; z++) {
-        for (let x = 0; x < w; x++) {
-          const id = cur.ids[idx(w, d, x, y, z)];
-          // (x, z) -> (d-1-z, x) for a clockwise quarter turn
-          const nx = d - 1 - z, nz = x;
-          ids[idx(nw, nd, nx, y, nz)] = id === AIR ? AIR : rotateId(id, 1);
-        }
-      }
-    }
-    const ox = cur.d - 1 - cur.oz, oz = cur.ox;
-    cur = { w: nw, h, d: nd, ids, ox, oy: cur.oy, oz };
-  }
-  return cur;
-}
+export function countBlocks(g: Grid): number { let n = 0; for (let i = 0; i < g.ids.length; i++) if (g.ids[i] !== 0) n++; return n; }
 
-/** Mirrors the grid along x (east/west) or z (north/south). */
-export function flipGrid(g: Grid, axis: 'x' | 'y' | 'z', mirrorId: (id: number, axis: 'x' | 'z') => number): Grid {
-  const { w, h, d } = g;
-  const ids = new Int32Array(w * h * d);
-  for (let y = 0; y < h; y++) {
-    for (let z = 0; z < d; z++) {
-      for (let x = 0; x < w; x++) {
-        const id = g.ids[idx(w, d, x, y, z)];
-        let nx = x, ny = y, nz = z;
-        if (axis === 'x') nx = w - 1 - x;
-        else if (axis === 'z') nz = d - 1 - z;
-        else ny = h - 1 - y;
-        ids[idx(w, d, nx, ny, nz)] = id === AIR || axis === 'y' ? id : mirrorId(id, axis);
-      }
-    }
-  }
-  const ox = axis === 'x' ? w - 1 - g.ox : g.ox;
-  const oy = axis === 'y' ? h - 1 - g.oy : g.oy;
-  const oz = axis === 'z' ? d - 1 - g.oz : g.oz;
-  return { w, h, d, ids, ox, oy, oz };
-}
-
-/** Packs a Grid into a Schematic: ids become palette keys (strings for mod blocks) so it stays portable. */
-export function encodeSchematic(name: string, g: Grid, keyOf: (id: number) => number | string): Schematic {
-  const palette: PaletteEntry[] = [AIR];
-  const lookup = new Map<PaletteEntry, number>([[AIR, 0]]);
-  const cells = new Array<number>(g.ids.length);
-  for (let i = 0; i < g.ids.length; i++) {
-    const id = g.ids[i];
-    const key: PaletteEntry = id === AIR ? AIR : keyOf(id);
-    let pi = lookup.get(key);
-    if (pi === undefined) { pi = palette.length; palette.push(key); lookup.set(key, pi); }
-    cells[i] = pi;
-  }
-  return { name, w: g.w, h: g.h, d: g.d, ox: g.ox, oy: g.oy, oz: g.oz, palette, cells };
-}
-
-/** Unpacks a Schematic back into a Grid, resolving mod-block keys with idOf. Keys that no longer resolve become air. */
-export function decodeSchematic(s: Schematic, idOf: (key: string) => number | null): { grid: Grid; missing: number; missingKeys: string[] } {
-  const resolved: number[] = s.palette.map((p) => (p === AIR ? AIR : typeof p === 'number' ? p : (idOf(p) ?? -1)));
-  const ids = new Int32Array(s.cells.length);
-  let missing = 0;
-  const missingSet = new Set<string>();
-  for (let i = 0; i < s.cells.length; i++) {
-    const r = resolved[s.cells[i]];
-    if (r === -1) {
-      ids[i] = AIR;
-      missing++;
-      const key = s.palette[s.cells[i]];
-      if (typeof key === 'string') missingSet.add(key);
-    } else {
-      ids[i] = r;
-    }
-  }
-  return { grid: { w: s.w, h: s.h, d: s.d, ox: s.ox, oy: s.oy, oz: s.oz, ids }, missing, missingKeys: [...missingSet] };
-}
-
-function isSchematicShape(d: unknown): d is Schematic {
-  if (!d || typeof d !== 'object') return false;
-  const o = d as Record<string, unknown>;
-  return typeof o.name === 'string' && typeof o.w === 'number' && typeof o.h === 'number' && typeof o.d === 'number'
-    && typeof o.ox === 'number' && typeof o.oy === 'number' && typeof o.oz === 'number'
-    && Array.isArray(o.palette) && Array.isArray(o.cells);
-}
-
-/** Checks an untrusted object (from a mod, an import, or storage) and returns a clean Schematic, or an error string. */
-export function validateSchematic(raw: unknown): Schematic | string {
-  if (!isSchematicShape(raw)) return 'That is not a valid schematic.';
-  const ve = volumeError(raw.w, raw.h, raw.d);
-  if (ve) return ve;
-  if (raw.cells.length !== raw.w * raw.h * raw.d) return 'That schematic is the wrong size for its data.';
-  if (raw.palette.some((p) => typeof p !== 'number' && typeof p !== 'string')) return 'That schematic has a broken palette.';
-  if (raw.cells.some((c) => typeof c !== 'number' || c < 0 || c >= raw.palette.length)) return 'That schematic has broken data.';
-  const name = sanitizeName(raw.name) ?? 'schematic';
-  return { name, w: raw.w, h: raw.h, d: raw.d, ox: raw.ox, oy: raw.oy, oz: raw.oz, palette: raw.palette.slice(), cells: raw.cells.slice() };
-}
-
-export function libraryBytes(lib: Record<string, Schematic>): number {
-  try { return new Blob([JSON.stringify(lib)]).size; } catch { return JSON.stringify(lib).length; }
-}
-
-export function loadLibrary(): Record<string, Schematic> {
-  try {
-    const raw = localStorage.getItem(STORE_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    const out: Record<string, Schematic> = {};
-    for (const [k, v] of Object.entries(parsed)) {
-      const sc = validateSchematic(v);
-      if (typeof sc !== 'string') out[k] = sc;
-    }
-    return out;
-  } catch {
-    return {};
-  }
-}
-
-/** Returns an error message if it could not be saved (too many, too big), otherwise writes it and returns null. */
-export function saveLibrary(lib: Record<string, Schematic>): string | null {
-  const count = Object.keys(lib).length;
-  if (count > SCHEM_LIMITS.maxCount) return `Your library is full (${SCHEM_LIMITS.maxCount} max). Delete one first.`;
-  const bytes = libraryBytes(lib);
-  if (bytes > SCHEM_LIMITS.maxBytes) return 'Your library has gotten too big to save. Delete a large schematic first.';
-  try {
-    localStorage.setItem(STORE_KEY, JSON.stringify(lib));
-    return null;
-  } catch {
-    return 'Could not save your library (your browser storage may be full).';
-  }
-}
-
+// ---------------- Files ----------------
 export function schematicToFile(s: Schematic): string {
-  return JSON.stringify({ magic: FILE_MAGIC, version: FILE_VERSION, schematic: s }, null, 0);
+  return JSON.stringify({ magic: SCHEM_MAGIC, ...s });
+}
+export function parseSchematicFile(text: string): Schematic | string {
+  if (typeof text !== 'string' || text.length > 12_000_000) return 'That file is too big to be a schematic';
+  let raw: unknown;
+  try { raw = JSON.parse(text); } catch { return 'That file is not a schematic'; }
+  if (!raw || typeof raw !== 'object' || (raw as Record<string, unknown>).magic !== SCHEM_MAGIC) return 'That file is not a VibeBlox schematic';
+  return validateSchematic(raw);
 }
 
-export function parseSchematicFile(text: string): Schematic | string {
-  let parsed: unknown;
-  try { parsed = JSON.parse(text); } catch { return 'That file is not a schematic (it will not parse).'; }
-  const obj = parsed as Record<string, unknown>;
-  const body = obj && typeof obj === 'object' && obj.magic === FILE_MAGIC ? obj.schematic : parsed;
-  return validateSchematic(body);
+// ---------------- The library (kept in the browser) ----------------
+export type KeyValueStore = { getItem(k: string): string | null; setItem(k: string, v: string): void };
+const LIB_KEY = 'vb-schematics';
+
+export function loadLibrary(store: KeyValueStore | null = defaultStore()): Record<string, Schematic> {
+  const out: Record<string, Schematic> = {};
+  try {
+    const raw = store?.getItem(LIB_KEY);
+    if (!raw) return out;
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object') return out;
+    for (const v of Object.values(parsed as Record<string, unknown>)) {
+      const s = validateSchematic(v);
+      if (typeof s !== 'string') out[nameKey(s.name)] = s;
+    }
+  } catch { /* storage blocked or damaged: start empty */ }
+  return out;
 }
+/** Returns an error message, or null when it was saved. */
+export function saveLibrary(lib: Record<string, Schematic>, store: KeyValueStore | null = defaultStore()): string | null {
+  if (!store) return 'This browser will not let the game save schematics';
+  if (Object.keys(lib).length > SCHEM_LIMITS.maxCount) return `You can keep up to ${SCHEM_LIMITS.maxCount} schematics. Delete or export some first.`;
+  const text = JSON.stringify(lib);
+  if (text.length > SCHEM_LIMITS.maxStoreBytes) return 'Your schematics take up too much space. Export (download) the big ones and delete them here.';
+  try { store.setItem(LIB_KEY, text); } catch { return 'The browser has no room left to save this. Export (download) some schematics and delete them here.'; }
+  return null;
+}
+function defaultStore(): KeyValueStore | null {
+  try { return typeof localStorage !== 'undefined' ? localStorage : null; } catch { return null; }
+}
+export function libraryBytes(lib: Record<string, Schematic>): number { return JSON.stringify(lib).length; }
+export function describe(s: { w: number; h: number; d: number }): string { return `${s.w} x ${s.h} x ${s.d}`; }

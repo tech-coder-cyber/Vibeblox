@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import SideNav from './SideNav';
 import AccountPanel from './AccountPanel';
-import { ShieldCheck, Megaphone, Gavel, UserX, Ban, X, Loader2, Undo2 } from 'lucide-react';
-import { postAnnouncement, banEverywhere, unbanEverywhere, listBans, getLastAnnouncement, setLastAnnouncement, isOwnerName, ANNOUNCE_MAX, USERNAME_RE, type Account, type Ban as BanRow } from './social';
+import { ShieldCheck, Megaphone, Gavel, UserX, Ban, X, Loader2, Undo2, Crown } from 'lucide-react';
+import { postAnnouncement, banEverywhere, unbanEverywhere, listBans, getLastAnnouncement, setLastAnnouncement, isOwnerName, giveRank, rankOf, RANKS, RANK_LABELS, ANNOUNCE_MAX, USERNAME_RE, type Account, type Ban as BanRow, type RankName } from './social';
 
 export type PanelPlayer = { id: number; name: string; mode: string };
 type Props = {
@@ -30,7 +30,29 @@ export default function AdminPanel({ account, online, players, onSetMode, onKick
   const [banName, setBanName] = useState('');
   const [banReason, setBanReason] = useState('');
   const [confirm, setConfirm] = useState<string | null>(null);
-  const [tab, setTab] = useState<'announce' | 'players' | 'bans' | 'account'>('announce');
+  const [tab, setTab] = useState<'announce' | 'players' | 'bans' | 'ranks' | 'account'>('announce');
+  const [rankName, setRankName] = useState('');
+  const [rankPick, setRankPick] = useState<RankName>('vanguard');
+  const [rankNow, setRankNow] = useState<string | null>(null);
+  const [rankBusy, setRankBusy] = useState(false);
+  const owner = isOwnerName(account.username);
+  // Show the player's current rank once a full name is typed
+  useEffect(() => {
+    setRankNow(null);
+    if (!USERNAME_RE.test(rankName)) return;
+    let live = true;
+    const t = setTimeout(() => { void rankOf(rankName).then((r) => { if (live) setRankNow(r === null ? '?' : r); }); }, 350);
+    return () => { live = false; clearTimeout(t); };
+  }, [rankName]);
+  async function applyRank() {
+    if (rankBusy) return;
+    setRankBusy(true);
+    const r = await giveRank(rankName, rankPick);
+    setRankBusy(false);
+    if (!r.ok) { say(false, r.error); return; }
+    say(true, rankPick === 'none' ? `${r.username} no longer has a rank.` : `${r.username} is now ${RANK_LABELS[rankPick]}. They see it the next time they sign in.`);
+    setRankNow(rankPick);
+  }
 
   const say = (ok: boolean, t: string) => setMsg({ ok, text: t });
   async function refreshBans() {
@@ -92,7 +114,7 @@ export default function AdminPanel({ account, online, players, onSetMode, onKick
         </div>
 
         <div className="p-6 flex gap-5">
-         <SideNav testid="admin-sidenav" active={tab} onSelect={setTab} tabs={[{ id: 'announce', label: 'Announce' }, { id: 'players', label: 'Players' }, { id: 'bans', label: 'Bans' }, { id: 'account', label: 'My account' }]} />
+         <SideNav testid="admin-sidenav" active={tab} onSelect={setTab} tabs={[{ id: 'announce', label: 'Announce' }, { id: 'players', label: 'Players' }, { id: 'bans', label: 'Bans' }, { id: 'ranks', label: 'Ranks' }, { id: 'account', label: 'My account' }]} />
          <div className="flex-1 min-w-0 space-y-4">
           {msg && <div className={`rounded-lg px-4 py-2.5 text-sm border ${msg.ok ? 'bg-[#00e676]/10 border-[#00e676]/30 text-[#00e676]' : 'bg-red-500/10 border-red-500/30 text-red-400'}`}>{msg.text}</div>}
 
@@ -191,6 +213,27 @@ export default function AdminPanel({ account, online, players, onSetMode, onKick
                 ))}
               </div>
             )}
+          </div>}
+
+          {/* Give ranks */}
+          {tab === 'ranks' && <div className={section} data-testid="admin-ranks">
+            <div className={h2}><Crown className="w-5 h-5 text-[#ffd700]" />Give a rank</div>
+            {!owner && <p className="text-[#ff9800] text-xs mb-3">Only the owner can give ranks.</p>}
+            <div className="flex flex-wrap gap-2 items-center">
+              <input value={rankName} onChange={(e) => setRankName(e.target.value.replace(/[^A-Za-z0-9_]/g, '').slice(0, 16))} placeholder="Username" data-testid="rank-name"
+                className="flex-1 min-w-[140px] bg-[#0a0e14] border border-[#243044] rounded-xl px-3 py-2.5 text-white text-sm placeholder:text-[#5a6b80] focus:outline-none focus:border-[#00e676]/50" />
+              <select value={rankPick} onChange={(e) => setRankPick(e.target.value as RankName)} data-testid="rank-pick" aria-label="Rank"
+                className="bg-[#0a0e14] border border-[#243044] rounded-xl text-sm text-white px-3 py-2.5">
+                {RANKS.map((r) => <option key={r} value={r}>{RANK_LABELS[r]}</option>)}
+              </select>
+              <button onClick={applyRank} disabled={!owner || !USERNAME_RE.test(rankName) || rankBusy} data-testid="rank-give"
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#ffd700] text-[#0a0e14] font-bold text-sm disabled:opacity-40 hover:brightness-110 active:scale-95 transition-all">
+                {rankBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Crown className="w-4 h-4" />}{rankPick === 'none' ? 'Remove rank' : 'Give rank'}
+              </button>
+            </div>
+            <p className="text-[11px] text-[#5a6b80] mt-2" data-testid="rank-now">
+              {rankNow === null ? 'Type a username to see their rank.' : rankNow === '?' ? 'Nobody has that name.' : `Current rank: ${RANK_LABELS[(RANKS as readonly string[]).includes(rankNow) ? rankNow as RankName : 'none']}`}
+            </p>
           </div>}
 
           {tab === 'account' && (

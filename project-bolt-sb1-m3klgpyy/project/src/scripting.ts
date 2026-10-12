@@ -236,6 +236,11 @@ const __game = {
   },
   items: { register: (def) => __call('items.register', def) },
   blocks: { register: (def) => __call('blocks.register', def) },
+  schematics: {
+    paste: (name, x, y, z, options) => __call('schematics.paste', String(name), x, y, z, options || {}),
+    list: () => __call('schematics.list'),
+    info: (name) => __call('schematics.info', String(name)),
+  },
   recipes: { register: (def) => __call('recipes.register', def) },
   particles: {
     spawn: (x, y, z, opts) => __call('particles.spawn', x, y, z, opts || {}),
@@ -461,6 +466,14 @@ export class ScriptRunner {
         } catch (e) {
           error = String((e as Error).message || e);
         }
+        if (!error && value && typeof (value as { then?: unknown }).then === 'function') {
+          // Slow calls (a big schematic paste) answer when they are done
+          (value as Promise<unknown>).then(
+            (v) => { try { r.worker.postMessage({ type: 'result', id: m.id, value: v }); } catch { /* script was stopped */ } },
+            (e) => { try { r.worker.postMessage({ type: 'result', id: m.id, error: String((e as Error)?.message || e) }); } catch { /* script was stopped */ } },
+          );
+          break;
+        }
         r.worker.postMessage({ type: 'result', id: m.id, value, error });
         break;
       }
@@ -504,260 +517,11 @@ export class ScriptRunner {
 }
 
 // ---------------- Mods ----------------
-export type Mod = { id: string; name: string; author: string; description: string; code: string; official: boolean };
+import type { Schematic } from './schematics';
+/** A mod. `schematics` are builds that come with it (a "mod pack"); they work while the mod is switched on. */
+export type Mod = { id: string; name: string; author: string; description: string; code: string; official: boolean; version?: string; schematics?: Schematic[] };
 
 export const OFFICIAL_MODS: Mod[] = [
-  {
-    id: 'guns',
-    name: 'Guns',
-    author: 'VibeBlox',
-    official: true,
-    description: 'Desert Eagle, AK-47, Sawed-Off and AWP. Left-click shoots, right-click aims (the AWP scopes in).',
-    code: `// Guns: Desert Eagle, AK-47, Sawed-Off and AWP.
-// Left-click shoots (hold it with the AK-47), right-click aims; the AWP scopes in.
-// Bullets are crafted from an iron ingot + coal (smelt the ore in a furnace first).
-const PAL = {"K": "#0e1012", "a": "#e6eaef", "A": "#b5bcc5", "z": "#848c97", "Z": "#585f69", "m": "#6d737c", "M": "#454a52", "N": "#26292e", "p": "#55585e", "P": "#33353a", "Q": "#1b1c1f", "w": "#cf8a4c", "W": "#a1612d", "V": "#6e3f1b", "o": "#7c9a52", "O": "#566f38", "U": "#37491f", "y": "#f4d567", "Y": "#c79b2f", "l": "#c8e8ff", "L": "#4e8fec", "I": "#1f4380", "r": "#d9432b"};
-const ART = {
-  deagle: [
-    '................................',
-    '................................',
-    '................................',
-    '................................',
-    '................................',
-    '................................',
-    '................................',
-    '........K.K.................K...',
-    '.......KNKNK...............KNK..',
-    '.......KNNNKKKKKKKKKKKKKKKKKNK..',
-    '......KaaaaaaaaaaaaaaaaaaaaaaKK.',
-    '......KAAzAzAzAAANNNNNNAAAAAAmmK',
-    '....KKKAAzAzAzAAANMMNNNAAyAAAMNK',
-    '...KmMMAAzAzAzAAAAAAAAAAAYAAAMNK',
-    '...KMMMAAzAzAzAAAAAAAAAAAAAAANNK',
-    '....KKKzzzzzzzzzzzzzzzzzzzzzzKK.',
-    '......KzzzzzzzzzzzzzzzzzzzzzzK..',
-    '.......KKpPPPPQzzzzzzzzKKKKKK...',
-    '........KpPPPPQZZZZZZZZK........',
-    '........KMQPQPPQMMMMMMMK........',
-    '.........KpQPQPQNKKMKKK.........',
-    '..........KQPQPPQKKMK...........',
-    '..........KpQPQPQMMMK...........',
-    '..........KpQPQPQKKK............',
-    '...........KpQPQPQK.............',
-    '...........KQPQPPQK.............',
-    '...........KpPQPQQK.............',
-    '...........KNNNNNNNK............',
-    '............KKKKKKK.............',
-    '................................',
-    '................................',
-    '................................'
-  ],
-  ak47: [
-    '................................',
-    '................................',
-    '................................',
-    '................................',
-    '................................',
-    '................................',
-    '................................',
-    '................................',
-    '...........................K....',
-    '..........................KNK...',
-    '..........K.K........KKKKKKNK...',
-    '.........KNKNK......KzzzzzzNzK..',
-    '.........KNNNKKKKKKKKMMMMMMNMK..',
-    '.KKKKKKKKmmmmmmmmmmmmmKKKKKKK.KK',
-    'KQwwwwwwwMmmmmmmmmmmYMwwwwwwwKNN',
-    'KQWWWWWWWMMMMMMNNNNMMMWWWWWWWzNN',
-    'KQWWWWWWWMMMMMMMNNNMMMVVVVVVVMNN',
-    'KQWVVVVVWMMMMMMMMMMMMMWWWWWWWKNN',
-    'KQWWWWWWWNNNNNNNNNNNNNVVVVVVVKKK',
-    'KQWWWWWWWWKKwWWNNmMMNKKKKKKKK...',
-    'KQVVVVVVVVKKwWWNKNmMMNK.........',
-    '.KKKKKKKKK..KwWNKKNNNNK.........',
-    '............KwWNNNNmMMNK........',
-    '............KwWWVKKmMMNK........',
-    '.............KwWWVKKNNNNK.......',
-    '.............KwWWVKKmMMNK.......',
-    '.............KwWWVK.KmMMNK......',
-    '..............KKKK..KNNNNK......',
-    '.....................KmMMNK.....',
-    '......................KKKK......',
-    '................................',
-    '................................'
-  ],
-  sawed: [
-    '................................',
-    '................................',
-    '................................',
-    '................................',
-    '................................',
-    '................................',
-    '................................',
-    '................................',
-    '...........KK...................',
-    '..........KNNK..................',
-    '..........KMMKK................K',
-    '.........KmmmmmKKKKKKKKKKKKKKKKN',
-    '.........KMMYMMaaaaaaaaaaaaaaaNK',
-    '.........KMMyMMzzzzzzzzzzzzzzzQK',
-    '.........KMMMMMZZZZZZZZZZZZZZZNK',
-    '.........KMMMMMZZZZZZZZZZZZZZZQK',
-    '.........KMMMMMwwwwwwwwKKKKKKKK.',
-    '........KwWWMMNNNNNVVVVK........',
-    '........KwWWWNKKKKNVVVVK........',
-    '.......KwWWWVNKNKKNKKKK.........',
-    '.......KwWWWVNKKKKNK............',
-    '......KwWWWVKNNNNNNK............',
-    '......KwWWWVKKKKKKK.............',
-    '.....KwWWWVK....................',
-    '.....KwWWWVK....................',
-    '....KwWWWVK.....................',
-    '....KwWWWVK.....................',
-    '...KwWWWVK......................',
-    '....KKKKK.......................',
-    '................................',
-    '................................',
-    '................................'
-  ],
-  awp: [
-    '................................',
-    '................................',
-    '................................',
-    '................................',
-    '................................',
-    '................................',
-    '.................KK.............',
-    '......KKK.....KKKMMK..KKKK......',
-    '.....KmmmKKKKKZZKMMKKKmmmmK.....',
-    '.....KlMMmmmmmmmmmmmmmMMMMlK....',
-    '.....KLMMNNNNNNNNNNNNNMMMMLK....',
-    '...KKKMMMQQQQQQQQQQQQQMMMMIK....',
-    '..KoooNNNKKZZKKKKKKZZKNNNNK..KKK',
-    'KKKUUUUUUKKZZKKKKKKZZKKKKKKKKMMM',
-    'QooooooooommmmmmmmmmzzzzzzzzzNMN',
-    'QOOOOOOOOOMMMMNNNNMMMMMMMMMMMNMN',
-    'QOOOOOOOOOMMMMMMMMMMoooooKKKKNNN',
-    'QOOOOUUUOOMMMMMMMMMMOOOOOK...KKK',
-    'QOOOOOOOOONNNNNNNNNNOOOOOK......',
-    'QOOOOOOOOOoOOUMMMMZAUUNUUK......',
-    'QUUUUUUUUUoOOUNNNNKAaKNKK.......',
-    'KKKKKKKKKKKoOONZNNKKKNNNK.......',
-    '..........KoOONNNNK..KKK........',
-    '..........KoOOUKKK..............',
-    '...........KoOOUK...............',
-    '...........KoOOUK...............',
-    '...........KoOOUK...............',
-    '............KKKK................',
-    '................................',
-    '................................',
-    '................................',
-    '................................'
-  ],
-};
-
-const GUNS = {
-  'guns:deagle': { name: 'Desert Eagle', art: 'deagle', hold: 'one_hand', damage: 9, cooldown: 420, auto: false, pellets: 1,
-    spread: 0.012, aimSpread: 0.003, range: 70, recoil: 0.08, zoom: 0.82, knockback: 0.8,
-    lore: ['\\\\gray\\\\A hand cannon.', '\\\\white\\\\Damage: \\\\gold\\\\9 \\\\gray\\\\| Semi-auto', '\\\\white\\\\Held in one hand', '\\\\red\\\\Kicks hard'] },
-  'guns:ak47': { name: 'AK-47', art: 'ak47', hold: 'two_hands', damage: 5, cooldown: 100, auto: true, pellets: 1,
-    spread: 0.035, aimSpread: 0.012, range: 80, recoil: 0.022, zoom: 0.78, knockback: 0.4,
-    lore: ['\\\\gray\\\\Classic assault rifle.', '\\\\white\\\\Damage: \\\\gold\\\\5 \\\\gray\\\\| Full-auto, 600 RPM', '\\\\white\\\\Hold left-click to spray'] },
-  'guns:sawed_off': { name: 'Sawed-Off', art: 'sawed', hold: 'two_hands', damage: 3, cooldown: 750, auto: false, pellets: 9,
-    spread: 0.12, aimSpread: 0.085, range: 18, recoil: 0.13, zoom: 0.9, knockback: 1.6,
-    lore: ['\\\\gray\\\\Double barrel, sawn short.', '\\\\white\\\\Damage: \\\\gold\\\\3 x 9 pellets', '\\\\white\\\\Brutal up close, useless far away'] },
-  'guns:awp': { name: 'AWP', art: 'awp', hold: 'two_hands', damage: 20, cooldown: 1400, auto: false, pellets: 1,
-    spread: 0.07, aimSpread: 0, range: 160, recoil: 0.12, zoom: 0.22, scope: true, knockback: 1.2,
-    lore: ['\\\\gray\\\\Bolt-action sniper rifle.', '\\\\white\\\\Damage: \\\\gold\\\\20 \\\\gray\\\\| One shot, most mobs', '\\\\white\\\\Right-click to scope in', '\\\\red\\\\Wild without the scope'] },
-};
-
-game.items.register({ id: 'guns:bullet', name: 'Bullets', maxStack: 64,
-  lore: ['\\\\gray\\\\Ammo for every gun.', '\\\\white\\\\Iron ingot + coal = 16'],
-  icon: { palette: { b: '#c0c0c0', y: '#e3b341', Y: '#a8801f' }, pixels: [
-    '', '', '', '...b....b....b..', '..bbb..bbb..bbb.', '..yyy..yyy..yyy.', '..yyy..yyy..yyy.', '..yyy..yyy..yyy.', '..yyy..yyy..yyy.', '..YYY..YYY..YYY.'] } });
-for (const [id, g] of Object.entries(GUNS)) {
-  game.items.register({ id, name: g.name, maxStack: 1, hold: g.hold, leftClick: 'use', lore: g.lore, icon: { palette: PAL, pixels: ART[g.art] } });
-}
-
-game.recipes.register({ id: 'bullets', pattern: ['I', 'C'], key: { I: 'iron_ingot', C: 'coal' }, output: 'guns:bullet', count: 16 });
-game.recipes.register({ id: 'deagle', pattern: ['III', 'I  '], key: { I: 'iron_ingot' }, output: 'guns:deagle' });
-game.recipes.register({ id: 'ak47', pattern: ['III', 'PIP'], key: { I: 'iron_ingot', P: 'planks' }, output: 'guns:ak47' });
-game.recipes.register({ id: 'sawed_off', pattern: ['III', 'P  '], key: { I: 'iron_ingot', P: 'planks' }, output: 'guns:sawed_off' });
-game.recipes.register({ id: 'awp', pattern: ['DII', 'III', 'P  '], key: { D: 'diamond', I: 'iron_ingot', P: 'planks' }, output: 'guns:awp' });
-
-const lastShot = {};
-let aiming = null; // the gun being aimed, or null
-let autoTimer = null;
-
-async function fire(id) {
-  const g = GUNS[id];
-  const now = Date.now();
-  if (now - (lastShot[id] || 0) < g.cooldown - 5) return; // fire-rate limit: one click can never shoot twice
-  lastShot[id] = now;
-  const p = await game.player.get();
-  if (!p.heldItem || p.heldItem.item !== id) { stopAuto(); return; }
-  if (p.mode !== 'creative') {
-    if ((await game.player.countItem('guns:bullet')) < 1) {
-      game.sounds.play('click');
-      game.gui.toast('Out of bullets! Craft them from iron ore + coal');
-      stopAuto();
-      return;
-    }
-    game.player.removeItem('guns:bullet', 1);
-  }
-  const steady = aiming === id;
-  game.sounds.play('gunshot');
-  game.player.recoil(steady ? g.recoil * 0.6 : g.recoil);
-  // muzzle flash just in front of the barrel
-  const mx = p.eye.x + p.look.x * 1.1, my = p.eye.y + p.look.y * 1.1 - 0.15, mz = p.eye.z + p.look.z * 1.1;
-  if (!(g.scope && steady)) game.particles.spawn(mx, my, mz, { color: '#ffd27a', count: 4, speed: 1.2, size: 0.07, life: 0.08 });
-  for (let i = 0; i < g.pellets; i++) {
-    const sp = steady ? g.aimSpread : g.spread;
-    const r = () => (Math.random() - 0.5) * 2 * sp;
-    const dir = { x: p.look.x + r(), y: p.look.y + r(), z: p.look.z + r() };
-    const hit = await game.world.raycast(p.eye, dir, g.range);
-    const len = Math.hypot(dir.x, dir.y, dir.z);
-    const end = hit ? hit.point : { x: p.eye.x + (dir.x / len) * g.range, y: p.eye.y + (dir.y / len) * g.range, z: p.eye.z + (dir.z / len) * g.range };
-    game.particles.line(mx, my, mz, end.x, end.y, end.z, { color: '#ffe08a' });
-    if (hit && hit.type === 'entity') {
-      game.entities.damage(hit.entity.id, g.damage, g.knockback);
-      game.particles.spawn(end.x, end.y, end.z, { color: '#b01818', count: 6, speed: 2 });
-    } else if (hit) {
-      game.particles.spawn(end.x, end.y, end.z, { color: '#9a9a9a', count: 4, speed: 1.5 });
-    }
-  }
-}
-
-function stopAuto() {
-  if (autoTimer) game.scheduler.cancel(autoTimer);
-  autoTimer = null;
-}
-
-function stopAiming() {
-  if (!aiming) return;
-  aiming = null;
-  game.player.setAiming(false);
-  game.player.setZoom(1);
-}
-
-game.on('itemAttack', (e) => {
-  const g = GUNS[e.item];
-  if (!g) return;
-  if (!e.pressed) return stopAuto();
-  fire(e.item);
-  if (g.auto) { stopAuto(); autoTimer = game.scheduler.every(g.cooldown, () => fire(e.item)); }
-});
-game.on('itemUse', (e) => {
-  const g = GUNS[e.item];
-  if (!g) return;
-  aiming = e.item;
-  game.player.setAiming(true);
-  game.player.setZoom(g.zoom); // the AWP's 0.22 also switches on the scope view
-});
-game.on('itemUseEnd', (e) => { if (GUNS[e.item]) stopAiming(); });
-game.on('playerDeath', () => { stopAuto(); stopAiming(); });
-`,
-  },
   {
     id: 'farmers-delight',
     name: "Farmer's Delight",
@@ -802,43 +566,6 @@ for (const m of meals) {
   game.items.register({ id: 'farmers:' + m.id, name: m.name, food: m.food, icon: m.icon });
   game.recipes.register({ id: m.id, pattern: m.pattern, key: m.key, output: 'farmers:' + m.id });
 }
-`,
-  },
-  {
-    id: 'colorful-trails',
-    name: 'Colorful Trails',
-    author: 'VibeBlox',
-    official: true,
-    description: 'A rainbow particle trail follows you. /trail particles | concrete | off',
-    code: `// Colorful Trails: a rainbow of particles follows you as you move.
-// /trail particles | concrete | off
-const colors = ['#ff4d4d', '#ffa53a', '#ffe14d', '#5fe05f', '#4dd2ff', '#9b6bff', '#ff6bd6'];
-const concrete = ['white_concrete', 'yellow_concrete', 'orange_concrete', 'lime_concrete', 'cyan_concrete', 'purple_concrete'];
-let mode = (await game.storage.get('mode')) || 'particles';
-let i = 0;
-let last = null;
-
-game.commands.register('trail', 'Switch your trail: /trail particles | concrete | off', async (args) => {
-  if (!['particles', 'concrete', 'off'].includes(args[0])) return game.chat('Usage: /trail particles | concrete | off', '#ff6b6b');
-  mode = args[0];
-  await game.storage.set('mode', mode);
-  game.gui.toast('Trail: ' + mode);
-});
-
-game.on('tick', async () => {
-  if (mode === 'off') return;
-  const p = await game.player.get();
-  if (last && Math.hypot(p.x - last.x, p.z - last.z) < 0.05) return; // only while moving
-  last = p;
-  if (mode === 'particles') {
-    game.particles.spawn(p.x, p.y + 0.2, p.z, { color: colors[i++ % colors.length], count: 4, speed: 0.4, size: 0.12, life: 1.2 });
-  } else {
-    const x = Math.floor(p.x), y = Math.floor(p.y) - 1, z = Math.floor(p.z);
-    const below = await game.world.getBlock(x, y, z);
-    if (['air', 'water', 'lava', 'bedrock'].includes(below)) return;
-    game.world.setBlock(x, y, z, concrete[i++ % concrete.length]);
-  }
-});
 `,
   },
   {
@@ -910,180 +637,78 @@ game.on('itemUse', async (e) => {
 `,
   },
   {
-    id: 'gadgets',
-    name: 'Gadgets',
+    id: 'jetpacks',
+    name: 'Jetpacks',
     author: 'VibeBlox',
     official: true,
-    description: 'Grappling hook, jet feather and wind charge for getting around fast. Right-click to use.',
-    code: `// Gadgets: right-click to use.
+    description: 'Iron, gold and diamond jetpacks. Hold right-click with one in your hand to fly up; look down to sink slowly. Burns Jet Fuel (free in creative).',
+    code: `// Jetpacks: hold right-click with a jetpack in your hand to fly. Steer with WASD, look straight down to sink gently.
+// In survival each jetpack burns Jet Fuel (craft 4 from coal and redstone). Better jetpacks climb faster and sip less fuel.
 const grid = () => Array.from({ length: 16 }, () => Array(16).fill('.'));
 const rect = (g, x, y, w, h, c) => { for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) if (g[y + j] && x + i < 16) g[y + j][x + i] = c; };
-const out = (palette, g) => ({ palette, pixels: g.map((r) => r.join('')) });
-const hookIcon = () => {
+const packIcon = (body, dark) => {
   const g = grid();
-  rect(g, 3, 1, 5, 1, 'h'); rect(g, 2, 2, 1, 4, 'h'); rect(g, 8, 2, 1, 4, 'h'); rect(g, 3, 6, 5, 1, 'h'); rect(g, 8, 1, 1, 1, 'H');
-  for (let i = 0; i < 8; i++) { g[7 + i][5 + i] = 'r'; if (g[7 + i][6 + i] === '.') g[7 + i][6 + i] = 'R'; }
-  return out({ h: '#d0d0d0', H: '#8a8a8a', r: '#c9a24a', R: '#7a5a2a' }, g);
+  rect(g, 3, 2, 4, 9, 'b'); rect(g, 9, 2, 4, 9, 'b');   // two tanks
+  rect(g, 3, 2, 4, 1, 'B'); rect(g, 9, 2, 4, 1, 'B');
+  rect(g, 6, 4, 4, 5, 'B');                             // the frame between them
+  rect(g, 4, 11, 2, 2, 'n'); rect(g, 10, 11, 2, 2, 'n'); // nozzles
+  rect(g, 4, 13, 2, 2, 'f'); rect(g, 10, 13, 2, 2, 'f'); // flames
+  g[15][4] = 'F'; g[15][11] = 'F'; g[5][4] = 'w'; g[5][10] = 'w';
+  return { palette: { b: body, B: dark, n: '#3a3a3a', f: '#ff8a1a', F: '#ffd23a', w: '#ffffff' }, pixels: g.map((r) => r.join('')) };
 };
-const featherIcon = () => {
+const fuelIcon = () => {
   const g = grid();
-  for (let i = 0; i < 10; i++) { const x = 3 + i, y = 12 - i; g[y][x] = 'f'; if (y > 0) g[y - 1][x] = 'f'; if (x + 1 < 16) g[y][x + 1] = 'F'; if (y + 1 < 16) g[y + 1][x] = 'F'; }
-  rect(g, 1, 13, 2, 2, 's'); g[14][1] = 'S';
-  return out({ f: '#f4f4f4', F: '#b8c0c8', s: '#9a8a6a', S: '#5a4a3a' }, g);
+  rect(g, 4, 3, 8, 11, 'c'); rect(g, 4, 3, 8, 1, 'C'); rect(g, 6, 1, 4, 2, 'C');
+  rect(g, 5, 6, 6, 5, 'r'); rect(g, 6, 7, 4, 3, 'R');
+  return { palette: { c: '#5a5a62', C: '#2e2e34', r: '#c0221a', R: '#ff5a3a' }, pixels: g.map((r) => r.join('')) };
 };
-const windIcon = () => {
-  const g = grid();
-  for (let a = 0; a < 6.3; a += 0.15) { const r = 2 + a * 0.75; const x = Math.round(8 + Math.cos(a) * r), y = Math.round(8 + Math.sin(a) * r); if (g[y] && x >= 0 && x < 16) g[y][x] = a > 3.5 ? 'w' : 'W'; }
-  return out({ w: '#e6f6ff', W: '#8fd0f0' }, g);
-};
-const last = {};
-const ready = (k, ms) => { const n = Date.now(); if (last[k] && n - last[k] < ms) return false; last[k] = n; return true; };
 
-const GADGETS = {
-  grapple: { name: 'Grappling Hook', cd: 1200, icon: hookIcon, lore: 'Right-click a block: swing toward it',
-    recipe: { pattern: ['II', 'S ', 'T '], key: { I: 'iron_ingot', S: 'stick', T: 'string' } },
-    use: async (p) => {
-      const hit = await game.world.raycast(p.eye, p.look, 50, { entities: false, blocks: true });
-      if (!hit) { game.gui.toast('Nothing to grab'); return false; }
-      const t = hit.point, dx = t.x - p.eye.x, dy = t.y - p.eye.y, dz = t.z - p.eye.z, dist = Math.hypot(dx, dy, dz) || 1;
-      const speed = Math.min(30, 8 + dist * 0.7);
-      game.particles.line(p.eye.x, p.eye.y - 0.4, p.eye.z, t.x, t.y, t.z, { color: '#c9a24a' });
-      game.player.launch((dx / dist) * speed, (dy / dist) * speed + 4, (dz / dist) * speed);
-      game.player.applyEffect('slow_falling', 3, 1); // a soft landing
-      game.sounds.play('throw');
-    } },
-  jet: { name: 'Jet Feather', cd: 6000, icon: featherIcon, lore: 'Right-click: leap high and float down',
-    recipe: { pattern: ['FFF', ' G '], key: { F: 'feather', G: 'gunpowder' } },
-    use: async (p) => {
-      game.player.launch(0, 17, 0);
-      game.player.applyEffect('slow_falling', 8, 1);
-      game.world.spawnParticles('smoke', p.x, p.y, p.z, 14, 0.4, 0.2);
-      game.sounds.play('pop');
-    } },
-  wind: { name: 'Wind Charge', cd: 2000, icon: windIcon, lore: 'Right-click: dash forward',
-    recipe: { pattern: ['FG', 'GF'], key: { F: 'feather', G: 'gunpowder' } },
-    use: async (p) => {
-      const d = p.look, h = Math.hypot(d.x, d.z) || 1;
-      game.player.launch((d.x / h) * 24, 5, (d.z / h) * 24);
-      game.world.spawnParticles('smoke', p.x, p.y + 1, p.z, 12, 0.5, 0.2);
-      game.sounds.play('throw');
-    } },
+const PACKS = {
+  iron: { name: 'Iron Jetpack', lift: 7, fuelEvery: 2000, body: '#c8c8c8', dark: '#7a7a7a', mat: 'iron_ingot' },
+  gold: { name: 'Golden Jetpack', lift: 9, fuelEvery: 3000, body: '#f2c230', dark: '#a8800e', mat: 'gold_ingot' },
+  diamond: { name: 'Diamond Jetpack', lift: 11, fuelEvery: 4500, body: '#4fd8e6', dark: '#1f8a9a', mat: 'diamond' },
 };
-for (const [key, g] of Object.entries(GADGETS)) {
-  game.items.register({ id: 'gadgets:' + key, name: g.name, maxStack: 1, hold: 'one_hand', lore: [g.lore], icon: g.icon() });
-  game.recipes.register({ id: key, pattern: g.recipe.pattern, key: g.recipe.key, output: 'gadgets:' + key });
+game.items.register({ id: 'jetpacks:fuel', name: 'Jet Fuel', maxStack: 64, icon: fuelIcon(), lore: ['Burned by jetpacks'] });
+game.recipes.register({ id: 'jet_fuel', pattern: ['C', 'R'], key: { C: 'coal', R: 'redstone' }, output: 'jetpacks:fuel', count: 4 });
+for (const [key, j] of Object.entries(PACKS)) {
+  game.items.register({ id: 'jetpacks:' + key, name: j.name, maxStack: 1, hold: 'one_hand', icon: packIcon(j.body, j.dark),
+    lore: ['Hold right-click: fly up', 'Look straight down: sink slowly', 'One Jet Fuel every ' + (j.fuelEvery / 1000) + 's'] });
+  game.recipes.register({ id: key + '_jetpack', pattern: ['M M', 'MRM', 'G G'], key: { M: j.mat, R: 'redstone', G: 'gunpowder' }, output: 'jetpacks:' + key });
+}
+
+let flying = null; // { key, timer, lastFuel, free }
+function stop(soft) {
+  if (!flying) return;
+  game.scheduler.cancel(flying.timer);
+  flying = null;
+  if (soft) game.player.applyEffect('slow_falling', 2, 1); // a short glide when you let go
 }
 game.on('itemUse', async (e) => {
-  const key = Object.keys(GADGETS).find((k) => e.item === 'gadgets:' + k);
-  if (!key || !ready(key, GADGETS[key].cd)) return;
+  const key = Object.keys(PACKS).find((k) => e.item === 'jetpacks:' + k);
+  if (!key || flying) return;
   const p = await game.player.get();
-  if ((await GADGETS[key].use(p)) === false) delete last[key];
-});
-`,
-  },
-  {
-    id: 'excavators',
-    name: 'Excavators',
-    author: 'VibeBlox',
-    official: true,
-    description: 'Power tools you right-click on a block: a 3x3 hammer, a drill that mines a whole ore vein (burns coal), and an axe that fells a whole tree.',
-    code: `// Excavators: right-click a block. (Custom items cannot mine by themselves, so these work as abilities.)
-const grid = () => Array.from({ length: 16 }, () => Array(16).fill('.'));
-const rect = (g, x, y, w, h, c) => { for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) if (g[y + j] && x + i < 16) g[y + j][x + i] = c; };
-const out = (palette, g) => ({ palette, pixels: g.map((r) => r.join('')) });
-const hammerIcon = () => { const g = grid(); rect(g, 2, 1, 11, 5, 'h'); rect(g, 2, 1, 11, 1, 'H'); rect(g, 2, 5, 11, 1, 'd'); rect(g, 7, 6, 2, 9, 's'); rect(g, 8, 6, 1, 9, 'S'); return out({ h: '#9a9a9a', H: '#d0d0d0', d: '#5a5a5a', s: '#a8793e', S: '#6b4a1e' }, g); };
-const drillIcon = () => { const g = grid(); rect(g, 5, 8, 6, 6, 'b'); rect(g, 5, 8, 6, 1, 'B'); rect(g, 5, 13, 6, 1, 'd'); rect(g, 7, 14, 2, 1, 's');
-  for (let r = 0; r < 7; r++) { rect(g, 8 - Math.ceil((7 - r) / 2), r + 1, Math.max(1, (7 - r)), 1, r % 2 ? 'm' : 'M'); } return out({ b: '#c0392b', B: '#e8604f', d: '#7a2018', m: '#c8c8c8', M: '#8a8a8a', s: '#3a3a3a' }, g); };
-const axeIcon = () => { const g = grid(); rect(g, 7, 3, 2, 12, 's'); rect(g, 8, 3, 1, 12, 'S'); rect(g, 2, 1, 6, 6, 'a'); rect(g, 2, 1, 6, 1, 'A'); rect(g, 2, 6, 6, 1, 'd'); rect(g, 2, 2, 1, 4, 'A'); return out({ a: '#9a9a9a', A: '#d8d8d8', d: '#5a5a5a', s: '#a8793e', S: '#6b4a1e' }, g); };
-
-const SOFT = new Set(['stone', 'dirt', 'grass', 'sand', 'gravel', 'granite', 'diorite', 'andesite', 'netherrack', 'soul_sand', 'snow']);
-const VEIN = new Set(['coal_ore', 'iron_ore', 'gold_ore', 'nether_quartz_ore']); // diamonds and emeralds still need a real pickaxe
-const DROP = { grass: 'dirt', coal_ore: 'coal', nether_quartz_ore: 'quartz' };
-const dropOf = (b) => DROP[b] || b;
-const last = {};
-const ready = (k, ms) => { const n = Date.now(); if (last[k] && n - last[k] < ms) return false; last[k] = n; return true; };
-
-// Breaks every listed [x, y, z, name] at once and drops the items in stacks
-function clear(list, drops) {
-  if (!list.length) return;
-  game.world.setBlocks(list.map((b) => [b[0], b[1], b[2], 'air']));
-  const totals = {};
-  for (const b of list) { const item = drops(b[3]); if (item) totals[item] = (totals[item] || 0) + 1; }
-  const c = list[0];
-  for (const [item, n] of Object.entries(totals)) game.world.dropItem(c[0] + 0.5, c[1] + 0.5, c[2] + 0.5, item, n);
-}
-// Every block of the same kind touching the start (including diagonals), up to max
-async function flood(x, y, z, match, max) {
-  const seen = new Set([x + ',' + y + ',' + z]), queue = [[x, y, z]], found = [];
-  while (queue.length && found.length < max) {
-    const [cx, cy, cz] = queue.shift();
-    const name = await game.world.getBlock(cx, cy, cz);
-    if (!match(name)) continue;
-    found.push([cx, cy, cz, name]);
-    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) {
-      const k = (cx + dx) + ',' + (cy + dy) + ',' + (cz + dz);
-      if (!seen.has(k)) { seen.add(k); queue.push([cx + dx, cy + dy, cz + dz]); }
+  const free = p.mode === 'creative' || p.mode === 'spectator';
+  if (!free && (await game.player.countItem('jetpacks:fuel')) < 1) { game.gui.toast('Out of Jet Fuel: craft it from coal and redstone'); return; }
+  const j = PACKS[key];
+  flying = { key, lastFuel: 0, free };
+  flying.timer = game.scheduler.every(60, async () => {
+    if (!flying) return;
+    const q = await game.player.get();
+    if (!q.heldItem || q.heldItem.item !== 'jetpacks:' + flying.key) { stop(true); return; }
+    if (!flying.free && Date.now() - flying.lastFuel >= j.fuelEvery) {
+      if ((await game.player.countItem('jetpacks:fuel')) < 1) { game.gui.toast('Out of Jet Fuel'); stop(true); return; }
+      game.player.removeItem('jetpacks:fuel', 1);
+      flying.lastFuel = Date.now();
     }
-  }
-  return found;
-}
-
-const TOOLS = {
-  hammer: { name: 'Excavator Hammer', cd: 400, icon: hammerIcon, lore: 'Right-click: break a 3x3 patch of soft blocks',
-    recipe: { pattern: ['III', 'ISI', ' S '], key: { I: 'iron_ingot', S: 'stick' } },
-    use: async (e, p) => {
-      const ax = Math.abs(p.look.x), ay = Math.abs(p.look.y), az = Math.abs(p.look.z);
-      const plane = ay > ax && ay > az ? 'xz' : ax > az ? 'yz' : 'xy'; // the flat 3x3 that faces you
-      const list = [];
-      for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
-        const [dx, dy, dz] = plane === 'xz' ? [a, 0, b] : plane === 'yz' ? [0, a, b] : [a, b, 0];
-        const name = await game.world.getBlock(e.x + dx, e.y + dy, e.z + dz);
-        if (SOFT.has(name)) list.push([e.x + dx, e.y + dy, e.z + dz, name]);
-      }
-      if (!list.length) { game.gui.toast('Only soft blocks: stone, dirt, sand...'); return false; }
-      clear(list, dropOf);
-      game.sounds.play('pop');
-    } },
-  drill: { name: 'Vein Drill', cd: 800, icon: drillIcon, lore: 'Right-click an ore: mine the whole vein (uses 1 coal)',
-    recipe: { pattern: ['IDI', 'ISI', ' S '], key: { I: 'iron_ingot', D: 'diamond', S: 'stick' } },
-    use: async (e) => {
-      if (!VEIN.has(e.block)) { game.gui.toast('Aim at coal, iron, gold or quartz ore'); return false; }
-      if (!(await game.player.hasItem('coal', 1))) { game.gui.toast('The drill needs 1 coal as fuel'); return false; }
-      const list = await flood(e.x, e.y, e.z, (n) => n === e.block, 32);
-      game.player.removeItem('coal', 1);
-      clear(list, dropOf);
-      game.gui.toast('Drilled ' + list.length + ' ore');
-      game.sounds.play('explode');
-    } },
-  axe: { name: 'Timber Axe', cd: 800, icon: axeIcon, lore: 'Right-click a log: fell the whole tree',
-    recipe: { pattern: ['II', 'IS', ' S'], key: { I: 'iron_ingot', S: 'stick' } },
-    use: async (e) => {
-      const isLog = (n) => n === 'wood' || /_log$/.test(n), isLeaf = (n) => n === 'leaves' || /_leaves$/.test(n);
-      if (!isLog(e.block)) { game.gui.toast('Aim at a tree trunk'); return false; }
-      const logs = await flood(e.x, e.y, e.z, isLog, 80);
-      const leaves = [], seen = new Set();
-      for (const l of logs) for (let dx = -2; dx <= 2; dx++) for (let dy = -1; dy <= 3; dy++) for (let dz = -2; dz <= 2; dz++) {
-        const k = (l[0] + dx) + ',' + (l[1] + dy) + ',' + (l[2] + dz);
-        if (seen.has(k)) continue; seen.add(k);
-        const nb = await game.world.getBlock(l[0] + dx, l[1] + dy, l[2] + dz);
-        if (isLeaf(nb)) leaves.push([l[0] + dx, l[1] + dy, l[2] + dz, nb]);
-      }
-      clear(logs.concat(leaves), (n) => (isLog(n) ? n : null));
-      game.gui.toast('Felled ' + logs.length + ' logs');
-      game.sounds.play('pop');
-    } },
-};
-for (const [key, t] of Object.entries(TOOLS)) {
-  game.items.register({ id: 'excavators:' + key, name: t.name, maxStack: 1, hold: 'item', lore: [t.lore], icon: t.icon() });
-  game.recipes.register({ id: key, pattern: t.recipe.pattern, key: t.recipe.key, output: 'excavators:' + key });
-}
-game.on('itemUse', async (e) => {
-  const key = Object.keys(TOOLS).find((k) => e.item === 'excavators:' + k);
-  if (!key || e.x === null || e.x === undefined) return; // aiming at the air
-  if (!ready(key, TOOLS[key].cd)) return;
-  const p = await game.player.get();
-  if ((await TOOLS[key].use(e, p)) === false) delete last[key];
+    const vy = q.look.y < -0.75 ? -2.5 : j.lift; // looking down: let it sink gently
+    game.player.launch(0, vy, 0);
+    game.particles.spawn(q.x, q.y + 0.3, q.z, { color: Math.random() < 0.5 ? '#ffb347' : '#ff6a1a', count: 3, speed: 1.2, size: 0.12, life: 0.35 });
+    if (Math.random() < 0.15) game.particles.spawn(q.x, q.y + 0.2, q.z, { color: '#9a9a9a', count: 2, speed: 0.8, size: 0.18, life: 0.9 });
+  });
+  game.sounds.play('hiss');
 });
+game.on('itemUseEnd', (e) => { if (flying && e.item === 'jetpacks:' + flying.key) stop(true); });
+game.on('playerDeath', () => stop(false));
 `,
   },
 
@@ -1116,13 +741,44 @@ game.chat('Type /kit for a starter kit');
 `,
   },
   {
+    name: 'Moon and jungle dimensions',
+    code: `// Two dimensions of your own. /moon: low gravity and stars. /jungle: hills, lakes, trees and flowers.
+// /overworld brings you back. Change the numbers and run it again to reshape them.
+await game.dimensions.create({
+  id: 'moon', name: 'The Moon', type: 'hills',
+  top: 'andesite', filler: 'stone', base: 'stone',
+  height: 20, amplitude: 4, scale: 0.05,
+  sky: '#000008', fog: '#10101a', light: 0.7,
+  gravity: 0.25, stars: true, ores: true,
+});
+await game.dimensions.create({
+  id: 'jungle', name: 'Jungle Hills', type: 'hills',
+  top: 'grass', filler: 'dirt', base: 'stone', liquid: 'water', waterLevel: 20,
+  height: 22, amplitude: 9, scale: 0.03,
+  trees: 'jungle', treeChance: 0.04, plants: ['tall_grass', 'poppy', 'dandelion'], plantChance: 0.15,
+  sky: '#7fd0ff', fog: '#cfefff', light: 1, clouds: true, ores: true,
+});
+game.commands.register('moon', 'Fly to the Moon', async () => {
+  await game.dimensions.travel('moon');
+  game.gui.title('The Moon', 'Jump!');
+});
+game.commands.register('jungle', 'Visit the Jungle Hills', async () => {
+  await game.dimensions.travel('jungle');
+  game.gui.title('Jungle Hills', '');
+});
+game.commands.register('overworld', 'Go back to the Overworld', () => game.dimensions.travel('overworld'));
+game.chat('Type /moon or /jungle to visit your dimensions!');
+`,
+  },
+  {
     name: 'Custom dimension',
     code: `// A custom dimension of floating sky islands. /islands takes you there,
 // /overworld brings you back.
 await game.dimensions.create({
   id: 'sky_islands', name: 'Sky Islands', type: 'islands',
   top: 'grass', filler: 'dirt', base: 'stone',
-  sky: '#8fd3ff', fog: '#d6f0ff', light: 1,
+  trees: 'oak', treeChance: 0.03, plants: ['tall_grass', 'cornflower'],
+  sky: '#8fd3ff', fog: '#d6f0ff', light: 1, clouds: true,
 });
 game.commands.register('islands', 'Travel to the Sky Islands', async () => {
   await game.dimensions.travel('sky_islands');
@@ -1217,7 +873,7 @@ game.chat('Type /wave to start');
 // AI assistant's prompt and the "does this function exist?" checker are all
 // built from it, and a test compares it against the real sandbox, so the
 // docs can't drift away from what actually works.
-export const AI_PROMPT_VERSION = 5;
+export const AI_PROMPT_VERSION = 7;
 
 type ApiDoc = [path: string, signature: string, description: string];
 export const API_DOCS: ApiDoc[] = [
@@ -1274,6 +930,9 @@ export const API_DOCS: ApiDoc[] = [
   ['world.setBlock', '(x, y, z, block)', 'Place one block ("air" removes it).'],
   ['world.setBlocks', '([[x, y, z, block], ...])', 'Place many at once (max 32768). Returns how many were placed (only inside loaded chunks).'],
   ['world.fill', '(x1, y1, z1, x2, y2, z2, block)', 'Fill a box (max 32768 blocks).'],
+  ['schematics.paste', '(name, x, y, z, { rotate?, flipX?, flipZ?, skipAir? }?)', 'Paste a saved schematic (yours, or one that comes with a mod) so its origin lands on x, y, z. rotate is 0, 90, 180 or 270. Returns { placed, total, w, h, d }. Big builds go in over a moment.'],
+  ['schematics.list', '()', 'Names of the schematics you can paste.'],
+  ['schematics.info', '(name)', '{ name, w, h, d } for one schematic, or null.'],
   ['world.explode', '(x, y, z, power?)', 'Explosion that breaks blocks and hurts things. power 0.5-6.'],
   ['world.dropItem', '(x, y, z, item, count?)', 'Drop an item stack on the ground.'],
   ['world.getTime', '()', '0-24000 (0 sunrise, 6000 noon, 12000 sunset, 18000 midnight).'],
@@ -1325,7 +984,7 @@ export const API_DOCS: ApiDoc[] = [
   ['scheduler.cancel', '(id)', 'Stop a timer.'],
 
   // ---- dimensions ----
-  ['dimensions.create', '({ id, name, type, top, filler, base, liquid, sky, fog, light })', 'type: "flat" | "void" | "islands" | "caves". top/filler/base/liquid are block names. sky and fog are "#hex". light is 0-1. Creating the same id again updates it.'],
+  ['dimensions.create', '({ id, name, type, top, filler, base, liquid, sky, fog, light, height, amplitude, scale, waterLevel, trees, treeChance, ores, plants, plantChance, gravity, stars, clouds })', 'Make your own dimension. type: "flat" | "void" | "islands" | "caves" | "hills" | "mountains". top/filler/base/liquid are block names. sky and fog are "#hex"; light is 0-1. hills/mountains: height = ground level (4-50), amplitude = how tall the bumps are (0-40), scale = how wide (0.002-0.2, smaller is wider). waterLevel: liquid fills hollows up to this height. trees: "oak" | "birch" | "spruce" | "jungle" | "none", treeChance 0-0.2. ores: true adds coal/iron/gold/diamond. plants: block names dotted on the ground (plantChance 0-0.5). gravity: 1 normal, 0.2 moon-like, up to 3. stars/clouds: true shows them. Creating the same id again updates it.'],
   ['dimensions.travel', '(id, x?, z?)', 'Go to "overworld", "nether" or a dimension you created.'],
   ['dimensions.current', '()', 'Name of the current dimension.'],
   ['dimensions.list', '()', 'All dimension names.'],
@@ -1499,7 +1158,7 @@ Rules for blocks:
 HOW SCRIPTS RUN
 - Code runs inside an async function in a sandboxed Web Worker: top-level await works.
 - The ONLY way to affect the game is the global "game" object below, plus print(). Never use document, window, fetch, import, require, localStorage, eval.
-- Block and item names are lowercase with underscores ("stone", "iron_ore", "white_concrete", "diamond_sword"); modded ones look like "guns:ak47". Use only names from the BLOCK NAMES / ITEM NAMES lists in the request.
+- Block and item names are lowercase with underscores ("stone", "iron_ore", "white_concrete", "diamond_sword"); modded ones look like "wands:fire". Use only names from the BLOCK NAMES / ITEM NAMES lists in the request.
 - Limits: 32768 blocks per setBlocks/fill; 200 live projectiles; 80 mobs; 20 KB storage per script; 40 custom blocks; icons and textures are pixel art up to 64x64 (16x16, 32x32 or 64x64 are the usual sizes).
 - Single-player: there is exactly one player. Not available: custom windows, networking, other players, custom mob models, cancelling events, keybinds.
 

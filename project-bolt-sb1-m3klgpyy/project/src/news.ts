@@ -1,10 +1,28 @@
 // What's new. Add a new entry at the TOP of NEWS (and bump GAME_VERSION) with every update;
 // the News page in the sidebar shows this list, and a dot appears on it until the newest one has been read.
-export const GAME_VERSION = 20;
+export const GAME_VERSION = 21;
 
 export type NewsEntry = { version: number; date: string; title: string; changes: string[] };
 
 export const NEWS: NewsEntry[] = [
+  {
+    version: 21,
+    date: 'October 12, 2026',
+    title: 'Play together with no server, smarter bots & Jetpacks',
+    changes: [
+      'Multiplayer without a server: when you play one of your worlds (signed in), other players can join it straight from your game. No address to type: open worlds show up on the Servers page, and friends get a Join button in Social.',
+      'Choose who can join each world: Public, Accounts only, Friends only or Private. Pick it when you create the world, or change it any time in Esc > Manage Server (making it private sends everyone else home). Private worlds are hidden from everyone.',
+      'Social shows which world each friend is playing, updated every few seconds, with a Join button.',
+      'Bots play like people: they have player names (some with ranks) above their heads, bridge backwards crouching and looking down instead of speed-bridging forward, shoot their bow from range and W-tap in fights.',
+      'Bridge Duels bots come for you instead of rushing the goal. EggWars bots have jobs: fighters attack, builders wall in their egg with wool, upgraders farm their generator and buy better gear, defenders guard the egg.',
+      'Bridge Duels and EggWars maps have more detail: rock hanging under the islands with ore, arches over the goals, lamps, trees, flags, balconies and floating scenery.',
+      'Make your own dimensions with scripts: game.dimensions.create now has "hills" and "mountains" terrain, water levels, trees, flowers, ores, stars, clouds and gravity (try 0.25 for the Moon). See the "Moon and jungle dimensions" example.',
+      'Official mods are now Farmer\'s Delight, Magic Wands and the new Jetpacks (iron, gold and diamond; hold right-click to fly, burns Jet Fuel crafted from coal and redstone).',
+      'Admin panel: the owner can give or take away ranks (type a name, pick a rank). Announcements work again after running the new database update.',
+      'In the inventory, hover over an item and press 1-9 to put it in that hotbar slot (creative: any item from the list).',
+      'The Superflat card uses /images/superflat-bg.jpg when it is there, and a colour when it is not.',
+    ],
+  },
   {
     version: 20,
     date: 'October 11, 2026',
