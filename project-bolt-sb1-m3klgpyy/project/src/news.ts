@@ -1,10 +1,24 @@
 // What's new. Add a new entry at the TOP of NEWS (and bump GAME_VERSION) with every update;
 // the News page in the sidebar shows this list, and a dot appears on it until the newest one has been read.
-export const GAME_VERSION = 22;
+export const GAME_VERSION = 23;
 
 export type NewsEntry = { version: number; date: string; title: string; changes: string[] };
 
 export const NEWS: NewsEntry[] = [
+  {
+    version: 23,
+    date: 'October 13, 2026',
+    title: 'Block outline, a song playlist and small improvements',
+    changes: [
+      'The block you aim at now has a dark outline and a soft glow on the face you are looking at, and its name shows under the crosshair. The cracks grow over it while you hold the button, and the digging sound starts the moment you press.',
+      'Playlist: put your own songs in the public/music folder (song1.mp3 to song5.mp3) and pick Playlist in Settings > Audio. They play one after another on repeat, with a Next song button. "Now Playing" pops up whenever a new song starts.',
+      'The soundtrack you pick is remembered and starts again at your first click next time.',
+      'Press F2 in the game to save a screenshot.',
+      'A soft tick when you press buttons in the menus, and a tick when you change hotbar slot.',
+      'Settings > HUD has switches for the block outline, the block name, menu sounds and the Now Playing pop-up.',
+      'Music and sounds pause while an ad plays.',
+    ],
+  },
   {
     version: 22,
     date: 'October 12, 2026',

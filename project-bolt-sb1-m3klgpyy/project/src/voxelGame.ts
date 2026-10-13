@@ -7412,6 +7412,13 @@ export type GameHandle = {
   closeInventory: () => void;
   onPlayerHurt: (cb: (amount: number) => void) => void;
   setSfxVolume: (v: number) => void;
+  /** Quality of life: the outline on the block you aim at, and F2 screenshots (a PNG data URL). */
+  setBlockOutline: (on: boolean) => void;
+  takeScreenshot: () => Promise<string | null>;
+  /** The name of the block you are aiming at (empty when none or the outline is off). */
+  getTargetName: () => string;
+  /** How far the block being broken has got (0 to 1; 0 when nothing is being broken). */
+  getMiningFraction: () => number;
   summonMob: (kind: string, opts?: { baby?: boolean; color?: number }) => boolean;
   /** Sleeping: callback when you lie down / get up, a way to get up, and online mode (the server skips the night). */
   onSleep: (cb: ((s: { sleeping: boolean; completed: boolean }) => void) | null) => void;
@@ -8531,7 +8538,9 @@ export function createVoxelGame(
   }
 
   function setSelectedSlot(i: number) {
+    const was = selectedSlot;
     selectedSlot = Math.max(0, Math.min(8, i));
+    if (selectedSlot !== was && engaged()) playSfx('click', null); // a soft tick when you change slot
     syncHeld();
   }
 
@@ -15017,12 +15026,12 @@ export function createVoxelGame(
   crackCanvas.width = 16; crackCanvas.height = 16;
   const crackCtx = crackCanvas.getContext('2d')!;
   const crackTips: Array<[number, number, number]> = [];
-  for (let i = 0; i < 5; i++) crackTips.push([8, 8, (i / 5) * Math.PI * 2 + Math.random() * 0.6]);
+  for (let i = 0; i < 7; i++) crackTips.push([8, 8, (i / 7) * Math.PI * 2 + Math.random() * 0.6]);
   for (let stage = 0; stage < CRACK_STAGES; stage++) {
-    crackCtx.fillStyle = 'rgba(15,15,15,0.8)';
+    crackCtx.fillStyle = 'rgba(10,10,10,0.9)';
     if (stage % 3 === 2) crackTips.push([8, 8, Math.random() * Math.PI * 2]); // new branch from center
     for (const tip of crackTips) {
-      for (let step = 0; step < 2; step++) {
+      for (let step = 0; step < 3; step++) {
         tip[2] += (Math.random() - 0.5) * 0.9;
         tip[0] = Math.max(0, Math.min(15, tip[0] + Math.round(Math.cos(tip[2]))));
         tip[1] = Math.max(0, Math.min(15, tip[1] + Math.round(Math.sin(tip[2]))));
@@ -15055,6 +15064,54 @@ export function createVoxelGame(
   crackMesh.visible = false;
   crackMesh.frustumCulled = false;
   scene.add(crackMesh);
+
+  // --- The block you are aiming at: a dark outline and a faint glow on the face you are looking at (like Minecraft) ---
+  let outlineOn = true;
+  const outlineBox = new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.BoxGeometry(1.006, 1.006, 1.006)),
+    new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.8 }),
+  );
+  outlineBox.visible = false;
+  outlineBox.frustumCulled = false;
+  outlineBox.renderOrder = 5;
+  scene.add(outlineBox);
+  const faceGlow = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.0, 1.0),
+    new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.12, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }),
+  );
+  faceGlow.visible = false;
+  faceGlow.frustumCulled = false;
+  scene.add(faceGlow);
+  const faceNormal = new THREE.Vector3();
+  const faceZ = new THREE.Vector3(0, 0, 1);
+  let outlineTarget: { x: number; y: number; z: number; name: string } | null = null;
+  let miningFraction = 0; // how far the block you are breaking has got (0 to 1), for the cracks and for tests
+  function updateTargetOutline() {
+    const show = outlineOn && engaged() && !chatOpen && mode !== 'spectator' && !sleeping;
+    const hit = show ? raycastBlock() : null;
+    if (!hit) {
+      outlineBox.visible = false; faceGlow.visible = false; outlineTarget = null;
+      return;
+    }
+    outlineBox.position.set(hit.x + 0.5, hit.y + 0.5, hit.z + 0.5);
+    outlineBox.visible = true;
+    faceNormal.set(hit.placeX - hit.x, hit.placeY - hit.y, hit.placeZ - hit.z);
+    if (faceNormal.lengthSq() > 0.5 && faceNormal.lengthSq() < 1.5) {
+      faceGlow.position.set(hit.x + 0.5 + faceNormal.x * 0.504, hit.y + 0.5 + faceNormal.y * 0.504, hit.z + 0.5 + faceNormal.z * 0.504);
+      faceGlow.quaternion.setFromUnitVectors(faceZ, faceNormal);
+      (faceGlow.material as THREE.MeshBasicMaterial).opacity = isMining ? 0.24 : 0.12;
+      faceGlow.visible = true;
+    } else faceGlow.visible = false;
+    if (!outlineTarget || outlineTarget.x !== hit.x || outlineTarget.y !== hit.y || outlineTarget.z !== hit.z) {
+      const bt = world.getWorldBlock(hit.x, hit.y, hit.z);
+      outlineTarget = { x: hit.x, y: hit.y, z: hit.z, name: ITEM_INFO[bt]?.name ?? CUSTOM_BLOCKS.get(bt)?.name ?? '' };
+    }
+  }
+  // F2: save a picture of the game. The picture is taken right after the next frame is drawn.
+  let shotResolvers: Array<(url: string | null) => void> = [];
+  function takeScreenshot(): Promise<string | null> {
+    return new Promise((res) => { shotResolvers.push(res); });
+  }
 
   // --- Graphics quality (Low/Medium/High/Epic/Max) ---
   // Motion blur is done as a cheap frame-persistence trick — a translucent
@@ -15755,6 +15812,7 @@ export function createVoxelGame(
         if (fh && isItemFrame(world.getWorldBlock(fh.x, fh.y, fh.z)) && popFrameItem(fh.x, fh.y, fh.z)) return; // first hit takes the item out
       }
       isMining = true;
+      digSoundTimer = 0; // the scratchy dig sound starts right away
     } else if (e.button === 2) {
       e.preventDefault();
       const vill = mode !== 'spectator' ? mobInSight(4) : null;
@@ -16463,6 +16521,8 @@ export function createVoxelGame(
     updateCactus();
     updateRemotePlayers(delta);
 
+    updateTargetOutline();
+
     // --- Block breaking (mining) ---
     if (engaged() && isMining && (mode === 'survival' || mode === 'creative')) {
       const hit = raycastBlock();
@@ -16493,6 +16553,7 @@ export function createVoxelGame(
         // Keep swinging while mining
         if (punchPhase <= 0) punchPhase = PUNCH_DURATION;
 
+        miningFraction = breakTime > 0 && !unbreakable ? Math.min(1, miningProgress / breakTime) : 0;
         if (breakTime > 0 && !unbreakable) {
           const stage = Math.min(CRACK_STAGES - 1, Math.floor((miningProgress / breakTime) * CRACK_STAGES));
           if (crackMat.map !== crackTextures[stage]) {
@@ -16548,17 +16609,22 @@ export function createVoxelGame(
           }
           miningTarget = null;
           miningProgress = 0;
+          miningFraction = 0;
           crackMesh.visible = false;
         }
       } else {
         miningTarget = null;
         miningProgress = 0;
+        miningFraction = 0;
         crackMesh.visible = false;
       }
-    } else if (crackMesh.visible) {
-      miningTarget = null;
-      miningProgress = 0;
-      crackMesh.visible = false;
+    } else {
+      miningFraction = 0;
+      if (crackMesh.visible) {
+        miningTarget = null;
+        miningProgress = 0;
+        crackMesh.visible = false;
+      }
     }
 
     // Dynamic chunk loading
@@ -16634,6 +16700,12 @@ export function createVoxelGame(
     // already-drawn world in the color buffer instead of wiping it black
     if (perspective === 0) renderer.render(camera, camera);
     camera.position.copy(bobSaved); // undo the bob so gameplay never sees it
+    if (shotResolvers.length) {
+      let url: string | null = null;
+      try { url = renderer.domElement.toDataURL('image/png'); } catch { url = null; }
+      const list = shotResolvers; shotResolvers = [];
+      for (const r of list) r(url);
+    }
   }
 
   animate();
@@ -16746,6 +16818,8 @@ export function createVoxelGame(
     armBackTex.dispose();
     fistTex.dispose();
 
+    scene.remove(outlineBox); outlineBox.geometry.dispose(); (outlineBox.material as THREE.Material).dispose();
+    scene.remove(faceGlow); faceGlow.geometry.dispose(); (faceGlow.material as THREE.Material).dispose();
     // Dispose crack overlay
     scene.remove(crackMesh);
     crackMesh.geometry.dispose();
@@ -17100,6 +17174,10 @@ export function createVoxelGame(
     closeInventory,
     onPlayerHurt: (cb: (amount: number) => void) => { hurtCallback = cb; },
     setSfxVolume,
+    setBlockOutline: (on: boolean) => { outlineOn = on; if (!on) { outlineBox.visible = false; faceGlow.visible = false; } },
+    takeScreenshot,
+    getMiningFraction: () => miningFraction,
+    getTargetName: () => (outlineBox.visible && outlineTarget ? outlineTarget.name : ''),
     summonMob,
     onSleep: (cb) => { sleepCallback = cb; },
     leaveBed: () => wakeUp(false),

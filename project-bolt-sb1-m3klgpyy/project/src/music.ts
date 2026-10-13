@@ -5,6 +5,8 @@
 // The classical pieces are old public-domain works (Bach, Pachelbel, Satie, Beethoven), written out in simplified form.
 
 export type SoundtrackStyle = 'overworld' | 'phonk' | 'arcade' | 'classical';
+/** The built-in styles, or the playlist of real song files in public/music (see playlist.ts). */
+export type AnySoundtrack = SoundtrackStyle | 'playlist';
 export const SOUNDTRACKS: Array<{ value: SoundtrackStyle; label: string }> = [
   { value: 'overworld', label: 'Overworld' },
   { value: 'classical', label: 'Classical' },
@@ -272,6 +274,8 @@ const nowListeners = new Set<() => void>();
 export const getNowPlaying = () => nowName;
 export function subscribeNowPlaying(f: () => void): () => void { nowListeners.add(f); return () => { nowListeners.delete(f); }; }
 function setNow(n: string | null) { if (n !== nowName) { nowName = n; nowListeners.forEach((f) => f()); } }
+/** The playlist of real song files reports what is playing through here too. */
+export const setNowPlayingName = setNow;
 
 // ---------------- the player ----------------
 const hz = (m: number) => 440 * Math.pow(2, (m - 69) / 12);

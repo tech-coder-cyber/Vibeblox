@@ -30,7 +30,10 @@ import { loadLibrary, validateSchematic, nameKey, type Schematic } from './schem
 import SchematicsPage, { SchematicUpload } from './SchematicsPage';
 import PrivateServers from './PrivateServersPanel';
 import VideoOptions from './VideoOptions';
-import { MusicPlayer, SOUNDTRACKS, subscribeNowPlaying, getNowPlaying, type SoundtrackStyle } from './music';
+import { MusicPlayer, SOUNDTRACKS, subscribeNowPlaying, getNowPlaying, type SoundtrackStyle, type AnySoundtrack } from './music';
+import { playlist } from './playlist';
+import { NowPlayingToast, LookingAtLabel, QolSettings, PlaylistNote, saveScreenshot } from './QolBits';
+import { installUiSounds, setUiSoundVolume, getQol, subscribeQol } from './qol';
 import SideNav from './SideNav';
 import { AccountTab, AccountSummaryContext } from './AccountPanel';
 import { subscribeVideo, getVideo } from './videoPrefs';
@@ -1329,11 +1332,11 @@ function SettingsView({
   fov: number;
   onFovChange: (fov: number) => void;
   trackName: string | null;
-  builtInTrack: SoundtrackStyle | null;
+  builtInTrack: AnySoundtrack | null;
   isPlaying: boolean;
   volume: number;
   onTrackChange: (e: ChangeEvent<HTMLInputElement>) => void;
-  onPlayBuiltIn: (style: SoundtrackStyle) => void;
+  onPlayBuiltIn: (style: AnySoundtrack) => void;
   onTogglePlay: () => void;
   onVolumeChange: (e: ChangeEvent<HTMLInputElement>) => void;
   graphicsQuality: GraphicsQuality;
@@ -1350,7 +1353,7 @@ function SettingsView({
   const [tab, setTab] = useState<'video' | 'audio' | 'controls' | 'hud' | 'language' | 'account' | 'about'>('video');
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [showCredits, setShowCredits] = useState(false);
-  const builtInTracks = SOUNDTRACKS;
+  const builtInTracks: Array<{ value: AnySoundtrack; label: string }> = [...SOUNDTRACKS, { value: 'playlist', label: 'Playlist' }];
   const nowPlaying = useSyncExternalStore(subscribeNowPlaying, getNowPlaying, getNowPlaying);
   const graphicsTiers: { value: GraphicsQuality; label: string; blurb: string }[] = [
     { value: 'low', label: t('gfx.low'), blurb: t('gfx.lowDesc') },
@@ -1558,6 +1561,7 @@ function SettingsView({
             );
           })}
         </div>
+        <QolSettings />
       </section>}
 
       {tab === 'audio' && <>
@@ -1568,7 +1572,7 @@ function SettingsView({
         </div>
         <p className="text-[#5a6b80] text-xs mb-4">Pick a soundtrack (a playlist of several tracks that play one after another), or upload your own. It keeps playing while you browse or play.</p>
 
-        <div className="grid grid-cols-4 gap-2 mb-4" data-testid="soundtracks">
+        <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 mb-4" data-testid="soundtracks">
           {builtInTracks.map((t) => {
             const active = builtInTrack === t.value;
             return (
@@ -1596,6 +1600,8 @@ function SettingsView({
             {trackName ?? (builtInTrack ? `${builtInTracks.find((t) => t.value === builtInTrack)?.label}${nowPlaying ? ': ' + nowPlaying : ''}` : 'No track selected')}
           </span>
         </div>
+
+        {builtInTrack === 'playlist' && <PlaylistNote />}
 
         {(trackName || builtInTrack) && (
           <div className="flex items-center gap-4">
@@ -1970,11 +1976,11 @@ function MainContent({
   netStatus: NetStatus;
   netError: string | null;
   trackName: string | null;
-  builtInTrack: SoundtrackStyle | null;
+  builtInTrack: AnySoundtrack | null;
   isPlaying: boolean;
   volume: number;
   onTrackChange: (e: ChangeEvent<HTMLInputElement>) => void;
-  onPlayBuiltIn: (style: SoundtrackStyle) => void;
+  onPlayBuiltIn: (style: AnySoundtrack) => void;
   onTogglePlay: () => void;
   onVolumeChange: (e: ChangeEvent<HTMLInputElement>) => void;
   graphicsQuality: GraphicsQuality;
@@ -5281,16 +5287,20 @@ export default function App() {
   useEffect(() => { setGameplayActive(gameMode === 'playing' && !menuOpen && deathReason === null); }, [gameMode, menuOpen, deathReason]);
   // Mute everything while an ad plays
   useEffect(() => {
-    let musicWasPlaying = false;
+    let musicWasPlaying = false, synthWasPlaying = false, listWasPlaying = false;
     const onAd = (e: Event) => {
       const playing = (e as CustomEvent<boolean>).detail;
       const h = gameHandleRef.current;
       if (playing) {
+        synthWasPlaying = !!musicRef.current?.playing; musicRef.current?.pause();
+        listWasPlaying = playlist.playing; playlist.pause();
         h?.setSfxVolume(0);
         musicWasPlaying = !!audioRef.current && !audioRef.current.paused;
         audioRef.current?.pause();
       } else {
         h?.setSfxVolume(sfxVolume);
+        if (synthWasPlaying) musicRef.current?.resume();
+        if (listWasPlaying) playlist.resume();
         if (musicWasPlaying) void audioRef.current?.play().catch(() => {});
       }
     };
@@ -5311,7 +5321,7 @@ export default function App() {
   // and continues even while actually playing the game, since this <audio>
   // element itself never unmounts.
   const [trackName, setTrackName] = useState<string | null>(null);
-  const [builtInTrack, setBuiltInTrack] = useState<SoundtrackStyle | null>(null);
+  const [builtInTrack, setBuiltInTrack] = useState<AnySoundtrack | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [volume, setVolume] = useState(savedSettings.volume ?? 0.5);
 
@@ -5329,6 +5339,7 @@ export default function App() {
     return () => {
       if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
       musicRef.current?.stop();
+      playlist.stop();
       audioCtxRef.current?.close();
     };
   }, []);
@@ -5347,11 +5358,23 @@ export default function App() {
   function stopBuiltInSource() { musicRef.current?.stop(); }
 
   /** Starts a soundtrack: a playlist of several tracks that follow one another. */
-  function playBuiltInTrack(style: SoundtrackStyle) {
+  function rememberSoundtrack(v: string) { try { localStorage.setItem('vb-soundtrack', v); } catch { /* storage blocked */ } }
+  function playBuiltInTrack(style: AnySoundtrack) {
     audioRef.current?.pause(); // stop any uploaded file first
+    rememberSoundtrack(style);
+    if (style === 'playlist') {
+      // real song files from public/music (song1.mp3 ... song5.mp3)
+      musicRef.current?.stop();
+      playlist.start(volume);
+      setTrackName(null);
+      setBuiltInTrack('playlist');
+      setIsPlaying(true);
+      return;
+    }
+    playlist.stop();
     const m = getMusic();
     m.setVolume(volume);
-    m.start(style);
+    m.start(style as SoundtrackStyle);
     setTrackName(null);
     setBuiltInTrack(style);
     setIsPlaying(true);
@@ -5361,6 +5384,8 @@ export default function App() {
     const file = e.target.files?.[0];
     if (!file) return;
     stopBuiltInSource();
+    playlist.stop();
+    rememberSoundtrack('');
     setBuiltInTrack(null);
     if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
     const url = URL.createObjectURL(file);
@@ -5375,10 +5400,17 @@ export default function App() {
   }
 
   function togglePlay() {
+    if (builtInTrack === 'playlist') {
+      if (isPlaying) playlist.pause(); else playlist.resume();
+      rememberSoundtrack(isPlaying ? '' : 'playlist');
+      setIsPlaying((p) => !p);
+      return;
+    }
     if (builtInTrack) {
       const m = musicRef.current;
       if (!m) return;
       if (isPlaying) m.pause(); else m.resume();
+      rememberSoundtrack(isPlaying ? '' : builtInTrack);
       setIsPlaying((p) => !p);
       return;
     }
@@ -5396,7 +5428,21 @@ export default function App() {
     setVolume(v);
     if (audioRef.current) audioRef.current.volume = v;
     musicRef.current?.setVolume(v);
+    playlist.setVolume(v);
   }
+
+  // The soundtrack you picked last time starts again at your first click or key press (browsers don't allow sound before that)
+  useEffect(() => {
+    let saved = '';
+    try { saved = localStorage.getItem('vb-soundtrack') ?? ''; } catch { /* storage blocked */ }
+    if (!saved || !(saved === 'playlist' || SOUNDTRACKS.some((t) => t.value === saved))) return;
+    const go = () => { cleanup(); playBuiltInTrack(saved as AnySoundtrack); };
+    const cleanup = () => { removeEventListener('pointerdown', go, true); removeEventListener('keydown', go, true); };
+    addEventListener('pointerdown', go, true);
+    addEventListener('keydown', go, true);
+    return cleanup;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     const saved = getInitialUsername();
@@ -5683,6 +5729,7 @@ export default function App() {
         }
         pushMessage(`Connected as ${welcome.name}. ${welcome.players.length} other player${welcome.players.length === 1 ? '' : 's'} online.`, '#ffe066');
       }
+      handle.setBlockOutline(getQol().outline);
       handle.onHint((text) => {
         setHint(text);
         window.clearTimeout(hintTimerRef.current);
@@ -5761,7 +5808,12 @@ export default function App() {
 
   useEffect(() => {
     gameHandleRef.current?.setSfxVolume(sfxVolume);
+    setUiSoundVolume(sfxVolume);
   }, [sfxVolume]);
+
+  // Quality of life: a soft tick on menu buttons, and the block outline follows its switch in Settings
+  useEffect(() => installUiSounds(), []);
+  useEffect(() => subscribeQol(() => gameHandleRef.current?.setBlockOutline(getQol().outline)), []);
 
   // Tell the engine which hotbar slot is selected (it holds the real inventory)
   useEffect(() => {
@@ -5786,6 +5838,17 @@ export default function App() {
         setShowDebug((v) => !v);
         return;
       }
+      if (e.code === 'F2') {
+        e.preventDefault();
+        void gameHandleRef.current?.takeScreenshot().then((url) => {
+          if (!url) return;
+          saveScreenshot(url);
+          setHint('Screenshot saved');
+          window.clearTimeout(hintTimerRef.current);
+          hintTimerRef.current = window.setTimeout(() => setHint(null), 1800);
+        });
+        return;
+      }
       if (e.code === 'KeyL') { if (advAllowedRef.current) openGameMenu('advancements'); return; }
       if (e.code === 'Enter' || e.code === 'KeyT' || e.key === '/') {
         e.preventDefault(); // so the key doesn't get typed into the new chat box
@@ -5800,7 +5863,7 @@ export default function App() {
   useEffect(() => {
     if (gameMode !== 'playing') return;
     const block = (e: KeyboardEvent) => {
-      if (e.code === 'F1' || e.code === 'F3' || e.code === 'F5' || (e.code === 'Tab' && !chatOpenRef.current)) e.preventDefault();
+      if (e.code === 'F1' || e.code === 'F2' || e.code === 'F3' || e.code === 'F5' || (e.code === 'Tab' && !chatOpenRef.current)) e.preventDefault();
     };
     window.addEventListener('keydown', block, true);
     return () => window.removeEventListener('keydown', block, true);
@@ -7836,6 +7899,8 @@ export default function App() {
         {!showMenu && hint && (
           <div className="absolute bottom-36 left-1/2 -translate-x-1/2 z-20 px-3 py-1.5 rounded-md bg-black/60 text-white text-sm pointer-events-none vb-fade-in">{hint}</div>
         )}
+        {!showMenu && <NowPlayingToast />}
+        {!showMenu && <LookingAtLabel getName={() => gameHandleRef.current?.getTargetName() ?? ''} paused={chatOpen || helpOpen || inventoryOpen} />}
         {!showMenu && showPlayerList && netStatus === 'online' && <PlayerList players={onlinePlayers} myId={myNetIdRef.current} max={serverMax} tagOf={tagsFor} />}
         {!showMenu && disconnectReason !== null && <DisconnectedScreen reason={disconnectReason} onExit={leaveDisconnected} />}
         {!showMenu && deathReason !== null && (
