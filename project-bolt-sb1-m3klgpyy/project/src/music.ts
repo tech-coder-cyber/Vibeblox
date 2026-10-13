@@ -5,8 +5,8 @@
 // The classical pieces are old public-domain works (Bach, Pachelbel, Satie, Beethoven), written out in simplified form.
 
 export type SoundtrackStyle = 'overworld' | 'phonk' | 'arcade' | 'classical';
-/** The built-in styles, or the playlist of real song files in public/music (see playlist.ts). */
-export type AnySoundtrack = SoundtrackStyle | 'playlist';
+/** (kept for the settings screen) */
+export type AnySoundtrack = SoundtrackStyle;
 export const SOUNDTRACKS: Array<{ value: SoundtrackStyle; label: string }> = [
   { value: 'overworld', label: 'Overworld' },
   { value: 'classical', label: 'Classical' },

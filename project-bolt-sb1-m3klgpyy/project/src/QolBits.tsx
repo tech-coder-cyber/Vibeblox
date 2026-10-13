@@ -91,15 +91,15 @@ export function saveScreenshot(url: string) {
   a.remove();
 }
 
-/** Under the soundtrack buttons while the Playlist is chosen: skip to the next song, or what to do when no song files were found. */
-export function PlaylistNote() {
+/** Under the soundtrack buttons while a soundtrack with song files is chosen: skip to the next song, or say that the built-in music plays until the files are added. */
+export function PlaylistNote({ style }: { style: string }) {
   const status = useSyncExternalStore(subscribePlaylistStatus, getPlaylistStatus, getPlaylistStatus);
   return (
     <div className="mb-4 flex items-center gap-3" data-testid="playlist-note">
-      <button onClick={() => playlist.next()} disabled={status === 'empty'} data-testid="playlist-next"
+      <button onClick={() => playlist.next()} disabled={status !== 'playing'} data-testid="playlist-next"
         className="px-4 py-2 rounded-xl bg-[#0a0e14] border border-[#243044] text-white text-sm font-medium transition-all hover:border-[#00e676] hover:text-[#00e676] disabled:opacity-40">Next song ⏭</button>
       <span className="text-xs text-[#5a6b80]" data-testid="playlist-status">
-        {status === 'empty' ? 'No song files found yet. Put song1.mp3 to song5.mp3 in the public/music folder.' : status === 'loading' ? 'Loading…' : 'Plays song1 to song5 from the public/music folder, in order, on repeat.'}
+        {status === 'empty' ? `No song files in public/music/${style} yet, so the built-in music plays.` : status === 'loading' ? 'Loading…' : 'Playing the songs one after another, on repeat.'}
       </span>
     </div>
   );

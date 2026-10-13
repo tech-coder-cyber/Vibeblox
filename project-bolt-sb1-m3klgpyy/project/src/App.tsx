@@ -31,7 +31,7 @@ import SchematicsPage, { SchematicUpload } from './SchematicsPage';
 import PrivateServers from './PrivateServersPanel';
 import VideoOptions from './VideoOptions';
 import { MusicPlayer, SOUNDTRACKS, subscribeNowPlaying, getNowPlaying, type SoundtrackStyle, type AnySoundtrack } from './music';
-import { playlist } from './playlist';
+import { playlist, isFileStyle } from './playlist';
 import { NowPlayingToast, LookingAtLabel, QolSettings, PlaylistNote, saveScreenshot } from './QolBits';
 import { installUiSounds, setUiSoundVolume, getQol, subscribeQol } from './qol';
 import SideNav from './SideNav';
@@ -1353,7 +1353,7 @@ function SettingsView({
   const [tab, setTab] = useState<'video' | 'audio' | 'controls' | 'hud' | 'language' | 'account' | 'about'>('video');
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [showCredits, setShowCredits] = useState(false);
-  const builtInTracks: Array<{ value: AnySoundtrack; label: string }> = [...SOUNDTRACKS, { value: 'playlist', label: 'Playlist' }];
+  const builtInTracks: Array<{ value: AnySoundtrack; label: string }> = SOUNDTRACKS;
   const nowPlaying = useSyncExternalStore(subscribeNowPlaying, getNowPlaying, getNowPlaying);
   const graphicsTiers: { value: GraphicsQuality; label: string; blurb: string }[] = [
     { value: 'low', label: t('gfx.low'), blurb: t('gfx.lowDesc') },
@@ -1572,9 +1572,18 @@ function SettingsView({
         </div>
         <p className="text-[#5a6b80] text-xs mb-4">Pick a soundtrack (a playlist of several tracks that play one after another), or upload your own. It keeps playing while you browse or play.</p>
 
-        <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 mb-4" data-testid="soundtracks">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4" data-testid="soundtracks">
           {builtInTracks.map((t) => {
             const active = builtInTrack === t.value;
+            if (t.value === 'arcade') {
+              return (
+                <button key={t.value} disabled data-testid="soundtrack-arcade" title="Arcade music is coming soon"
+                  className="py-2 rounded-xl border border-[#243044] bg-[#0a0e14] text-[#5a6b80] text-sm font-medium cursor-not-allowed flex flex-col items-center leading-tight">
+                  {t.label}
+                  <span className="text-[10px] font-bold tracking-wider text-[#ffd23a]">COMING SOON</span>
+                </button>
+              );
+            }
             return (
               <button
                 key={t.value}
@@ -1601,7 +1610,7 @@ function SettingsView({
           </span>
         </div>
 
-        {builtInTrack === 'playlist' && <PlaylistNote />}
+        {builtInTrack && isFileStyle(builtInTrack) && <PlaylistNote style={builtInTrack} />}
 
         {(trackName || builtInTrack) && (
           <div className="flex items-center gap-4">
@@ -5362,12 +5371,12 @@ export default function App() {
   function playBuiltInTrack(style: AnySoundtrack) {
     audioRef.current?.pause(); // stop any uploaded file first
     rememberSoundtrack(style);
-    if (style === 'playlist') {
-      // real song files from public/music (song1.mp3 ... song5.mp3)
+    if (isFileStyle(style)) {
+      // real song files from public/music/<soundtrack>/ ; with no files yet, the built-in music of that soundtrack plays
       musicRef.current?.stop();
-      playlist.start(volume);
+      playlist.start(style, volume, () => { const m = getMusic(); m.setVolume(volume); m.start(style); });
       setTrackName(null);
-      setBuiltInTrack('playlist');
+      setBuiltInTrack(style);
       setIsPlaying(true);
       return;
     }
@@ -5400,9 +5409,9 @@ export default function App() {
   }
 
   function togglePlay() {
-    if (builtInTrack === 'playlist') {
+    if (builtInTrack && playlist.current) {
       if (isPlaying) playlist.pause(); else playlist.resume();
-      rememberSoundtrack(isPlaying ? '' : 'playlist');
+      rememberSoundtrack(isPlaying ? '' : builtInTrack);
       setIsPlaying((p) => !p);
       return;
     }
@@ -5435,7 +5444,7 @@ export default function App() {
   useEffect(() => {
     let saved = '';
     try { saved = localStorage.getItem('vb-soundtrack') ?? ''; } catch { /* storage blocked */ }
-    if (!saved || !(saved === 'playlist' || SOUNDTRACKS.some((t) => t.value === saved))) return;
+    if (!saved || !SOUNDTRACKS.some((t) => t.value === saved && t.value !== 'arcade')) return;
     const go = () => { cleanup(); playBuiltInTrack(saved as AnySoundtrack); };
     const cleanup = () => { removeEventListener('pointerdown', go, true); removeEventListener('keydown', go, true); };
     addEventListener('pointerdown', go, true);
