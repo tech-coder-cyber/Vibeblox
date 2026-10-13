@@ -1,10 +1,22 @@
 // What's new. Add a new entry at the TOP of NEWS (and bump GAME_VERSION) with every update;
 // the News page in the sidebar shows this list, and a dot appears on it until the newest one has been read.
-export const GAME_VERSION = 21;
+export const GAME_VERSION = 22;
 
 export type NewsEntry = { version: number; date: string; title: string; changes: string[] };
 
 export const NEWS: NewsEntry[] = [
+  {
+    version: 22,
+    date: 'October 12, 2026',
+    title: 'Play on your phone, and a tutorial for new players',
+    changes: [
+      'Phones and tablets: a joystick to walk (push it all the way to sprint), drag on the right to look, tap to place or use, hold your finger still to break blocks. Buttons for jump (double-tap to fly in creative), sneak, hit, use, your bag, drop, chat and the menu. Tap a hotbar slot to hold it.',
+      'Touch controls turn on by themselves when there is no mouse. Force them on or off in Settings > Controls.',
+      'New players get a short tutorial the first time they play: looking, walking, jumping, breaking and placing blocks, the hotbar, the inventory, chat and the menu. Each step finishes when you do it. Skip it any time (K on a computer). Settings > Controls can show it again.',
+      'The game menu and the sign-in screen fit on short phone screens.',
+      'The owner account is now Master.',
+    ],
+  },
   {
     version: 21,
     date: 'October 12, 2026',

@@ -87,8 +87,8 @@ export default function LoginOverlay({ onGuest, onClose, onSignedIn }: LoginOver
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-md">
-      <div className="relative w-full max-w-md mx-4 bg-[#121822] rounded-2xl border border-[#243044] shadow-2xl overflow-hidden">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-md overflow-y-auto py-4">
+      <div className="relative w-full max-w-md mx-4 my-auto bg-[#121822] rounded-2xl border border-[#243044] shadow-2xl overflow-hidden">
         {onClose && (
           <button onClick={onClose} aria-label="Close" className="absolute right-3 top-3 w-8 h-8 rounded-lg flex items-center justify-center text-[#5a6b80] hover:text-white hover:bg-[#1a2230]">
             <X className="w-4 h-4" />

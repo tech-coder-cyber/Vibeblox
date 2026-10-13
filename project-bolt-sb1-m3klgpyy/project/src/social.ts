@@ -109,8 +109,8 @@ export async function fetchPlayingCounts(): Promise<Record<string, number> | nul
 
 // ---------------- Names ----------------
 export const USERNAME_RE = /^[A-Za-z0-9_]{3,16}$/;
-/** The account named "Master_at_Pvp" is the owner of VibeBlox (always an admin; the name is reserved in supabase_social.sql). */
-export const OWNER_NAME = 'Master_at_Pvp';
+/** The account named "Master" is the owner of VibeBlox (always an admin; the name is reserved in supabase_social.sql). */
+export const OWNER_NAME = 'Master';
 /** Plays you need to become a Rising Creator. */
 export const RISING_CREATOR_PLAYS = 1000;
 /** You can change your username once every 7 days. */

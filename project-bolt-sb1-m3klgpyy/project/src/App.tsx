@@ -11,7 +11,7 @@ import { parseModCode } from '@/modBuilderLogic';
 import { readRank, worldLimit, WORLD_LIMITS, RANK_NAMES, effectiveRank, playerCap, scriptBudgetMs, canUploadSkin, SCRIPT_BUDGET_MS, creatorTier, CREATOR_PLAYS, CREATOR_NAMES, PLAYER_CAP, adsAllowedFor, badgeTags, type RankId, type CreatorTier } from '@/ranks';
 import { GAME_VERSION, NEWS } from '@/news';
 import { t, useLanguage, setLanguage, LANGUAGES, type LangCode } from '@/i18n';
-import { useKeybinds, rebind, resetBinds, keyLabel, KEY_ACTIONS, setCapturingKey, isCapturingKey } from '@/keybinds';
+import { useKeybinds, rebind, resetBinds, keyLabel, KEY_ACTIONS, setCapturingKey, isCapturingKey, getBinds } from '@/keybinds';
 import type { OneBlockView, KeyAction } from '@/voxelGame';
 import { ITEM_IRON_INGOT, ITEM_GOLD_INGOT, ITEM_DIAMOND, ITEM_ENDER_PEARL, ITEM_IRON_SWORD, ITEM_IRON_PICKAXE, ITEM_BOW, BLOCK_TNT, BLOCK_GLASS, armorId } from '@/voxelGame';
 import { createVoxelGame, type GameWorldMode, type GraphicsQuality, type Recipe, type PlayMode, type DebugInfo, type WorldType, type Slots, type ItemStack, type SaveData, type WeatherKind, EXPERIMENTAL_IDS, experimentalEnabled, isWater, isLava, BLOCK_WATER, BLOCK_LAVA, BLOCK_GRASS, BLOCK_DIRT, BLOCK_STONE, ARMOR, ARMOR_PIECES, CUSTOM_ITEMS, CUSTOM_BLOCKS, customIdForKey, registerCustomItem, registerCustomBlock, createPlayerPreview, drawLookPreview, getTexturePreviews, setTextureResolution, type TextureRes, type DimensionSpec, type TextureSpec, maxStack, addToSlots, countInSlots, emptySlots, INVENTORY_SIZE, ITEM_INFO, RECIPES, getItemIconURL, matchRecipe, SMELTING, FUEL_SECONDS, isBlockId, type Trade, type Difficulty, ITEM_WAND, CHUNK_SIZE, CHUNK_HEIGHT, isPotionItem, isBrewIngredient, ITEM_BLAZE_POWDER, potionName, ITEM_NAME_TAG } from '@/voxelGame';
@@ -41,6 +41,8 @@ import LoginOverlay from './LoginOverlay';
 import SocialView from './SocialView';
 import AdminPanel, { type PanelPlayer } from './AdminPanel';
 import { useAccount } from './useAccount';
+import TouchControls, { RotateHint, touchEnabled, loadTouchPref, saveTouchPref, lockViewportForTouch, type TouchPref } from './TouchControls';
+import Tutorial, { tutorialDone } from './Tutorial';
 import { addFriend, unfriendByName, loadFriends, sendDM, startPolling, isGuestName, reportActivity, fetchPlayingCounts, fetchLeaderboard, fetchStanding, recordPlay, setServerPresence, isOwnerName, listHostedWorlds, publishHostedWorld, unpublishHostedWorld, verifyToken, isFriendOf, isBannedName, isAdminToken, type DM, type Activity, type Friend, type LeaderRow, type Standing, type HostedWorld } from './social';
 
 // Multiplayer is optional: Vite only includes src/multiplayer.ts if the file
@@ -1294,6 +1296,7 @@ function ControlsPanel() {
         ))}
       </div>
       {note && <p data-testid="bind-note" className="text-[#ffb347] text-xs mt-3">{note}</p>}
+      <TouchSetting />
     </section>
   );
 }
@@ -2028,6 +2031,26 @@ function MainContent({
   );
 }
 
+/** Settings > Controls: on-screen touch controls (Auto turns them on for phones and tablets). */
+function TouchSetting() {
+  const [pref, setPref] = useState<TouchPref>(loadTouchPref);
+  const pick = (v: TouchPref) => { setPref(v); saveTouchPref(v); window.dispatchEvent(new CustomEvent('vb-touch', { detail: v })); };
+  return (
+    <div className="mt-5" data-testid="touch-setting">
+      <p className="text-white text-sm font-medium">Touch controls</p>
+      <p className="text-[#5a6b80] text-xs mt-0.5 mb-2">A joystick and buttons on screen, for phones and tablets. Auto turns them on when there's no mouse.</p>
+      <div className="grid grid-cols-3 gap-2">
+        {(['auto', 'on', 'off'] as TouchPref[]).map((v) => (
+          <button key={v} onClick={() => pick(v)} data-testid={`touch-${v}`}
+            className={`py-2 rounded-xl text-xs font-bold capitalize ${pref === v ? 'bg-[#00e676] text-[#0a0e14]' : 'bg-[#0a0e14] border border-[#243044] text-[#8ea0b8] hover:text-white'}`}>{v}</button>
+        ))}
+      </div>
+      <button onClick={() => { try { localStorage.removeItem('vb-tutorial-done'); } catch { /* blocked */ } window.dispatchEvent(new CustomEvent('vb-tutorial-reset')); }} data-testid="tutorial-again"
+        className="mt-3 text-[#00e676] text-xs hover:underline">Show the tutorial again next time I play</button>
+    </div>
+  );
+}
+
 /** Your rank, whether you are a Rising Creator, and your plays: provided by App, read by the shop and the panels. */
 const StandingContext = createContext<{ rank: RankId; rising: boolean; tier: CreatorTier; isOwner: boolean; standing: Standing | null; signedIn: boolean }>({ rank: 'none', rising: false, tier: 'none', isOwner: false, standing: null, signedIn: false });
 
@@ -2208,7 +2231,9 @@ function ItemIcon({ id, className = 'w-7 h-7' }: { id: number; className?: strin
   );
 }
 
-function GameHUD({ inventory, offhand, armor, health, hunger, selectedSlot, mode, xp, air = 10, blighted = false }: {
+function GameHUD({ inventory, offhand, armor, health, hunger, selectedSlot, mode, xp, air = 10, blighted = false, onPick }: {
+  /** touch screens: tap a hotbar slot to hold it */
+  onPick?: (slot: number) => void;
   xp: { level: number; progress: number };
   /** Breath bubbles (0-10), shown only when some are used up. */
   air?: number;
@@ -2241,7 +2266,7 @@ function GameHUD({ inventory, offhand, armor, health, hunger, selectedSlot, mode
   if (mode === 'spectator') return null; // spectators get no hotbar, like Minecraft
 
   return (
-    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-1.5 pointer-events-none">
+    <div className={`absolute bottom-4 left-1/2 -translate-x-1/2 ${onPick ? 'z-[27]' : 'z-20'} flex flex-col items-center gap-1.5 pointer-events-none`}>
       <div
         className={`text-white text-sm font-bold h-5 transition-opacity duration-500 drop-shadow-[0_2px_0_rgba(0,0,0,0.8)] ${
           nameVisible ? 'opacity-100' : 'opacity-0'
@@ -2321,7 +2346,8 @@ function GameHUD({ inventory, offhand, armor, health, hunger, selectedSlot, mode
             <div
               key={i}
               data-testid="hotbar-slot" data-selected={isSelected ? 'true' : 'false'}
-              className={`w-11 h-11 flex items-center justify-center relative transition-all duration-150 ${
+              onPointerDown={onPick ? (e) => { e.preventDefault(); onPick(i); } : undefined}
+              className={`${onPick ? 'pointer-events-auto ' : ''}w-11 h-11 flex items-center justify-center relative transition-all duration-150 ${
                 isSelected ? 'bg-[#5a5a5a] border-2 border-white scale-110' : 'bg-[#8b8b8b] border-2 border-[#3d3d3d]'
               }`}
               style={{ boxShadow: isSelected ? '0 0 0 1px rgba(255,255,255,0.6)' : 'inset -2px -2px 0 rgba(0,0,0,0.25), inset 2px 2px 0 rgba(255,255,255,0.15)' }}
@@ -4200,7 +4226,7 @@ function MenuButton({ color, label, icon: Icon, onClick, soon = false, disabled 
     <button
       onClick={soon || disabled ? undefined : onClick}
       disabled={soon || disabled}
-      className={`relative w-full py-3 border-2 ${MENU_COLORS[color]} text-white font-[var(--font-retro)] text-xs tracking-wide flex items-center justify-center gap-2 transition-all duration-150 ${
+      className={`relative w-full py-3 [@media(max-height:500px)]:py-1.5 border-2 ${MENU_COLORS[color]} text-white font-[var(--font-retro)] text-xs tracking-wide flex items-center justify-center gap-2 transition-all duration-150 ${
         soon || disabled ? 'opacity-60 cursor-not-allowed' : 'hover:brightness-125 hover:scale-[1.02] active:scale-[0.98]'
       }`}
       style={{ boxShadow: 'inset 0 -3px 0 rgba(0,0,0,0.25)' }}
@@ -4303,10 +4329,10 @@ function GameMenu({ page, onResume, onOpenSettings, onOpenScripts, onOpenMods, o
 }) {
   useLanguage();
   return (
-    <div data-testid="game-menu" className="absolute inset-0 z-40 bg-black/55 flex items-center justify-center vb-fade-in" onContextMenu={(e) => e.preventDefault()}>
+    <div data-testid="game-menu" className="absolute inset-0 z-40 bg-black/55 flex items-center justify-center overflow-y-auto py-4 vb-fade-in" onContextMenu={(e) => e.preventDefault()}>
       {page === 'main' ? (
-        <div className="w-[400px] max-w-[90vw] flex flex-col gap-2.5">
-          <h2 className="font-[var(--font-retro)] text-white text-2xl text-center mb-4 drop-shadow-[0_3px_0_rgba(0,0,0,0.6)]">{t('menu.title')}</h2>
+        <div className="w-[400px] max-w-[90vw] flex flex-col gap-2.5 [@media(max-height:500px)]:gap-1.5 my-auto">
+          <h2 className="font-[var(--font-retro)] text-white text-2xl text-center mb-4 [@media(max-height:500px)]:mb-1 [@media(max-height:500px)]:text-lg drop-shadow-[0_3px_0_rgba(0,0,0,0.6)]">{t('menu.title')}</h2>
           <MenuButton color="green" icon={Play} label={t('menu.resume')} onClick={onResume} />
           <MenuButton color="gray" icon={Settings} label={t('menu.settings')} onClick={onOpenSettings} />
           {showServer && <MenuButton color="gray" icon={Users} label={t('menu.server')} onClick={onOpenServer} />}
@@ -5078,6 +5104,21 @@ export default function App() {
   const [createPreset, setCreatePreset] = useState<{ mode: WorldMode; worldType: WorldType; nonce: number }>({ mode: 'survival', worldType: 'default', nonce: 0 });
   const [sfxVolume, setSfxVolume] = useState(savedSettings.sfxVolume ?? 0.6);
   const [menuOpen, setMenuOpen] = useState(false);
+  // Touch screens (phones, tablets): on-screen controls instead of mouse and keyboard
+  const [touchPref, setTouchPrefState] = useState<TouchPref>(loadTouchPref);
+  const touchOn = touchEnabled(touchPref);
+  const touchOnRef = useRef(touchOn);
+  touchOnRef.current = touchOn;
+  useEffect(() => { if (touchOn) lockViewportForTouch(); }, [touchOn]);
+  useEffect(() => { gameHandleRef.current?.setTouchMode(touchOn); }, [touchOn]);
+  useEffect(() => {
+    const f = (e: Event) => setTouchPrefState((e as CustomEvent<TouchPref>).detail);
+    window.addEventListener('vb-touch', f);
+    return () => window.removeEventListener('vb-touch', f);
+  }, []);
+  // The first-time tutorial (only ever shown once, and it can be skipped)
+  const [showTutorial, setShowTutorial] = useState(false);
+  const blockListenerRef = useRef<((type: 'break' | 'place') => void) | null>(null);
   const [serverSettings, setServerSettings] = useState<ServerSettings>(DEFAULT_SERVER);
   const serverSettingsRef = useRef<ServerSettings>(DEFAULT_SERVER);
   const [hostId, setHostId] = useState<number | null>(null);
@@ -5569,6 +5610,10 @@ export default function App() {
       panelOpenRef.current = false;
       setPanelOpen(false);
       handle.setSleepOnline(!!mpRef.current?.connected); // online, the server skips the night once half the players sleep
+      handle.setTouchMode(touchOnRef.current);
+      // First time ever in a world (not a minigame): the tutorial
+      if (!tutorialDone() && activeWorldType !== 'eggwars' && activeWorldType !== 'bridge') setShowTutorial(true);
+      if (touchOnRef.current) { try { const el = document.documentElement; if (!document.fullscreenElement && el.requestFullscreen) void el.requestFullscreen().then(() => (screen.orientation as unknown as { lock?: (o: string) => Promise<void> })?.lock?.('landscape')).catch(() => {}); } catch { /* not allowed */ } }
       handle.onSleep((st) => {
         sleepingRef.current = st.sleeping;
         setSleeping(st.sleeping);
@@ -5682,6 +5727,7 @@ export default function App() {
         r.emit(name, out);
       });
       handle.onBlockEvent((type, x, y, z, block) => {
+        blockListenerRef.current?.(type);
         runnerRef.current?.emit(type === 'break' ? 'blockBreak' : 'blockPlace', { x, y, z, block: blockNameOf(block) });
       });
       startEnabledMods();
@@ -5766,6 +5812,7 @@ export default function App() {
     if (gameMode !== 'playing') return;
     const onLockChange = () => {
       if (document.pointerLockElement) { hadLockRef.current = true; return; }
+      if (touchOnRef.current) return; // touch screens never use the mouse lock (the ❚❚ button opens the menu)
       if (chatOpenRef.current || helpOpenRef.current || inventoryOpenRef.current || menuOpenRef.current || tradingRef.current || cmdBlockRef.current || deadRef.current || disconnectedRef.current || sleepingRef.current || panelOpenRef.current) return;
       if (!hadLockRef.current) return; // the mouse was never captured yet (e.g. still joining): nothing to pause
       if (performance.now() - menuClosedAtRef.current < 400) return; // a re-lock that the browser refused right after closing the menu
@@ -7652,7 +7699,34 @@ export default function App() {
           className={`w-full h-full ${showMenu ? 'hidden' : 'block'}`}
         />
         {!showMenu && <GameOverlay />}
-        {!showMenu && <GameHUD xp={xpState} inventory={inventory} offhand={offhand} armor={armor} health={health} hunger={hunger} selectedSlot={selectedSlot} mode={playMode} air={air} blighted={effectsList.some((e) => e.name === 'blight')} />}
+        {!showMenu && <GameHUD xp={xpState} inventory={inventory} offhand={offhand} armor={armor} health={health} hunger={hunger} selectedSlot={selectedSlot} mode={playMode} air={air} blighted={effectsList.some((e) => e.name === 'blight')} onPick={touchOn && !inventoryOpen && !menuOpen ? (i) => setSelectedSlot(i) : undefined} />}
+        {!showMenu && touchOn && (
+          <TouchControls
+            getHandle={() => gameHandleRef.current}
+            onMenu={() => openGameMenu()}
+            onChat={() => openChat('')}
+            creative={playMode === 'creative'}
+            paused={menuOpen || inventoryOpen || chatOpen || helpOpen || !!deathReason || !!trading || !!cmdBlock || !!disconnectReason || panelOpen}
+          />
+        )}
+        {!showMenu && touchOn && !menuOpen && <RotateHint />}
+        {!showMenu && touchOn && (inventoryOpen || chatOpen) && (
+          <button data-testid="touch-close"
+            onClick={() => { if (chatOpen) closeChat(false); else { const c = getBinds().inventory; document.dispatchEvent(new KeyboardEvent('keydown', { code: c, key: c, bubbles: true })); document.dispatchEvent(new KeyboardEvent('keyup', { code: c, key: c, bubbles: true })); } }}
+            className="absolute top-3 right-3 z-[80] w-11 h-11 rounded-full bg-black/60 border-2 border-white/40 text-white text-lg font-bold">✕</button>
+        )}
+        {!showMenu && showTutorial && (
+          <Tutorial
+            touch={touchOn}
+            getInfo={() => gameHandleRef.current?.getDebugInfo() ?? null}
+            inventoryOpen={inventoryOpen}
+            chatOpen={chatOpen}
+            menuOpen={menuOpen}
+            selectedSlot={selectedSlot}
+            subscribeBlocks={(cb) => { blockListenerRef.current = cb; return () => { if (blockListenerRef.current === cb) blockListenerRef.current = null; }; }}
+            onDone={() => setShowTutorial(false)}
+          />
+        )}
         {!showMenu && bossBar && !minigame && <BossBar bar={bossBar} />}
         {!showMenu && <EffectsBar effects={effectsList} />}
         {!showMenu && hudPrefs.minimap && !showDebug && <Minimap getMap={getMinimapData} />}

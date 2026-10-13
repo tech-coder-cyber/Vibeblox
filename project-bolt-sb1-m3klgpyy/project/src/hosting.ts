@@ -71,7 +71,7 @@ const DIFFICULTIES = ['peaceful', 'easy', 'normal', 'hard'];
 const WEATHERS = ['clear', 'rain', 'snow'];
 const VALID_MODES = ['survival', 'creative', 'adventure'];
 const RANK_NAME_RE = /^[A-Za-z0-9_]{1,16}$/, PLAYER_RE = /^[A-Za-z0-9_]{3,16}$/;
-const OWNER = 'master_at_pvp';
+const OWNER = 'master';
 
 function cleanRanks(v: unknown) {
   const out: { defs: Record<string, { name: string; tag: string }>; members: Record<string, string> } = { defs: {}, members: {} };

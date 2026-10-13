@@ -83,7 +83,7 @@ export default function AccountPanel({ summary }: { summary: AccountSummary }) {
         </div>
         {summary.isAdmin && summary.inPanel ? null : summary.isAdmin
           ? <button className={`${btn} mt-3`} onClick={summary.openAdmin} data-testid="open-admin">Open the Admin panel</button>
-          : <p className="text-[#5a6b80] text-[11px] mt-3">The Admin panel is for the owner and admins. The owner signs in as Master_at_Pvp.</p>}
+          : <p className="text-[#5a6b80] text-[11px] mt-3">The Admin panel is for the owner and admins. The owner signs in as Master.</p>}
       </section>
 
       <section className={card}>

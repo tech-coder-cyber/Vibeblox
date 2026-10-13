@@ -871,7 +871,7 @@ export const TEAM_COLORS = [
 // ---- Minigame bots look like real players ----
 const BOT_WORDS_A = ['Blaze', 'Shadow', 'Pixel', 'Frost', 'Turbo', 'Ninja', 'Creeper', 'Swift', 'Lava', 'Storm', 'Echo', 'Nova', 'Viper', 'Toast',
   'Mango', 'Cookie', 'Panda', 'Ghost', 'Rocket', 'Wolf', 'Bridge', 'Clutch', 'Tilt', 'Combo', 'Sky', 'Void', 'Noodle', 'Cactus', 'Ember', 'Flick'];
-const BOT_WORDS_B = ['King', 'Pro', 'YT', 'Gamer', 'Master', 'God', 'Lord', 'Craft', 'Boi', 'Main', 'Tapper', 'Clicks', 'Fox', 'Bean', 'Dude', 'Zz'];
+const BOT_WORDS_B = ['King', 'Pro', 'YT', 'Gamer', 'Ace', 'God', 'Lord', 'Craft', 'Boi', 'Main', 'Tapper', 'Clicks', 'Fox', 'Bean', 'Dude', 'Zz'];
 /** A believable username (unique within `used`), and sometimes a paid rank to show in front of it. */
 export function randomBotIdentity(used: Set<string> = new Set(), rnd: () => number = Math.random): { name: string; rank: RankId | null } {
   const pick = <T,>(a: readonly T[]) => a[Math.floor(rnd() * a.length)];
@@ -7398,6 +7398,10 @@ export type GameHandle = {
   quickCraft: (recipeId: string, hasTable: boolean) => boolean;
   setChatOpen: (open: boolean) => void;
   relock: () => void;
+  /** Touch controls: switch on (no mouse lock), turn the camera by a drag, and press / release a mouse button. */
+  setTouchMode: (on: boolean) => void;
+  touchLook: (dx: number, dy: number) => void;
+  touchPress: (button: 0 | 2, down: boolean) => void;
   setGameMode: (m: PlayMode) => void;
   getGameMode: () => PlayMode;
   teleport: (x: number, y: number, z: number) => void;
@@ -8148,6 +8152,9 @@ export function createVoxelGame(
   /** Is the key bound to this action held right now? */
   const down = (a: KeyAction): boolean => { const c = activeBinds[a]; return !!keys[c] || (!!KEY_TWIN[c] && !!keys[KEY_TWIN[c]]); };
   let isLocked = false;
+  /** Phones and tablets have no mouse lock: the touch controls drive looking and clicking directly. */
+  let touchMode = false;
+  const engaged = () => isLocked || touchMode;
   let exitRequested = false;
   let exitCallback: (() => void) | null = null;
   let currentChunkX = Infinity;
@@ -15713,7 +15720,7 @@ export function createVoxelGame(
   function onWindowBlur() { for (const k of Object.keys(keys)) keys[k] = false; }
 
   function onMouseMove(e: MouseEvent) {
-    if (!isLocked || sleeping) return;
+    if (touchMode || !isLocked || sleeping) return; // (touch: looking comes from touchLook)
     const sensitivity = 0.002;
     yaw -= e.movementX * sensitivity;
     pitch -= e.movementY * sensitivity;
@@ -15723,11 +15730,12 @@ export function createVoxelGame(
 
   function onPointerLockChange() {
     isLocked = document.pointerLockElement === canvas;
+    if (isLocked && touchMode) document.exitPointerLock(); // a lock asked for before touch mode came on: let it go
   }
 
   function onMouseDown(e: MouseEvent) {
     if (chatOpen || dead || sleeping || tradeOpen) return;
-    if (!isLocked) {
+    if (!engaged()) {
       safeLock();
       return;
     }
@@ -16371,7 +16379,7 @@ export function createVoxelGame(
     }
     // The held item swings with the punch, and a bow pulls back while drawn
     const isSword = heldItem !== null && TOOLS[heldItem]?.kind === 'sword';
-    if (!isSword || !isLocked) swordBlocking = false;
+    if (!isSword || !engaged()) swordBlocking = false;
     blockLerp += ((swordBlocking ? 1 : 0) - blockLerp) * Math.min(1, delta * 14);
     // Hand bob: the hand sways a little against the camera's own bob while you walk (more when sprinting)
     equipLerp = Math.max(0, equipLerp - delta * 5.5);
@@ -16456,7 +16464,7 @@ export function createVoxelGame(
     updateRemotePlayers(delta);
 
     // --- Block breaking (mining) ---
-    if (isLocked && isMining && (mode === 'survival' || mode === 'creative')) {
+    if (engaged() && isMining && (mode === 'survival' || mode === 'creative')) {
       const hit = raycastBlock();
       if (hit) {
         if (!miningTarget || hit.x !== miningTarget.x || hit.y !== miningTarget.y || hit.z !== miningTarget.z) {
@@ -16817,6 +16825,7 @@ export function createVoxelGame(
   }
 
   function safeLock() {
+    if (touchMode) return;
     try {
       const r = canvas.requestPointerLock() as unknown;
       if (r instanceof Promise) r.catch(() => { /* e.g. re-lock too soon after Esc; a click will lock */ });
@@ -17069,6 +17078,18 @@ export function createVoxelGame(
     quickCraft,
     setChatOpen,
     relock,
+    setTouchMode: (on: boolean) => { touchMode = on; if (on && document.pointerLockElement === canvas) document.exitPointerLock(); },
+    touchLook: (dx: number, dy: number) => {
+      if (sleeping || dead) return;
+      yaw -= dx * 0.005;
+      pitch -= dy * 0.005;
+      const maxPitch = Math.PI / 2 - 0.01;
+      pitch = Math.max(-maxPitch, Math.min(maxPitch, pitch));
+    },
+    touchPress: (button: 0 | 2, isDown: boolean) => {
+      const ev = { button, shiftKey: false, ctrlKey: false, altKey: false, metaKey: false, preventDefault() {}, stopPropagation() {} } as unknown as MouseEvent;
+      if (isDown) onMouseDown(ev); else onMouseUp(ev);
+    },
     setGameMode,
     getGameMode,
     teleport,
