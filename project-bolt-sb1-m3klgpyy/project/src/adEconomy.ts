@@ -75,14 +75,15 @@ export function initAds(): Promise<boolean> {
         // Google AdSense "Ads for games": the script adds adBreak()/adConfig() to the page
         w.adsbygoogle = w.adsbygoogle || [];
         w.adBreak = w.adConfig = (o: unknown) => { w.adsbygoogle.push(o); };
+        scriptState = 'loading';
         await new Promise<void>((resolve, reject) => {
           const s = document.createElement('script');
           s.src = `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${encodeURIComponent(ADSENSE_CLIENT)}`;
           s.async = true; s.crossOrigin = 'anonymous';
           s.setAttribute('data-ad-client', ADSENSE_CLIENT);
           if (ADSENSE_TEST) s.setAttribute('data-adbreak-test', 'on');
-          s.onload = () => resolve();
-          s.onerror = () => reject(new Error('AdSense is blocked or unreachable'));
+          s.onload = () => { scriptState = 'loaded'; resolve(); };
+          s.onerror = () => { scriptState = 'blocked'; reject(new Error('AdSense is blocked or unreachable')); };
           document.head.appendChild(s);
         });
         w.adConfig({ preloadAdBreaks: 'on', sound: 'on' });
@@ -97,6 +98,26 @@ export function initAds(): Promise<boolean> {
 }
 
 let adRunning = false;
+
+// ---------------- Why ads do or don't show (the admin panel shows this) ----------------
+let scriptState: 'not loaded' | 'loading' | 'loaded' | 'blocked' = 'not loaded';
+let lastResult = '';
+/** What happened to the last ad: "viewed", "dismissed", "notReady" (no ad to show yet), "frequencyCapped", "error"... */
+export const lastAdResult = () => lastResult;
+export type AdStatus = { platform: Platform; configured: boolean; testMode: boolean; script: string; lastResult: string; blockedForYou: boolean; problems: string[] };
+export function adStatus(): AdStatus {
+  const problems: string[] = [];
+  if (PLATFORM === 'web') {
+    if (!ADSENSE_CLIENT) problems.push('No AdSense publisher id: add VITE_ADSENSE_CLIENT=ca-pub-... to the build settings (Cloudflare Pages > Settings > Environment variables), then redeploy.');
+    else if (!ADSENSE_ON) problems.push(`VITE_ADSENSE_CLIENT "${ADSENSE_CLIENT}" doesn't look like a publisher id (it should be ca-pub- followed by 16 digits).`);
+    if (scriptState === 'blocked') problems.push('The AdSense script could not load (an ad blocker, or the site is not approved yet).');
+    if (lastResult === 'notReady' || lastResult === 'noAdPreloaded') problems.push('Google had no ad ready. New sites often get no ads until AdSense approves them for "Ads for games" (H5 games ads), and ads can take a while to start.');
+    if (lastResult === 'frequencyCapped') problems.push('Google is limiting how often ads show (frequency cap). Try again in a few minutes.');
+    if (lastResult === 'invalid' || lastResult === 'error') problems.push('Google rejected the ad request. Check that ads.txt is in the public folder and the site is approved in AdSense.');
+  }
+  if (adsBlocked) problems.push('Ads are switched off for you: the owner and players with a rank never see ads (they get the rewards without one).');
+  return { platform: PLATFORM, configured: PLATFORM !== 'web' || ADSENSE_ON, testMode: ADSENSE_TEST, script: scriptState, lastResult, blockedForYou: adsBlocked, problems };
+}
 /**
  * Shows a rewarded ad. Resolves true only if the player watched it to the end
  * (give the reward then), false if it was skipped, failed, or ads aren't available.
@@ -115,17 +136,17 @@ export async function triggerRewardedAd(hooks: { onStart?: () => void; onEnd?: (
           beforeReward: (showAd: () => void) => showAd(), // the player pressed the button, so show it right away
           adViewed: () => { viewed = true; },
           adDismissed: () => {},
-          adBreakDone: () => resolve(viewed), // also fires when there was no ad to show
+          adBreakDone: (info?: { breakStatus?: string }) => { lastResult = info?.breakStatus ?? (viewed ? 'viewed' : 'unknown'); resolve(viewed); }, // also fires when there was no ad to show
         });
         setTimeout(() => resolve(viewed), 120_000); // never leave the shop stuck
       });
     }
-    if (PLATFORM === 'poki') return !!(await w.PokiSDK.rewardedBreak());
+    if (PLATFORM === 'poki') { const ok = !!(await w.PokiSDK.rewardedBreak()); lastResult = ok ? 'viewed' : 'notReady'; return ok; }
     return await new Promise<boolean>((resolve) => {
       w.CrazyGames.SDK.ad.requestAd('rewarded', {
         adStarted: () => {},
-        adFinished: () => resolve(true),
-        adError: () => resolve(false), // also fires when no ad was available
+        adFinished: () => { lastResult = 'viewed'; resolve(true); },
+        adError: (e?: { code?: string }) => { lastResult = e?.code ?? 'error'; resolve(false); }, // also fires when no ad was available
       });
     });
   } catch {
@@ -202,7 +223,7 @@ export async function maybeInterstitial(hooks: { onStart?: () => void; onEnd?: (
         type: 'next', name: 'vb-leave-world',
         beforeAd: () => { shown = true; hooks.onStart?.(); },
         afterAd: () => {},
-        adBreakDone: done,
+        adBreakDone: (info?: { breakStatus?: string }) => { lastResult = info?.breakStatus ?? lastResult; done(); },
       });
     });
   } catch { /* an ad that fails never matters */ } finally {

@@ -11,14 +11,25 @@ export type NetWeather = 'clear' | 'rain' | 'snow';
 export type NetBadge = { owner?: boolean; rank?: string; tier?: string };
 export type NetPlayerInfo = { id: number; name: string; x: number; y: number; z: number; yaw: number; pitch: number; mode: string; look?: NetLook; badge?: NetBadge };
 
-export type ServerSettings = { difficulty: 'peaceful' | 'easy' | 'normal' | 'hard'; keepInventory: boolean; scripts: boolean; mods: boolean; commands: boolean };
+export type ServerSettings = { difficulty: 'peaceful' | 'easy' | 'normal' | 'hard'; keepInventory: boolean; scripts: boolean; mods: boolean; commands: boolean; pvp?: boolean };
+/** An online EggWars / Bridge Duels world (see hosting.ts). */
+export type NetGame = { kind: 'eggwars' | 'bridge'; variant: number; teams: number; teamSize: number; winScore: number };
+export type NetMatch = {
+  phase: 'waiting' | 'countdown' | 'playing' | 'over'; left: number; round: number; winner: number | null;
+  teams: Array<{ score: number; egg: boolean; out: boolean }>;
+  /** [player id, team, out, kills, deaths] */
+  members: Array<[number, number, boolean, number, number]>;
+  kind: 'eggwars' | 'bridge'; winScore: number;
+};
 export type Welcome = {
   hostId?: number | null;
   settings?: ServerSettings;
   id: number;
   name: string;
   seed: number;
-  worldType: 'default' | 'superflat';
+  worldType: 'default' | 'superflat' | 'eggwars' | 'bridge';
+  /** Set for an online EggWars / Bridge Duels world */
+  game?: NetGame;
   mode: string;
   time: number;
   changes: NetBlock[];
@@ -55,6 +66,11 @@ export type MultiplayerEvents = {
   /** An admin changed your game mode. */
   onSetMode?: (mode: string, by: string) => void;
   onAdminPlayers?: (list: Array<{ id: number; name: string; mode: string }>) => void;
+  /** Online minigames: the score, eggs and teams; "everyone back to your island"; another player hit you; someone was hit. */
+  onMatch?: (m: NetMatch) => void;
+  onMatchReset?: (round: number) => void;
+  onHurt?: (h: { by: number; name: string; dmg: number; kx: number; kz: number }) => void;
+  onHurtFx?: (id: number) => void;
   /** Round trip time to the server, in milliseconds (measured every 2 seconds). */
   onPing?: (ms: number) => void;
   onClose?: (reason: string) => void;
@@ -172,6 +188,10 @@ export class MultiplayerClient {
       case 'whisperFail': e.onWhisperFail?.(String(m.to)); break;
       case 'setmode': e.onSetMode?.(String(m.mode), String(m.by)); break;
       case 'adminPlayers': e.onAdminPlayers?.(m.list as Array<{ id: number; name: string; mode: string }>); break;
+      case 'match': e.onMatch?.(m as unknown as NetMatch); break;
+      case 'mgReset': e.onMatchReset?.(Number(m.round) || 0); break;
+      case 'hurt': if (typeof m.dmg === 'number') e.onHurt?.({ by: Number(m.by), name: String(m.name ?? 'Someone'), dmg: m.dmg, kx: Number(m.kx) || 0, kz: Number(m.kz) || 0 }); break;
+      case 'hurtFx': e.onHurtFx?.(Number(m.id)); break;
       case 'weather': if (m.kind === 'clear' || m.kind === 'rain' || m.kind === 'snow') e.onWeather?.(m.kind); break;
       case 'pong': {
         const sent = this.pings.get(Number(m.n));
@@ -220,6 +240,13 @@ export class MultiplayerClient {
   sendRanks(ranks: unknown) { this.send({ t: 'ranks', ranks }); }
   /** A private message to a player on this server. */
   sendWhisper(to: string, text: string) { this.send({ t: 'whisper', to, text }); }
+  /** You hit another player: dmg before their armor, k = the direction they get knocked (unit vector on the ground). */
+  sendHit(id: number, dmg: number, kx: number, kz: number) { this.send({ t: 'hit', id, dmg: Math.round(dmg * 10) / 10, kx: Math.round(kx * 100) / 100, kz: Math.round(kz * 100) / 100 }); }
+  /** Online minigames: start (host), you died (by: who killed you), you broke a team's egg, you scored in a team's goal. */
+  sendMatchStart() { this.send({ t: 'mgStart' }); }
+  sendMatchDied(by: number | null) { this.send({ t: 'mgDied', ...(by !== null ? { by } : {}) }); }
+  sendMatchEgg(team: number) { this.send({ t: 'mgEgg', team }); }
+  sendMatchGoal(team: number) { this.send({ t: 'mgGoal', team }); }
   /** Admin panel actions. The server checks the token with Supabase before doing anything. */
   sendAdmin(token: string, action: 'check' | 'players' | 'kick' | 'ban' | 'gamemode', extra: { name?: string; mode?: string } = {}) {
     this.send({ t: 'admin', token, action, ...extra });

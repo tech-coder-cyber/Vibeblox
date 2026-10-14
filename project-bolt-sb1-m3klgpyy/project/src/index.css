@@ -48,3 +48,36 @@
 /* A stack of settings cards: even spacing, no extra gap above the first one */
 .vb-stack { display: flex; flex-direction: column; gap: 1.5rem; }
 .vb-stack > * { margin-top: 0 !important; }
+
+/* ---------------- Light mode ----------------
+   Settings > Video > Theme (or the sun button in the Admin panel) switches the menus to light colours.
+   Only things inside an element with the class "vb-themed" change; the game view never does. */
+html.vb-light .vb-themed { color-scheme: light; }
+html.vb-light .vb-themed .bg-\[\#05080c\], html.vb-light .vb-themed.bg-\[\#05080c\] { background-color: #e8ecf1 !important; }
+html.vb-light .vb-themed .bg-\[\#0a0e14\], html.vb-light .vb-themed.bg-\[\#0a0e14\] { background-color: #eef1f5 !important; }
+html.vb-light .vb-themed .bg-\[\#0d131b\], html.vb-light .vb-themed.bg-\[\#0d131b\],
+html.vb-light .vb-themed .bg-\[\#121822\], html.vb-light .vb-themed.bg-\[\#121822\] { background-color: #ffffff !important; }
+html.vb-light .vb-themed .bg-\[\#1a2230\], html.vb-light .vb-themed.bg-\[\#1a2230\] { background-color: #e4e9ef !important; }
+html.vb-light .vb-themed .bg-\[\#243044\], html.vb-light .vb-themed.bg-\[\#243044\],
+html.vb-light .vb-themed .bg-\[\#2a3444\], html.vb-light .vb-themed.bg-\[\#2a3444\] { background-color: #d5dce5 !important; }
+html.vb-light .vb-themed .bg-\[\#0a0e14\]\/95, html.vb-light .vb-themed.bg-\[\#0a0e14\]\/95 { background-color: rgba(244, 246, 249, 0.97) !important; }
+html.vb-light .vb-themed .border-\[\#243044\], html.vb-light .vb-themed.border-\[\#243044\] { border-color: #d3dae3 !important; }
+html.vb-light .vb-themed .border-\[\#1a2230\], html.vb-light .vb-themed.border-\[\#1a2230\] { border-color: #e2e7ed !important; }
+html.vb-light .vb-themed .border-\[\#364860\], html.vb-light .vb-themed.border-\[\#364860\],
+html.vb-light .vb-themed .border-\[\#3a4a60\], html.vb-light .vb-themed.border-\[\#3a4a60\] { border-color: #b7c2cf !important; }
+/* white text turns dark, except on coloured buttons and badges */
+html.vb-light .vb-themed .text-white:not([class*="bg-[#"]):not([class*="bg-gradient"]):not([class*="bg-red"]):not([class*="bg-black"]) { color: #141b26 !important; }
+html.vb-light .vb-themed :is(.bg-\[\#0a0e14\], .bg-\[\#0d131b\], .bg-\[\#121822\], .bg-\[\#1a2230\], .bg-\[\#05080c\], .bg-\[\#243044\]).text-white { color: #141b26 !important; }
+html.vb-light .vb-themed :is([class*="bg-[#ff"], [class*="bg-[#2e7d32"], [class*="bg-[#5865"], [class*="bg-gradient"], [class*="bg-red"]) .text-white { color: #ffffff !important; }
+html.vb-light .vb-themed .text-\[\#d6e2f0\], html.vb-light .vb-themed.text-\[\#d6e2f0\] { color: #1f2a38 !important; }
+html.vb-light .vb-themed .text-\[\#c8d2e0\], html.vb-light .vb-themed.text-\[\#c8d2e0\] { color: #2a3646 !important; }
+html.vb-light .vb-themed .text-\[\#8ea0b8\], html.vb-light .vb-themed.text-\[\#8ea0b8\] { color: #4b596a !important; }
+html.vb-light .vb-themed .text-\[\#5a6b80\], html.vb-light .vb-themed.text-\[\#5a6b80\] { color: #66727f !important; }
+html.vb-light .vb-themed .text-\[\#364860\], html.vb-light .vb-themed.text-\[\#364860\] { color: #8994a1 !important; }
+html.vb-light .vb-themed .text-\[\#00e676\], html.vb-light .vb-themed.text-\[\#00e676\] { color: #00994d !important; }
+html.vb-light .vb-themed .text-\[\#ffd23a\], html.vb-light .vb-themed.text-\[\#ffd23a\],
+html.vb-light .vb-themed .text-\[\#ffd700\], html.vb-light .vb-themed.text-\[\#ffd700\] { color: #b8860b !important; }
+html.vb-light .vb-themed .placeholder-\[\#364860\]::placeholder, html.vb-light .vb-themed.placeholder-\[\#364860\]::placeholder,
+html.vb-light .vb-themed .placeholder\:text-\[\#5a6b80\]::placeholder, html.vb-light .vb-themed.placeholder\:text-\[\#5a6b80\]::placeholder { color: #9aa5b1 !important; }
+html.vb-light .vb-themed .hover\:bg-\[\#1a2230\]:hover, html.vb-light .vb-themed.hover\:bg-\[\#1a2230\]:hover { background-color: #e4e9ef !important; }
+html.vb-light .vb-themed .hover\:text-white:hover, html.vb-light .vb-themed.hover\:text-white:hover { color: #000000 !important; }

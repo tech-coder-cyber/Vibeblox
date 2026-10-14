@@ -8,12 +8,28 @@
 //
 // This file is optional, like multiplayer.ts: if it's deleted the game still runs (you just can't host or join worlds).
 
+import { AntiCheat, type AntiCheatSettings, type CheatAlert, type GroundProbe } from './anticheat';
+
 /** Must match PROTOCOL_VERSION in multiplayer.ts (and PROTOCOL in server/server.js). */
 export const ROOM_PROTOCOL = 14;
 export type Privacy = 'private' | 'friends' | 'accounts' | 'public';
 export const PRIVACY_LABELS: Record<Privacy, string> = { private: 'Private', friends: 'Friends only', accounts: 'Signed-in players', public: 'Public' };
 type NetBlock = [number, number, number, number];
-type Settings = { difficulty: 'peaceful' | 'easy' | 'normal' | 'hard'; keepInventory: boolean; scripts: boolean; mods: boolean; commands: boolean };
+type Settings = { difficulty: 'peaceful' | 'easy' | 'normal' | 'hard'; keepInventory: boolean; scripts: boolean; mods: boolean; commands: boolean; pvp?: boolean };
+
+// ---------------- Online EggWars and Bridge Duels ----------------
+/** An online minigame: teams of real players. The room keeps the score, eggs, who is out, and the countdowns. */
+export type MatchConfig = { kind: 'eggwars' | 'bridge'; variant: number; teams: number; teamSize: number; winScore: number };
+export type MatchPhase = 'waiting' | 'countdown' | 'playing' | 'over';
+/** What every player's game gets (message "match"). members: [player id, team, out, kills, deaths] */
+export type MatchView = {
+  phase: MatchPhase; left: number; round: number; winner: number | null;
+  teams: Array<{ score: number; egg: boolean; out: boolean }>;
+  members: Array<[number, number, boolean, number, number]>;
+  kind: MatchConfig['kind']; winScore: number;
+};
+type MatchMember = { team: number; out: boolean; kills: number; deaths: number };
+const COUNTDOWN_MS = 5000, ROUND_COUNTDOWN_MS = 3000, OVER_MS = 10_000;
 type Badge = { owner?: boolean; rank?: string; tier?: string };
 type Look = { skin: string; cape: string; custom?: string };
 
@@ -45,7 +61,13 @@ export type RoomServices = {
 
 export type RoomOptions = {
   seed: number;
-  worldType: 'default' | 'superflat';
+  worldType: 'default' | 'superflat' | 'eggwars' | 'bridge';
+  /** An online EggWars / Bridge Duels match (worldType is then the arena) */
+  game?: MatchConfig;
+  /** Anti-cheat settings (it is on unless enabled: false), what the host's game knows about the ground, and alerts */
+  anticheat?: Partial<AntiCheatSettings>;
+  ground?: GroundProbe;
+  onCheat?: (alert: CheatAlert) => void;
   mode: 'survival' | 'creative' | 'adventure';
   changes: NetBlock[];
   /** 0..1, where the host's day is now */
@@ -72,6 +94,8 @@ const WEATHERS = ['clear', 'rain', 'snow'];
 const VALID_MODES = ['survival', 'creative', 'adventure'];
 const RANK_NAME_RE = /^[A-Za-z0-9_]{1,16}$/, PLAYER_RE = /^[A-Za-z0-9_]{3,16}$/;
 const OWNER = 'master';
+/** Team names, in team order (must match TEAM_COLORS in voxelGame.ts). */
+const TEAM_NAMES = ['Red', 'Blue', 'Green', 'Yellow'];
 
 function cleanRanks(v: unknown) {
   const out: { defs: Record<string, { name: string; tag: string }>; members: Record<string, string> } = { defs: {}, members: {} };
@@ -122,6 +146,9 @@ export class HostRoom {
   private timers: Array<ReturnType<typeof setInterval>> = [];
   private stopped = false;
   privacy: Privacy;
+  /** Watches the players who join (never the host's own game) */
+  readonly anticheat: AntiCheat;
+  private match: { phase: MatchPhase; endsAt: number; round: number; winner: number | null; teams: Array<{ score: number; egg: boolean; out: boolean }>; members: Map<number, MatchMember>; inPlay: Set<number> } | null = null;
 
   constructor(opts: RoomOptions) {
     this.opts = opts;
@@ -133,6 +160,21 @@ export class HostRoom {
     this.ranks = cleanRanks(opts.ranks);
     this.bans = (opts.bans ?? []).map((b) => b.toLowerCase());
     this.privacy = opts.privacy;
+    this.anticheat = new AntiCheat({
+      onAlert: (a) => opts.onCheat?.(a),
+      onKick: (id, reason) => {
+        const target = this.players.get(id);
+        if (!target || target.conn.local) return;
+        this.system(`${target.name} was kicked by anti-cheat`);
+        target.conn.close(4010, reason);
+      },
+      ground: opts.ground,
+    }, opts.anticheat);
+    if (opts.game) {
+      const n = Math.max(2, Math.min(4, opts.game.teams));
+      this.match = { phase: 'waiting', endsAt: 0, round: 0, winner: null, teams: Array.from({ length: n }, () => ({ score: 0, egg: true, out: false })), members: new Map(), inPlay: new Set() };
+      if (this.settings.pvp === undefined) this.settings.pvp = true;
+    }
     // Everyone's movement 10 times a second, batched into one message
     this.timers.push(setInterval(() => this.flushMoves(), 100));
     // Rate limits, silent connections, sleeping, the weather
@@ -177,7 +219,9 @@ export class HostRoom {
   private dropped(p: Player) {
     if (!this.players.has(p.id)) return;
     this.players.delete(p.id);
+    this.anticheat.remove(p.id);
     if (!p.joined) return;
+    if (this.match && this.match.members.delete(p.id)) { this.matchCheckEnd(); this.sendMatch(); }
     this.broadcast({ t: 'leave', id: p.id, name: p.name });
     this.system(`${p.name} left the game`);
     if (p.id === this.hostId) this.pickHost();
@@ -245,8 +289,10 @@ export class HostRoom {
       t: 'welcome', id: p.id, name: p.name, seed: this.opts.seed, worldType: this.opts.worldType, mode: this.opts.mode, time: this.currentTime(),
       changes, players: others, hostId: this.hostId, settings: this.settings, weather: this.weather, experimental: !!this.opts.experimental,
       maxPlayers: this.opts.maxPlayers, ranks: this.ranks,
+      ...(this.opts.game ? { game: this.opts.game } : {}),
     });
     this.broadcast({ t: 'join', id: p.id, name: p.name }, p.id);
+    if (this.match) this.matchJoin(p);
     if (p.conn.local) this.broadcast({ t: 'host', id: p.id }, p.id);
     void this.sendBadge(p);
     if (!p.conn.local) this.system(`${p.name} joined the game`);
@@ -292,6 +338,7 @@ export class HostRoom {
       if (!p.conn.local && now - p.conn.lastSeen > 45_000) p.conn.close(4003, 'Timed out');
     }
     if (now >= this.weatherAt) this.setWeather(this.weather === 'clear' ? 'rain' : 'clear');
+    this.matchTick(now);
   }
 
   private flushMoves() {
@@ -379,7 +426,7 @@ export class HostRoom {
         const s = (msg.settings ?? {}) as Partial<Settings>;
         const next = { ...this.settings };
         if (DIFFICULTIES.includes(String(s.difficulty))) next.difficulty = s.difficulty as Settings['difficulty'];
-        for (const k of ['keepInventory', 'scripts', 'mods', 'commands'] as const) if (typeof s[k] === 'boolean') next[k] = s[k] as boolean;
+        for (const k of ['keepInventory', 'scripts', 'mods', 'commands', 'pvp'] as const) if (typeof s[k] === 'boolean') next[k] = s[k] as boolean;
         this.settings = next;
         this.broadcast({ t: 'settings', settings: next });
         return;
@@ -404,8 +451,9 @@ export class HostRoom {
         p.x = msg.x as number; p.y = msg.y as number; p.z = msg.z as number; p.yaw = msg.yaw as number; p.pitch = msg.pitch as number;
         p.mode = typeof msg.mode === 'string' ? msg.mode.slice(0, 12) : 'survival';
         p.held = int(msg.held) && msg.held >= 0 && msg.held < 2000 ? msg.held : 0;
-        p.act = int(msg.act) ? msg.act & 31 : 0;
+        p.act = int(msg.act) ? msg.act & 63 : 0;
         p.moved = true;
+        if (!p.conn.local) this.anticheat.onMove(p.id, p.name, p.x, p.y, p.z, p.mode);
         return;
       case 'look': {
         const ok = (v: unknown): v is string => typeof v === 'string' && /^[a-z0-9_]{1,24}$/.test(v);
@@ -435,16 +483,173 @@ export class HostRoom {
           ok.push([x as number, y as number, z as number, b as number]);
         }
         if (ok.length) this.broadcast({ t: 'blocks', list: ok, id: p.id }, p.id);
+        if (ok.length && !p.conn.local) this.anticheat.onBlocks(p.id, p.name, ok.length, p.mode);
         return;
       }
       case 'ping': if (num(msg.n)) p.conn.send({ t: 'pong', n: msg.n }); return;
       case 'chat': {
         const text = typeof msg.text === 'string' ? msg.text.trim().slice(0, 256) : '';
-        if (text) this.broadcast({ t: 'chat', id: p.id, name: p.name, text });
+        if (!text) return;
+        if (!p.conn.local && !this.anticheat.onChat(p.id, p.name)) { p.conn.send({ t: 'system', text: 'Slow down! You are sending messages too fast.' }); return; }
+        this.broadcast({ t: 'chat', id: p.id, name: p.name, text });
         return;
       }
+      case 'hit': {
+        // one player hits another (PvP): checked here, then the one who was hit takes the damage in their own game
+        if (!int(msg.id) || !num(msg.dmg)) return;
+        const target = this.players.get(msg.id);
+        if (!target || !target.joined || target.id === p.id || target.mode === 'spectator' || target.mode === 'creative') return;
+        if (this.match) {
+          const a = this.match.members.get(p.id), b = this.match.members.get(target.id);
+          if (this.match.phase !== 'playing' || !a || !b || a.out || b.out || a.team === b.team) return;
+        } else if (!this.settings.pvp) return;
+        if (!p.conn.local) this.anticheat.onHit(p.id, p.name, { x: p.x, y: p.y, z: p.z, yaw: p.yaw }, { x: target.x, y: target.y, z: target.z });
+        const dmg = Math.max(0, Math.min(30, msg.dmg));
+        const kx = num(msg.kx) ? Math.max(-1, Math.min(1, msg.kx)) : 0, kz = num(msg.kz) ? Math.max(-1, Math.min(1, msg.kz)) : 0;
+        target.conn.send({ t: 'hurt', by: p.id, name: p.name, dmg, kx, kz });
+        this.broadcast({ t: 'hurtFx', id: target.id }, target.id);
+        return;
+      }
+      case 'mgStart':
+        if (!isHost || !this.match) return;
+        this.matchStart(p);
+        return;
+      case 'mgDied': this.matchDied(p, int(msg.by) ? msg.by : null); return;
+      case 'mgEgg': if (int(msg.team)) this.matchEgg(p, msg.team); return;
+      case 'mgGoal': if (int(msg.team)) this.matchGoal(p, msg.team); return;
       default:
     }
+  }
+
+  // ---------------- The match ----------------
+  /** The match as everyone sees it (null when this isn't a minigame world). */
+  matchView(): MatchView | null {
+    const m = this.match, g = this.opts.game;
+    if (!m || !g) return null;
+    return {
+      phase: m.phase, left: m.endsAt ? Math.max(0, Math.ceil((m.endsAt - Date.now()) / 1000)) : 0, round: m.round, winner: m.winner,
+      teams: m.teams.map((t) => ({ ...t })),
+      members: [...m.members.entries()].map(([id, mm]) => [id, mm.team, mm.out, mm.kills, mm.deaths]),
+      kind: g.kind, winScore: g.winScore,
+    };
+  }
+  private sendMatch() { const v = this.matchView(); if (v) this.broadcast({ t: 'match', ...v }); }
+  private matchJoin(p: Player) {
+    const m = this.match!;
+    const counts = m.teams.map((_, i) => [...m.members.values()].filter((x) => x.team === i).length);
+    const size = this.opts.game!.teamSize;
+    let team = 0;
+    for (let i = 1; i < counts.length; i++) if (counts[i] < counts[team]) team = i;
+    // EggWars already going: you watch until the next game. Bridge Duels: you join the smaller team straight away.
+    const late = m.phase !== 'waiting' && m.phase !== 'over' && (this.opts.game!.kind === 'eggwars' || counts[team] >= size || !m.inPlay.has(team));
+    m.members.set(p.id, { team, out: late, kills: 0, deaths: 0 });
+    if (late) p.conn.send({ t: 'system', text: 'A game is already going: you can watch until the next one starts.' });
+    this.sendMatch();
+  }
+  /** The host pressed Start: everyone back to their island, eggs back, scores to 0, then a countdown. */
+  private matchStart(by: Player) {
+    const m = this.match!;
+    if (m.phase === 'countdown' || m.phase === 'playing') return;
+    const teamsWithPlayers = new Set([...m.members.values()].map((x) => x.team));
+    if (teamsWithPlayers.size < 2) { by.conn.send({ t: 'system', text: 'You need players on at least two teams to start.' }); return; }
+    m.teams = m.teams.map(() => ({ score: 0, egg: true, out: false }));
+    for (const mm of m.members.values()) { mm.out = false; mm.kills = 0; mm.deaths = 0; }
+    m.inPlay = teamsWithPlayers;
+    m.teams.forEach((t, i) => { if (!teamsWithPlayers.has(i)) { t.out = true; t.egg = false; } });
+    m.round++;
+    m.winner = null;
+    this.resetArena();
+    this.startCountdown(COUNTDOWN_MS);
+    this.system(this.opts.game!.kind === 'bridge' ? `The duel is starting! First to ${this.opts.game!.winScore} goals wins.` : 'The game is starting! Protect your egg and break theirs.');
+  }
+  private matchTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Wake up exactly when a countdown (or the results screen) ends, as well as every second. */
+  private wakeAt(ms: number) {
+    if (this.matchTimer) clearTimeout(this.matchTimer);
+    this.matchTimer = setTimeout(() => { this.matchTimer = null; if (!this.stopped) this.matchTick(Date.now()); }, ms + 5);
+  }
+  private startCountdown(ms: number) {
+    const m = this.match!;
+    m.phase = 'countdown';
+    m.endsAt = Date.now() + ms;
+    this.wakeAt(ms);
+    for (const p of this.players.values()) this.anticheat.excuse(p.id, ms + 3000); // everyone is put back on their island
+    this.broadcast({ t: 'mgReset', round: m.round });
+    this.sendMatch();
+  }
+  /** Blocks players placed go away (everyone's game rebuilds the arena from the seed). */
+  private resetArena() { this.changes.clear(); }
+  private matchTick(now: number) {
+    const m = this.match;
+    if (!m) return;
+    if (m.phase === 'countdown' && now >= m.endsAt) { m.phase = 'playing'; m.endsAt = 0; this.sendMatch(); return; }
+    if (m.phase === 'countdown') { this.sendMatch(); return; }
+    if (m.phase === 'over' && now >= m.endsAt) {
+      m.phase = 'waiting';
+      m.endsAt = 0;
+      m.teams = m.teams.map(() => ({ score: 0, egg: true, out: false }));
+      for (const mm of m.members.values()) mm.out = false;
+      this.resetArena();
+      this.broadcast({ t: 'mgReset', round: m.round });
+      this.sendMatch();
+    }
+  }
+  private matchDied(p: Player, by: number | null) {
+    const m = this.match;
+    if (!m || m.phase !== 'playing') return;
+    const me = m.members.get(p.id);
+    if (!me || me.out) return;
+    me.deaths++;
+    const killer = by !== null && by !== p.id ? this.players.get(by) : undefined;
+    const km = killer ? m.members.get(killer.id) : undefined;
+    if (killer && km && km.team !== me.team) { km.kills++; this.system(`${p.name} was killed by ${killer.name}`); }
+    else this.system(`${p.name} died`);
+    if (this.opts.game!.kind === 'eggwars' && !m.teams[me.team].egg) { me.out = true; this.system(`${p.name} is out!`); }
+    this.matchCheckEnd();
+    this.sendMatch();
+  }
+  private matchEgg(p: Player, team: number) {
+    const m = this.match;
+    if (!m || m.phase !== 'playing' || this.opts.game!.kind !== 'eggwars') return;
+    const me = m.members.get(p.id), t = m.teams[team];
+    if (!me || me.out || me.team === team || !t || !t.egg) return;
+    t.egg = false;
+    this.system(`${p.name} destroyed ${TEAM_NAMES[team] ?? 'a'} team's egg!`);
+    this.matchCheckEnd();
+    this.sendMatch();
+  }
+  private matchGoal(p: Player, team: number) {
+    const m = this.match;
+    if (!m || m.phase !== 'playing' || this.opts.game!.kind !== 'bridge') return;
+    const me = m.members.get(p.id);
+    if (!me || me.out || me.team === team || !m.teams[team]) return;
+    const mine = m.teams[me.team];
+    mine.score++;
+    this.system(`${p.name} scored! ${m.teams.map((t) => t.score).join(' - ')}`);
+    if (mine.score >= this.opts.game!.winScore) { this.matchOver(me.team); return; }
+    this.resetArena();
+    this.startCountdown(ROUND_COUNTDOWN_MS);
+  }
+  private matchCheckEnd() {
+    const m = this.match;
+    if (!m || m.phase !== 'playing') return;
+    const members = [...m.members.values()];
+    m.teams.forEach((t, i) => {
+      if (t.out || !m.inPlay.has(i)) return;
+      const someoneIn = members.some((x) => x.team === i && !x.out);
+      if (!someoneIn && (!t.egg || !members.some((x) => x.team === i))) { t.out = true; if (this.opts.game!.kind === 'eggwars') this.system(`${TEAM_NAMES[i] ?? 'A'} team is out!`); }
+    });
+    const left = m.teams.map((t, i) => i).filter((i) => m.inPlay.has(i) && !m.teams[i].out);
+    if (left.length <= 1) this.matchOver(left.length ? left[0] : null);
+  }
+  private matchOver(winner: number | null) {
+    const m = this.match!;
+    m.phase = 'over';
+    m.winner = winner;
+    m.endsAt = Date.now() + OVER_MS;
+    this.wakeAt(OVER_MS);
+    this.system(winner === null ? 'The game is over.' : `${TEAM_NAMES[winner] ?? 'A'} team wins!`);
+    this.sendMatch();
   }
 
   /** The host changed who may join. Players already in who no longer may are sent away. */
@@ -458,6 +663,7 @@ export class HostRoom {
     if (this.stopped) return;
     this.stopped = true;
     for (const t of this.timers) clearInterval(t);
+    if (this.matchTimer) clearTimeout(this.matchTimer);
     for (const p of [...this.players.values()]) if (!p.conn.local) p.conn.close(4009, reason);
     for (const p of [...this.players.values()]) if (p.conn.local) p.conn.close(1000, '');
     this.players.clear();

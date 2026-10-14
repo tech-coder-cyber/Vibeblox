@@ -158,3 +158,29 @@ export function equipCosmetic(kind: 'skin' | 'cape', id: string): boolean {
   commit(kind === 'skin' ? { ...state, currentSkin: id } : { ...state, currentCape: id });
   return true;
 }
+
+// ---------------- Saving to your account ----------------
+// Signed-in players keep their level, XP, coins and cosmetics on their account too (vibeblox_round16.sql), so they
+// follow them to other devices and show on the level leaderboard. The account copy is just the same Progress.
+/** What gets saved to the account. */
+export function progressForAccount(): Progress { return { ...state }; }
+/**
+ * A save from the account arrived: keep whichever has more XP (so you never lose levels), with every skin and
+ * cape either one owns. Returns true if anything here changed.
+ */
+export function mergeAccountProgress(remote: unknown): boolean {
+  if (!remote || typeof remote !== 'object') return false;
+  const r = sanitize(remote as Partial<Progress>);
+  const base = r.xp > state.xp ? r : state;
+  const merged: Progress = {
+    ...base,
+    ownedSkins: [...new Set([...state.ownedSkins, ...r.ownedSkins])],
+    ownedCapes: [...new Set([...state.ownedCapes, ...r.ownedCapes])],
+    customSkin: base.customSkin ?? state.customSkin ?? r.customSkin,
+  };
+  const before = JSON.stringify(state);
+  const next = sanitize(merged);
+  if (JSON.stringify(next) === before) return false;
+  commit(next);
+  return true;
+}

@@ -1431,7 +1431,7 @@ function oreXp(b: number): number {
 }
 /** Burning animals drop cooked meat, like Minecraft. */
 const COOKED_DROP: Record<number, number> = {};
-function mobDrops(kind: MobKind, ctx: { baby?: boolean; burning?: boolean; wool?: number | null; looting?: number } = {}): Array<[number, number]> {
+export function mobDrops(kind: MobKind, ctx: { baby?: boolean; burning?: boolean; wool?: number | null; looting?: number } = {}): Array<[number, number]> {
   const r = (a: number, b: number) => a + Math.floor(Math.random() * (b - a + 1));
   if (ctx.baby && growsUp(kind)) return []; // baby animals and villagers leave nothing behind
   const list: Array<[number, number]> =
@@ -1447,7 +1447,7 @@ function mobDrops(kind: MobKind, ctx: { baby?: boolean; burning?: boolean; wool?
     : kind === 'piglin' ? [[ITEM_GOLD_INGOT, r(0, 2)], [ITEM_GOLD_SWORD, Math.random() < 0.15 ? 1 : 0]]
     : kind === 'iron_golem' ? [[ITEM_IRON_INGOT, r(3, 5)]]
     : kind === 'villager' || kind === 'bot' ? []
-    : kind === 'cinderbone' ? [[ITEM_COAL, r(0, 1)], [ITEM_BONE, r(0, 2)], [ITEM_CINDERBONE_SKULL, Math.random() < 0.025 + 0.01 * (ctx.looting ?? 0) ? 1 : 0]]
+    : kind === 'cinderbone' ? [[ITEM_COAL, r(0, 1)], [ITEM_BONE, r(0, 2)], [ITEM_CINDERBONE_SKULL, Math.random() < 0.1 + 0.02 * (ctx.looting ?? 0) ? 1 : 0]]
     : kind === 'hollow_tyrant' ? [[ITEM_HOLLOW_STAR, 1]]
     : [[ITEM_GUNPOWDER, r(1, 2)]];
   if (ctx.burning) for (const d of list) d[0] = COOKED_DROP[d[0]] ?? d[0];
@@ -4184,7 +4184,7 @@ Object.assign(ITEM_INFO, {
   [BLOCK_BLUE_ICE]: { name: 'Blue Ice', color: '#6aa2f0', lore: ['The most slippery block: the fastest boat tracks are made of it.'] },
   [BLOCK_SOUL_SOIL]: { name: 'Soul Soil', color: '#4b3a2c', lore: ['Found in the Nether. Unlike soul sand, it does nothing in water.'] },
   [BLOCK_MAGMA]: { name: 'Magma Block', color: '#8a2a0c', lore: ['Hot to stand on. Under water it makes bubbles that pull you down.'] },
-  [ITEM_CINDERBONE_SKULL]: { name: 'Cinderbone Skull', color: '#353029', lore: ['Dropped (rarely) by Cinderbones in Nether fortresses.', 'Three on a T of soul sand or soul soil summon the Hollow Tyrant.'] },
+  [ITEM_CINDERBONE_SKULL]: { name: 'Cinderbone Skull', color: '#353029', lore: ['Dropped by Cinderbones in Nether fortresses (1 in 10).', 'Right-click to summon the Hollow Tyrant!', '(Or place three on a T of soul sand or soul soil.)'] },
 });
 for (let b = BLOCK_TORCH_WALL; b <= BLOCK_TORCH_CEILING; b++) ITEM_INFO[b] = { name: 'Torch', color: '#ffd23a', hidden: true };
 TEAM_COLORS.forEach((t, i) => { ITEM_INFO[BLOCK_EGG + i] = { name: `${t.name} Egg`, color: t.color, hidden: true, lore: ['EggWars: while it stands, its team comes back after dying.'] }; });
@@ -5085,6 +5085,34 @@ function poseArms(model: MobModel, o: { swing: number; punch: number; slash?: nu
     if (o.drawing) R.rotation.set(up - 0.2, 0, -0.95);
     else R.rotation.set(s, 0, 0);
   }
+}
+
+/**
+ * Sneaking, like Minecraft: the body leans forward from the hips, the head and arms come down and forward with the
+ * shoulders, the legs stay upright but step back a little, and the whole player sinks a bit. c: 0 (standing) .. 1.
+ * Call it after the other posing each frame (it moves the parts' pivots, so it also puts them back when c is 0).
+ */
+function crouchPose(model: MobModel, c: number) {
+  const P = 1 / 16;
+  const ud = model.root.userData as { basePivots?: { head: THREE.Vector3; arms: THREE.Vector3[]; legs: THREE.Vector3[]; body: THREE.Vector3 } };
+  if (!ud.basePivots) {
+    ud.basePivots = { head: model.head.position.clone(), body: model.body.position.clone(), arms: model.arms.map((a) => a.position.clone()), legs: model.legs.map((l) => l.position.clone()) };
+  }
+  const b = ud.basePivots;
+  if (model.legs.length !== 2 || model.arms.length !== 2) return; // only people bend like this
+  const lean = 0.5 * c; // how far forward the body tips (radians)
+  const hipY = b.body.y; // the body pivots at the hips
+  const sink = 1.5 * P * c;
+  const back = 3.2 * P * c; // the hips (and legs) go back so the feet stay under the body's weight
+  // a point `up` above the hips, after the body tips forward (forward is -z)
+  const tipped = (up: number, out: THREE.Vector3, base: THREE.Vector3) => {
+    out.set(base.x, hipY + up * Math.cos(lean) - sink, base.z - up * Math.sin(lean) + back);
+  };
+  model.body.position.set(b.body.x, hipY - sink, b.body.z + back);
+  model.body.rotation.x = -lean;
+  tipped(b.head.y - hipY, model.head.position, b.head);
+  model.arms.forEach((a, i) => { tipped(b.arms[i].y - hipY, a.position, b.arms[i]); a.rotation.x += lean * 0.8; });
+  model.legs.forEach((l, i) => { l.position.set(b.legs[i].x, b.legs[i].y - sink, b.legs[i].z + back); });
 }
 
 /** Material slots for newer blocks start right after the original list (which ends at 86). */
@@ -7278,12 +7306,22 @@ export type BotDifficulty = 'easy' | 'normal' | 'hard';
 export type MinigameSize = 'solo' | 'duos' | 'squads';
 export const MINIGAME_SIZES: Record<MinigameSize, number> = { solo: 1, duos: 2, squads: 4 };
 export type MinigameView = {
-  size: MinigameSize; kind: ArenaKind; phase: 'countdown' | 'playing' | 'over'; countdown: number; difficulty: BotDifficulty; winScore: number;
+  size: MinigameSize; kind: ArenaKind; phase: 'waiting' | 'countdown' | 'playing' | 'over'; countdown: number; difficulty: BotDifficulty; winScore: number;
+  /** An online match with real players (no bots): the host's room keeps the score */
+  online?: boolean;
   teams: Array<{ name: string; color: string; score: number; eggAlive: boolean; alive: number; out: boolean; you: boolean }>;
   you: { team: number; out: boolean; kills: number; deaths: number; respawnIn: number };
   result: { win: boolean; place: number; text: string } | null;
   message: string | null; elapsed: number;
 };
+/** An online match as the room sends it, seen from your side (see hosting.ts MatchView). */
+export type OnlineMatch = {
+  phase: 'waiting' | 'countdown' | 'playing' | 'over'; left: number; round: number; winner: number | null;
+  teams: Array<{ score: number; egg: boolean; out: boolean; players: number; alive: number }>;
+  myTeam: number; out: boolean; kills: number; deaths: number;
+};
+/** Something happened to you in an online match that the room must hear about. */
+export type MatchEvent = { type: 'died'; by: number | null } | { type: 'egg'; team: number } | { type: 'goal'; team: number };
 /** What a minigame bot is doing right now (bridging toward a target, fighting, breaking an egg...). */
 /** What a bot likes to do. Fighters hunt players; builders wall in their egg then cross to the middle; upgraders farm
  *  their generator and buy better gear; defenders guard their egg; rushers (Bridge Duels) go for the goal. */
@@ -7354,6 +7392,8 @@ export type GameHandle = {
   setOffhand: (st: ItemStack | null) => void;
   setBlocks: (list: Array<[number, number, number, number]>) => number;
   getBlock: (x: number, y: number, z: number) => number;
+  /** Anti-cheat: anything to stand on, climb or swim in around a player here? (null: not loaded) */
+  probeGround: (x: number, y: number, z: number) => boolean | null;
   /** Read a box of blocks (corners in any order), y-major: index = (y * d + z) * w + x. Flowing water is left out. For schematics. */
   readBlocks: (x0: number, y0: number, z0: number, x1: number, y1: number, z1: number) => { x: number; y: number; z: number; w: number; h: number; d: number; ids: number[]; unloaded: number };
   onBlockEvent: (cb: (type: 'break' | 'place', x: number, y: number, z: number, block: number) => void) => void;
@@ -7481,6 +7521,8 @@ export type GameHandle = {
   isRiding: () => boolean;
   /** For tests: try the T-of-soul-sand summon at a skull's position. */
   debugCheckSummon: (x: number, y: number, z: number) => boolean;
+  /** Tests: right-click with a Cinderbone Skull (summons the Hollow Tyrant in front of you). */
+  debugSummonWithSkull: () => boolean;
   /** The skin your player head shows (creative and /give hand out heads with it). */
   setOwnSkin: (skin: string) => void;
   /** A top-down map around you: colors of the top blocks (rgba, size x size, north up), plus things nearby. */
@@ -7491,6 +7533,16 @@ export type GameHandle = {
   /** forceRole (tests): every bot gets this role instead of a random one. */
   startMinigame: (difficulty: BotDifficulty, size?: MinigameSize, forceRole?: BotRole) => boolean;
   onMinigame: (cb: ((v: MinigameView) => void) | null) => void;
+  /** Online EggWars / Bridge Duels: start with no bots, take the room's state, put the arena back, and hear what happens to you. */
+  startOnlineMinigame: () => boolean;
+  setOnlineMatch: (m: OnlineMatch) => void;
+  onlineMatchReset: () => void;
+  onMatchEvent: (cb: ((e: MatchEvent) => void) | null) => void;
+  /** Player vs player: who you may hit (null: nobody), what happens when you do, getting hit, and someone else getting hit. */
+  setPvp: (enemy: ((id: number) => boolean) | null) => void;
+  onPvpHit: (cb: ((id: number, dmg: number, kx: number, kz: number) => void) | null) => void;
+  hurtByPlayer: (dmg: number, kx: number, kz: number, name: string, by: number) => void;
+  remoteHurtFx: (id: number) => void;
   getMinigame: () => MinigameView | null;
   /** EggWars: the name of the map style in play (Meadow, Frost, Desert, Nether or Skylands). */
   getArenaMap: () => string | null;
@@ -9245,6 +9297,7 @@ export function createVoxelGame(
     id: number;
     grudge: number; // iron golems: seconds left that they're out to get the player
     variant: number; // villagers: profession (robe colour)
+    crouch?: number; // bots: 0..1 how far they are sneaking (bridging at an edge)
     bed?: { x: number; y: number; z: number; door: [number, number, number] }; // villagers sleep here
     sleeping: boolean;
     insideHome: boolean; // villagers: went in through the door (so they come back out through it)
@@ -9697,6 +9750,38 @@ export function createVoxelGame(
     }
     return false;
   }
+  /** Right-clicking with a Cinderbone Skull: the Hollow Tyrant rises a few blocks in front of you. */
+  function summonTyrantWithSkull(): boolean {
+    if (rules.difficulty === 'peaceful') { showHint('The Hollow Tyrant will not come on Peaceful'); return false; }
+    if (mg) { showHint("You can't summon a boss in a minigame"); return false; }
+    const dir = new THREE.Vector3();
+    camera.getWorldDirection(dir);
+    dir.y = 0;
+    if (dir.lengthSq() < 1e-4) dir.set(0, 0, -1);
+    dir.normalize();
+    const feet = playerFeet();
+    // the first spot 5-8 blocks ahead with ground under it and room for a 4-block-tall boss
+    for (const dist of [6, 5, 7, 8, 4]) {
+      const x = Math.floor(feet.x + dir.x * dist), z = Math.floor(feet.z + dir.z * dist);
+      for (let y = Math.min(CHUNK_HEIGHT - 5, Math.floor(feet.y) + 4); y >= Math.max(1, Math.floor(feet.y) - 8); y--) {
+        if (!isSolid(world.getWorldBlock(x, y - 1, z))) continue;
+        let room = true;
+        for (let k = 0; k < 4; k++) if (isSolid(world.getWorldBlock(x, y + k, z))) { room = false; break; }
+        if (!room) break;
+        const pos = new THREE.Vector3(x + 0.5, y, z + 0.5);
+        const boss = spawnMob('hollow_tyrant', pos);
+        spawnParticles(pos.clone().add(new THREE.Vector3(0, 1.5, 0)), ['#5ad8ff', '#2a2730', '#c8f0ff', '#ff7a1a'], 60, 5, 0.25, 1.5);
+        playSfx('explode', pos);
+        engineEvent('bossSummon', { id: boss.id, type: 'hollow_tyrant', x, y, z });
+        if (mode !== 'creative') consumeHeld(1);
+        punchPhase = PUNCH_DURATION;
+        showHint('The Hollow Tyrant is waking up!');
+        return true;
+      }
+    }
+    showHint('There is no room for the Hollow Tyrant there. Look at open ground.');
+    return false;
+  }
   /** The boss bar at the top of the screen: the nearest Hollow Tyrant within 64 blocks. */
   function bossBar(): { name: string; health: number; max: number; charging: boolean; hardened: boolean } | null {
     let best: Mob | null = null, bd = 64;
@@ -9723,10 +9808,12 @@ export function createVoxelGame(
     egg: [number, number, number] | null; eggAlive: boolean;
     goal: { x0: number; x1: number; z0: number; z1: number } | null;
     score: number; human: boolean; outAt: number; // outAt: when it was knocked out (0 = still in)
+    online?: { players: number; alive: number }; // online matches: real players on this team
     bots: Array<{ id: number | null; respawn: number; out: boolean; name: string; tag: string; role: BotRole }>;
   };
   type MgState = {
-    kind: ArenaKind; size: MinigameSize; phase: 'countdown' | 'playing' | 'over'; timer: number; difficulty: BotDifficulty;
+    kind: ArenaKind; size: MinigameSize; phase: 'waiting' | 'countdown' | 'playing' | 'over'; timer: number; difficulty: BotDifficulty;
+    online?: boolean; goalSentAt?: number;
     teams: MgTeam[]; you: { team: number; out: boolean; kills: number; deaths: number; respawn: number };
     placed: Set<string>; gens: Array<{ x: number; y: number; z: number; item: number; every: number; t: number; cap: number }>;
     result: { win: boolean; place: number; text: string } | null;
@@ -9801,10 +9888,10 @@ export function createVoxelGame(
     const m = mg;
     return {
       size: m.size, kind: m.kind, phase: m.phase, countdown: m.phase === 'countdown' ? Math.ceil(m.timer) : 0, difficulty: m.difficulty,
-      winScore: arena!.winScore,
+      winScore: arena!.winScore, online: !!m.online,
       teams: m.teams.map((t) => ({
-        name: t.name, color: t.color, score: t.score, eggAlive: t.eggAlive, out: !!t.outAt, you: t.human,
-        alive: (t.human && !m.you.out ? 1 : 0) + t.bots.filter((b) => b.id !== null).length,
+        name: t.name, color: t.color, score: t.score, eggAlive: t.eggAlive, out: !!t.outAt, you: m.online ? t.idx === m.you.team : t.human,
+        alive: m.online ? (t.online?.alive ?? 0) : (t.human && !m.you.out ? 1 : 0) + t.bots.filter((b) => b.id !== null).length,
       })),
       you: { team: m.you.team, out: m.you.out, kills: m.you.kills, deaths: m.you.deaths, respawnIn: Math.max(0, Math.ceil(m.you.respawn)) },
       result: m.result, message: performance.now() < m.messageUntil ? m.message : null, elapsed: Math.floor(m.elapsed),
@@ -9821,6 +9908,7 @@ export function createVoxelGame(
   function giveArenaKit() {
     if (!mg) return;
     const t = mg.teams[mg.you.team];
+    if (!t) return;
     for (let i = 0; i < INVENTORY_SIZE; i++) slots[i] = null;
     for (let i = 0; i < 4; i++) armor[i] = null;
     offhand = null;
@@ -9842,6 +9930,7 @@ export function createVoxelGame(
   function placeYouAtSpawn() {
     if (!mg) return;
     const t = mg.teams[mg.you.team];
+    if (!t) { teleport(0.5, ARENA_Y + 14, 0.5); setStats(20, 20); return; } // online, no team yet: over the middle
     teleport(t.spawn.x, t.spawn.y, t.spawn.z);
     yaw = t.yaw;
     pitch = 0;
@@ -9938,7 +10027,7 @@ export function createVoxelGame(
     return true;
   }
   /** Frozen in place during the countdown. */
-  function arenaFrozen(): boolean { return !!mg && mg.phase === 'countdown'; }
+  function arenaFrozen(): boolean { return !!mg && (mg.phase === 'countdown' || (!!mg.online && !!mg.goalSentAt && performance.now() - mg.goalSentAt < 3000)); }
   function minigameBotHurtable(m: Mob): boolean { return !!mg && mg.phase === 'playing' && m.team >= 0; }
   /** The name a bot plays under (like a real player's). */
   const botNameOf = (m: Mob): string => m.bot?.name ?? 'Bot';
@@ -9973,6 +10062,7 @@ export function createVoxelGame(
     if (!mg) return;
     const t = mg.teams[team];
     if (!t || !t.eggAlive) return;
+    if (mg.online && by === 'You') matchEventCb?.({ type: 'egg', team });
     t.eggAlive = false;
     playSfx('explode', t.egg ? new THREE.Vector3(t.egg[0] + 0.5, t.egg[1] + 0.5, t.egg[2] + 0.5) : null);
     if (t.egg) spawnParticles(new THREE.Vector3(t.egg[0] + 0.5, t.egg[1] + 0.5, t.egg[2] + 0.5), [t.color, '#ffffff', shadeColor(t.color, -0.3)], 30, 4, 0.15, 1);
@@ -9981,6 +10071,7 @@ export function createVoxelGame(
   }
   function mgCheckEnd() {
     if (!mg || mg.phase === 'over') return;
+    if (mg.online) { mgEmit(true); return; } // online: the host's room decides who wins
     if (mg.kind === 'bridge') {
       const winner = mg.teams.find((t) => t.score >= arena!.winScore);
       if (!winner) return;
@@ -10013,6 +10104,7 @@ export function createVoxelGame(
   /** You died in a minigame (no death screen: you come straight back, or you're out). */
   function arenaPlayerDied(reason: string) {
     if (!mg) return;
+    if (mg.online) { onlineDied(reason); return; }
     mg.you.deaths++;
     const t = mg.teams[mg.you.team];
     if (mg.kind === 'bridge') {
@@ -10035,14 +10127,170 @@ export function createVoxelGame(
       mgCheckEnd();
     }
   }
+  // ---------------- Online matches (real players, the host's room keeps the score) ----------------
+  let matchEventCb: ((e: MatchEvent) => void) | null = null;
+  function startOnlineMinigame(): boolean {
+    if (!arenaKind || !arena) return false;
+    if (mg) resetArenaBlocks();
+    removeAllBots();
+    for (const d of droppedItems.splice(0)) { scene.remove(d.mesh); disposeObject(d.mesh); }
+    mg = {
+      kind: arenaKind, size: 'solo', phase: 'waiting', timer: 0, difficulty: 'normal', online: true,
+      teams: arena.teams.map((sp, i) => ({
+        idx: i, name: TEAM_COLORS[i].name, color: TEAM_COLORS[i].color, wool: TEAM_COLORS[i].wool,
+        spawn: new THREE.Vector3(...sp.spawn), yaw: sp.yaw, egg: sp.egg ?? null, eggAlive: !!sp.egg,
+        goal: sp.goal ?? null, score: 0, human: false, outAt: 0, bots: [], online: { players: 0, alive: 0 },
+      })),
+      you: { team: -1, out: false, kills: 0, deaths: 0, respawn: 0 },
+      placed: new Set(), gens: (arenaKind === 'eggwars' ? [...arena.gens, ...arena.teams.flatMap((t) => t.gens)] : []).map((g) => ({ ...g, t: g.every })),
+      result: null, message: null, messageUntil: 0, elapsed: 0, knockouts: 0,
+    };
+    if (arenaKind === 'eggwars') {
+      for (let i = mobs.length - 1; i >= 0; i--) if (mobs[i].shop) removeMob(i);
+      arena.teams.forEach((sp, i) => {
+        if (!sp.shop) return;
+        const v = spawnMob('villager', new THREE.Vector3(...sp.shop), { x: sp.shop[0], z: sp.shop[2], r: 0.4 }, { baby: false });
+        v.variant = 3;
+        v.shop = SHOP_TRADES(TEAM_COLORS[i].wool);
+        v.persistent = true;
+      });
+    }
+    setGameMode('survival');
+    isFlying = false;
+    rules = { ...rules, keepInventory: false, hardcore: false, difficulty: 'normal' };
+    placeYouAtSpawn();
+    if (dead) dead = false;
+    mgSay('Waiting for players…', 4);
+    return true;
+  }
+  /** The room says how the match stands. */
+  function setOnlineMatch(v: OnlineMatch) {
+    if (!mg || !mg.online) return;
+    const prevPhase = mg.phase, prevTeam = mg.you.team, prevOut = mg.you.out;
+    mg.you.team = v.myTeam;
+    mg.you.out = v.out;
+    mg.you.kills = v.kills;
+    mg.you.deaths = v.deaths;
+    v.teams.forEach((t, i) => {
+      const T = mg!.teams[i];
+      if (!T) return;
+      T.score = t.score; T.eggAlive = t.egg; T.outAt = t.out ? 1 : 0;
+      T.online = { players: t.players, alive: t.alive };
+      T.human = i === v.myTeam;
+    });
+    mg.phase = v.phase;
+    mg.timer = v.left;
+    if (v.phase === 'over') {
+      const mine = v.winner !== null && v.winner === v.myTeam;
+      mg.result = mine ? { win: true, place: 1, text: mg.kind === 'bridge' ? `You won ${mg.teams.map((t) => t.score).filter((_, i) => mg!.teams[i].online?.players).join(' - ')}!` : 'Victory! Your team is the last one standing.' }
+        : { win: false, place: 2, text: v.winner === null ? 'Nobody won this time.' : `${TEAM_COLORS[v.winner]?.name ?? 'Another'} team won the game` };
+      if (prevPhase !== 'over') { mgSay(mine ? 'VICTORY!' : 'GAME OVER', 5); playSfx(mine ? 'levelup' : 'hurt', null); }
+    } else mg.result = null;
+    if (prevPhase !== 'playing' && v.phase === 'playing') { mgSay('GO!', 1.5); playSfx('ding', null); }
+    if (v.phase === 'countdown' && prevPhase === 'countdown' && Math.ceil(v.left) !== Math.ceil(mg.timer)) playSfx('click', null);
+    // a team for the first time (waiting in the lobby): stand on your island
+    if (prevTeam !== v.myTeam && v.myTeam >= 0 && (v.phase === 'waiting' || v.phase === 'over' || !v.out)) { setGameMode('survival'); placeYouAtSpawn(); giveArenaKit(); }
+    if (!prevOut && v.out && v.phase !== 'waiting') { setGameMode('spectator'); teleport(0.5, ARENA_Y + 14, 0.5); }
+    if (prevOut && !v.out && mode === 'spectator') { setGameMode('survival'); placeYouAtSpawn(); giveArenaKit(); }
+    mgEmit(true);
+  }
+  /** A new game or a new point: placed blocks go, eggs come back, everyone back to their island with a fresh kit. */
+  function onlineMatchReset() {
+    if (!mg || !mg.online) return;
+    resetArenaBlocks();
+    for (const d of droppedItems.splice(0)) { scene.remove(d.mesh); disposeObject(d.mesh); }
+    for (const t of mg.teams) t.eggAlive = !!t.egg;
+    mg.goalSentAt = 0;
+    mg.elapsed = 0;
+    lastAttacker = null;
+    if (mg.you.team >= 0) { setGameMode('survival'); placeYouAtSpawn(); giveArenaKit(); }
+    if (dead) dead = false;
+  }
+  function onlineDied(reason: string) {
+    if (!mg) return;
+    const by = lastAttacker && performance.now() - lastAttacker.at < 10_000 ? lastAttacker.id : null;
+    lastAttacker = null;
+    if (mg.phase === 'playing' && mg.you.team >= 0 && !mg.you.out) { mg.you.deaths++; matchEventCb?.({ type: 'died', by }); }
+    const t = mg.teams[mg.you.team];
+    if (mg.kind === 'eggwars' && mg.phase === 'playing') spillInventory();
+    if (mg.phase !== 'playing' || mg.kind === 'bridge' || (t && t.eggAlive)) {
+      placeYouAtSpawn();
+      giveArenaKit();
+      if (mg.phase === 'playing') mgSay(reason === 'Fell into the void' ? 'You fell into the void' : `You died (${reason})`, 2);
+      return;
+    }
+    mg.you.out = true;
+    setGameMode('spectator');
+    teleport(0.5, ARENA_Y + 14, 0.5);
+    setStats(20, 20);
+    mgSay('You were eliminated!', 4);
+    mgEmit(true);
+  }
+
+  // ---------------- Player vs player ----------------
+  let pvpEnemy: ((id: number) => boolean) | null = null;
+  let pvpCallback: ((id: number, dmg: number, kx: number, kz: number) => void) | null = null;
+  let lastAttacker: { id: number; name: string; at: number } | null = null;
+  const pvpDir = new THREE.Vector3();
+  /** Ray (origin + t * dir) against a box: the distance to it, or null if it misses. */
+  function rayHitBox(o: THREE.Vector3, d: THREE.Vector3, x0: number, y0: number, z0: number, x1: number, y1: number, z1: number): number | null {
+    let tmin = 0, tmax = Infinity;
+    for (const [oo, dd, a, b] of [[o.x, d.x, x0, x1], [o.y, d.y, y0, y1], [o.z, d.z, z0, z1]] as Array<[number, number, number, number]>) {
+      if (Math.abs(dd) < 1e-9) { if (oo < a || oo > b) return null; continue; }
+      let t1 = (a - oo) / dd, t2 = (b - oo) / dd;
+      if (t1 > t2) [t1, t2] = [t2, t1];
+      tmin = Math.max(tmin, t1); tmax = Math.min(tmax, t2);
+      if (tmin > tmax) return null;
+    }
+    return tmin;
+  }
+  /** Left-click on another player you may fight: the room passes the hit on, and they take it in their own game. */
+  function attackRemoteInSight(): boolean {
+    if (!pvpEnemy || mode === 'spectator' || dead) return false;
+    if (mg && mg.online && mg.phase !== 'playing') return false;
+    camera.getWorldDirection(pvpDir);
+    const reach = mode === 'creative' ? 5 : 3.4;
+    let best: { id: number; rp: RemotePlayer; t: number } | null = null;
+    for (const [id, rp] of remotePlayers) {
+      if (rp.mode === 'spectator' || !pvpEnemy(id)) continue;
+      const t = rayHitBox(camera.position, pvpDir, rp.pos.x - 0.38, rp.pos.y, rp.pos.z - 0.38, rp.pos.x + 0.38, rp.pos.y + 1.9, rp.pos.z + 0.38);
+      if (t !== null && t <= reach && (!best || t < best.t)) best = { id, rp, t };
+    }
+    if (!best) return false;
+    const wall = raycastBlock();
+    if (wall && new THREE.Vector3(wall.x + 0.5, wall.y + 0.5, wall.z + 0.5).distanceTo(camera.position) < best.t - 0.6) return false; // a block is in the way
+    const falling = velocityY < -1 && !wasGrounded;
+    const dmg = weaponDamage() * (falling ? 1.5 : 1);
+    const flat = Math.hypot(pvpDir.x, pvpDir.z) || 1;
+    pvpCallback?.(best.id, dmg, pvpDir.x / flat, pvpDir.z / flat);
+    const at = best.rp.pos.clone().add(new THREE.Vector3(0, 1.2, 0));
+    spawnParticles(at, falling ? ['#ffffff', '#c8c8c8'] : ['#b01818', '#7a0e0e'], falling ? 10 : 5, 2, 0.08, 0.4);
+    playSfx('arrowHit', at);
+    best.rp.hurtFlash = 0.35;
+    const tool = heldTool();
+    if (tool) wearHeld(tool.kind === 'sword' ? 1 : 2);
+    engineEvent('playerHit', { target: { id: best.id, type: 'player' }, damage: dmg });
+    return true;
+  }
+  function hurtByPlayer(dmg: number, kx: number, kz: number, name: string, by: number) {
+    if (mg && mg.online && mg.phase !== 'playing') return;
+    lastAttacker = { id: by, name, at: performance.now() };
+    if (!hurtPlayer(dmg, null, 0, name)) return;
+    const len = Math.hypot(kx, kz) || 1;
+    playerKnock.set((kx / len) * 7, 0, (kz / len) * 7);
+    velocityY = Math.max(velocityY, 5.5);
+  }
+
   /** Can you break this block here? Only blocks someone placed, and other teams' eggs. */
   function arenaCanBreak(x: number, y: number, z: number, b: number): boolean {
     if (!mg) return true;
+    if (mg.online && mg.phase !== 'playing') return false;
     if (isEgg(b)) return b - BLOCK_EGG !== mg.you.team;
     return mg.placed.has(`${x},${y},${z}`);
   }
   function arenaCanPlace(x: number, y: number, z: number): boolean {
     if (!mg || !arena) return true;
+    if (mg.online && mg.phase !== 'playing') { if (performance.now() - arenaHintTime > 1500) { arenaHintTime = performance.now(); showHint('Wait for the game to start'); } return false; }
     if (y > arena.buildMax || y < arena.buildMin) { if (performance.now() - arenaHintTime > 1500) { arenaHintTime = performance.now(); showHint("You can't build that high (or that low) here"); } return false; }
     for (const t of mg.teams) {
       const g = t.goal;
@@ -10103,13 +10351,21 @@ export function createVoxelGame(
     // Bots that went missing (unloaded far away) count as dead
     for (const t of mg.teams) for (const b of t.bots) if (b.id !== null && !mobs.some((m) => m.id === b.id)) { b.id = null; b.respawn = 3; }
     // The void
-    if (!mg.you.out && camera.position.y - PLAYER_EYE < arena.voidY && canBeAttacked()) { lastDamageCause = 'Fell into the void'; setStats(0, hunger); }
+    const goalPending = !!mg.online && !!mg.goalSentAt && performance.now() - mg.goalSentAt < 3000;
+    if (!mg.you.out && !goalPending && camera.position.y - PLAYER_EYE < arena.voidY && canBeAttacked()) { lastDamageCause = 'Fell into the void'; setStats(0, hunger); }
     for (const m of mobs) if (m.kind === 'bot' && m.deathTime < 0 && m.pos.y < arena.voidY) { m.deathTime = 0; m.health = 0; onBotDown(m, 'void'); }
     if (mg.kind === 'bridge') {
       const f = playerFeet();
       for (const t of mg.teams) {
-        if (t.idx === mg.you.team) continue;
-        if (f.y < ARENA_Y + 0.6 && f.y > ARENA_Y - 6 && inGoal(f.x, f.z, t)) { bridgeScored(mg.teams[mg.you.team], 'You'); return; }
+        if (t.idx === mg.you.team || mg.you.out) continue;
+        if (f.y < ARENA_Y + 0.6 && f.y > ARENA_Y - 6 && inGoal(f.x, f.z, t)) {
+          if (mg.online) { // the room counts it and sends everyone back to their islands
+            const now = performance.now();
+            if (!mg.goalSentAt || now - mg.goalSentAt > 3000) { mg.goalSentAt = now; matchEventCb?.({ type: 'goal', team: t.idx }); mgSay('GOAL!', 2); playSfx('levelup', null); }
+            return;
+          }
+          bridgeScored(mg.teams[mg.you.team], 'You'); return;
+        }
       }
       for (const m of mobs) {
         if (m.kind !== 'bot' || m.deathTime >= 0) continue;
@@ -11672,7 +11928,8 @@ export function createVoxelGame(
       arms[0].rotation.x = fighting ? 0.4 : -swing;
       arms[1].rotation.x = (fighting ? 1.2 : swing) + stab; // sword arm comes up and jabs
       if (m.kind === 'bot') {
-        legs.forEach((l, i) => { if (m.bot?.bridging) l.rotation.x = i ? 0.35 : -0.15; }); // crouched at the edge
+        m.crouch = (m.crouch ?? 0) + ((m.bot?.bridging ? 1 : 0) - (m.crouch ?? 0)) * Math.min(1, dt * 12);
+        crouchPose(m.model, m.crouch); // sneaking at the edge
         const look = m.bot?.bridging ? 0.95 : 0; // looking down at the edge while bridging
         m.model.head.rotation.x += (look - m.model.head.rotation.x) * Math.min(1, dt * 10);
         if (m.bot && m.bot.drawTimer > 0) { arms[0].rotation.x = Math.PI / 2; arms[1].rotation.x = Math.PI / 2; } // drawing a bow
@@ -11862,8 +12119,8 @@ export function createVoxelGame(
     const swing = Math.sin(playerWalkPhase) * Math.min(1, moved / (dt * 3 + 1e-6)) * 0.7;
     playerModel.root.position.copy(sleeping ? sleepBodyPos(sleeping) : feet);
     playerModel.root.rotation.y = sleeping ? sleeping.lieYaw : yaw;
-    playerModel.root.rotation.x = sleeping ? Math.PI / 2 : 0.3 * crouchLerp; // crouching leans you forward
-    playerModel.head.rotation.x = sleeping ? 0 : pitch - 0.3 * crouchLerp;
+    playerModel.root.rotation.x = sleeping ? Math.PI / 2 : 0;
+    playerModel.head.rotation.x = sleeping ? 0 : pitch;
     playerModel.legs[0].rotation.x = sleeping ? 0 : swing;
     playerModel.legs[1].rotation.x = sleeping ? 0 : -swing;
     holdOnModel(playerModel, heldItem);
@@ -11872,8 +12129,9 @@ export function createVoxelGame(
       swing, pitch, aiming: gunAiming, drawing: bowDrawing, kick: viewKick, blocking: swordBlocking,
       punch: punchPhase > 0 ? Math.sin((punchPhase / PUNCH_DURATION) * Math.PI) : 0,
       slash: punchPhase > 0 ? 1 - punchPhase / PUNCH_DURATION : -1,
-      t: performance.now() / 1000, crouch: crouchLerp,
+      t: performance.now() / 1000,
     });
+    crouchPose(playerModel, sleeping ? 0 : crouchLerp); // sneaking: lean forward, sink a little
 
     // Pull the camera in if a wall is in the way
     const dir = new THREE.Vector3();
@@ -12018,6 +12276,7 @@ export function createVoxelGame(
     for (const [x, y, z, b] of list) {
       const cx = Math.floor(x / CHUNK_SIZE), cz = Math.floor(z / CHUNK_SIZE);
       const c = w.getChunk(cx, cz);
+      if (mg && w === world) { const k = `${x},${y},${z}`; if (b === BLOCK_AIR || isEgg(b)) mg.placed.delete(k); else mg.placed.add(k); } // someone else's blocks can be broken too
       if (c && c.generated) {
         w.setWorldBlock(x, y, z, b);
         if (w === world) { world.scheduleAround(x, y, z); markDirty(x, z, dirty); }
@@ -12037,13 +12296,13 @@ export function createVoxelGame(
       const b = sleepBodyPos(sleeping);
       return { x: b.x, y: b.y, z: b.z, yaw: sleeping.lieYaw, pitch: 0, mode, held: 0, act: 16 };
     }
-    return { x: camera.position.x, y: camera.position.y - PLAYER_EYE, z: camera.position.z, yaw, pitch, mode, held: heldItem ?? 0, act: (punchPhase > 0 || isMining ? 1 : 0) | (gunAiming ? 2 : 0) | (bowDrawing ? 4 : 0) | (swordBlocking ? 8 : 0) };
+    return { x: camera.position.x, y: camera.position.y - PLAYER_EYE, z: camera.position.z, yaw, pitch, mode, held: heldItem ?? 0, act: (punchPhase > 0 || isMining ? 1 : 0) | (gunAiming ? 2 : 0) | (bowDrawing ? 4 : 0) | (swordBlocking ? 8 : 0) | (crouchNow ? 32 : 0) };
   }
 
   type RemotePlayer = {
     model: MobModel; tag: THREE.Sprite; tagTex: THREE.Texture; nt?: NameTag;
     pos: THREE.Vector3; target: THREE.Vector3; yaw: number; targetYaw: number; pitch: number;
-    mode: string; walkPhase: number; held: number; act: number; punchClock: number; name?: string;
+    mode: string; walkPhase: number; held: number; act: number; punchClock: number; crouch: number; hurtFlash?: number; name?: string;
   };
   const remotePlayers = new Map<number, RemotePlayer>();
 
@@ -12097,7 +12356,7 @@ export function createVoxelGame(
       rp = {
         model, tag: sprite, tagTex: tex, nt,
         pos: new THREE.Vector3(x, y, z), target: new THREE.Vector3(x, y, z),
-        yaw: ryaw, targetYaw: ryaw, pitch: rpitch, mode: rmode, walkPhase: 0, held: 0, act: 0, punchClock: 0,
+        yaw: ryaw, targetYaw: ryaw, pitch: rpitch, mode: rmode, walkPhase: 0, held: 0, act: 0, punchClock: 0, crouch: 0,
       };
       remotePlayers.set(id, rp);
       const look = pendingRemoteLooks.get(id);
@@ -12157,6 +12416,14 @@ export function createVoxelGame(
         punch: (rp.act & 1) ? Math.sin((rp.punchClock / PUNCH_DURATION) * Math.PI) : 0,
         slash: (rp.act & 1) ? rp.punchClock / PUNCH_DURATION : -1,
       });
+      rp.crouch += (((rp.act & 32) !== 0 && !lying ? 1 : 0) - rp.crouch) * Math.min(1, dt * 14);
+      crouchPose(m, rp.crouch);
+      if (rp.hurtFlash !== undefined) { // hit: a red flash, like mobs
+        rp.hurtFlash -= dt;
+        const on = rp.hurtFlash > 0;
+        for (const mat of m.materials) (mat as unknown as { emissive?: { setRGB?: (r: number, g: number, b: number) => void } }).emissive?.setRGB?.(on ? 0.55 : 0, 0, 0);
+        if (!on) rp.hurtFlash = undefined;
+      }
     }
   }
 
@@ -14991,6 +15258,25 @@ export function createVoxelGame(
     }
     return { x: x0, y: y0, z: z0, w, h, d, ids, unloaded };
   }
+  /**
+   * Anti-cheat (the host's game): is there anything around this player's feet or body to stand on, climb or swim in?
+   * null when that part of the Overworld isn't loaded here (then nothing is judged).
+   */
+  function probeGround(x: number, y: number, z: number): boolean | null {
+    if (dimension !== 'overworld') return null;
+    for (const [dx, dz] of [[-0.45, -0.45], [0.45, 0.45]]) {
+      const c = world.getChunk(Math.floor((x + dx) / CHUNK_SIZE), Math.floor((z + dz) / CHUNK_SIZE));
+      if (!c || !c.generated) return null;
+    }
+    for (let by = Math.floor(y - 0.7); by <= Math.floor(y + 2.0); by++) {
+      for (let bx = Math.floor(x - 0.45); bx <= Math.floor(x + 0.45); bx++) {
+        for (let bz = Math.floor(z - 0.45); bz <= Math.floor(z + 0.45); bz++) {
+          if (world.getWorldBlock(bx, by, bz) !== BLOCK_AIR) return true;
+        }
+      }
+    }
+    return false;
+  }
   function getBlock(x: number, y: number, z: number): number {
     return world.getWorldBlock(Math.floor(x), Math.floor(y), Math.floor(z));
   }
@@ -15805,6 +16091,7 @@ export function createVoxelGame(
         return;
       }
       punchPhase = PUNCH_DURATION; // swing animation
+      if (mode !== 'spectator' && attackRemoteInSight()) return; // hitting another player (PvP)
       if (mode !== 'spectator' && attackMobInSight()) return; // hitting a mob doesn't mine
       if (mode !== 'spectator' && mode !== 'adventure') { const bt = boatInSight(4); if (bt) { hitBoat(bt); return; } }
       if (mode === 'survival' || mode === 'creative') {
@@ -15878,6 +16165,13 @@ export function createVoxelGame(
     if (heldItem === ITEM_BOAT && mode !== 'adventure') { placeBoat(); return; }
     if (heldItem !== null && spawnEggKind(heldItem) && mode !== 'adventure') { useSpawnEgg(spawnEggKind(heldItem)!); return; }
     if (heldItem === ITEM_XP_BOTTLE) { throwBottle(); return; }
+    // The Cinderbone Skull summons the Hollow Tyrant (unless you're building the old T of soul sand)
+    if (heldItem === ITEM_CINDERBONE_SKULL && mode !== 'adventure') {
+      const h = raycastBlock();
+      const tb = h ? world.getWorldBlock(h.x, h.y, h.z) : BLOCK_AIR;
+      const building = tb === BLOCK_SOUL_SAND || tb === BLOCK_SOUL_SOIL || (isHead(tb) && headKind(tb) === 0);
+      if (!building) { summonTyrantWithSkull(); return; }
+    }
     if (heldItem === ITEM_BUCKET || heldItem === ITEM_WATER_BUCKET || heldItem === ITEM_LAVA_BUCKET) { useBucket(); return; }
 
     const hit = raycastBlock();
@@ -17241,11 +17535,21 @@ export function createVoxelGame(
     debugEnterBoat: (id) => { const b = boats.find((bb) => bb.id === id); if (!b) return false; enterBoat(b); return riding === b; },
     isRiding: () => riding !== null,
     debugCheckSummon: (x, y, z) => checkTyrantSummon(x, y, z),
+    debugSummonWithSkull: () => summonTyrantWithSkull(),
     setOwnSkin: (skin) => { ownSkin = skin; },
     getMinimap,
     listPlayers: () => [...remotePlayers.entries()].map(([id, rp]) => ({ id, name: rp.name ?? '', x: rp.target.x, y: rp.target.y, z: rp.target.z })),
     startMinigame: (d, size, role) => startMinigame(d, size, role),
     onMinigame: (cb) => { minigameCallback = cb; if (cb && mg) mgEmit(true); },
+    startOnlineMinigame,
+    probeGround,
+    setOnlineMatch,
+    onlineMatchReset,
+    onMatchEvent: (cb) => { matchEventCb = cb; },
+    setPvp: (enemy) => { pvpEnemy = enemy; },
+    onPvpHit: (cb) => { pvpCallback = cb; },
+    hurtByPlayer,
+    remoteHurtFx: (id) => { const rp = remotePlayers.get(id); if (rp) { rp.hurtFlash = 0.35; playSfx('hurt', rp.pos); } },
     onOneBlock: (cb) => { oneBlockCallback = cb; if (cb) oneBlockEmit(); },
     getOneBlock: oneBlockView,
     getMinigame: () => mgView(),

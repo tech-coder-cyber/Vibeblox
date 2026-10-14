@@ -174,12 +174,12 @@ export async function changeUsername(name: string): Promise<Result<{ username: s
 }
 
 // ---------------- Plays, the leaderboard and Rising Creator ----------------
-export type LeaderRow = { username: string; plays: number; rank: string };
+export type LeaderRow = { username: string; plays: number; rank: string; level?: number };
 /** The creators with the most plays (null if it can't be reached / isn't set up). */
 export async function fetchLeaderboard(limit = 50): Promise<LeaderRow[] | null> {
   const r = await rpcPublic('leaderboard', { p_limit: limit });
   if (!r.ok || !Array.isArray(r.data)) return null;
-  return (r.data as Array<{ username: string; plays: number | string; rank?: string }>).map((x) => ({ username: x.username, plays: Number(x.plays) || 0, rank: x.rank ?? 'none' }));
+  return (r.data as Array<{ username: string; plays: number | string; rank?: string; level?: number | string }>).map((x) => ({ username: x.username, plays: Number(x.plays) || 0, rank: x.rank ?? 'none', ...(x.level != null ? { level: Number(x.level) || 1 } : {}) }));
 }
 export type Standing = { plays: number; rank: string; rising: boolean };
 /** One player's plays and rank (null if unknown). */
@@ -217,6 +217,8 @@ export const isOnline = (lastSeen?: string, now = Date.now()) => !!lastSeen && n
 export type HostedWorld = {
   id: string; host: string; name: string; mode: string; worldType: string;
   privacy: 'public' | 'accounts' | 'friends'; players: number; max: number; updatedAt: string;
+  /** What the host wrote about the world, and its picture (an image address or a small data: URL) */
+  description?: string; image?: string;
 };
 export const HOSTED_FRESH_MS = 90_000;
 export const HOSTED_ID_RE = /^[a-z0-9]{8,32}$/;
@@ -226,15 +228,21 @@ async function restAny(method: string, path: string, body?: unknown, extra: Reco
   try { token = await config.getToken(); } catch { token = null; }
   return rest(method, path, body, extra, token ?? config.anonKey);
 }
-type HostedRow = { id: string; host_name: string; name: string; mode: string; world_type: string; privacy: string; players: number; max_players: number; updated_at: string };
+type HostedRow = { id: string; host_name: string; name: string; mode: string; world_type: string; privacy: string; players: number; max_players: number; updated_at: string; description?: string | null; image?: string | null };
 const toHosted = (r: HostedRow): HostedWorld => ({
   id: r.id, host: r.host_name, name: r.name, mode: r.mode, worldType: r.world_type,
   privacy: r.privacy === 'friends' || r.privacy === 'accounts' ? r.privacy : 'public', players: Number(r.players) || 0, max: Number(r.max_players) || 18, updatedAt: r.updated_at,
+  description: r.description ?? undefined, image: r.image ?? undefined,
 });
+const HOSTED_COLS = 'id,host_name,name,mode,world_type,privacy,players,max_players,updated_at';
+/** The extra columns (description, picture) come from vibeblox_round16.sql; without it the list still works. */
+let hostedExtras = true;
 export async function listHostedWorlds(): Promise<Result<{ worlds: HostedWorld[] }>> {
   void restAny('POST', 'rpc/prune_hosted_worlds', {}); // tidy up worlds whose host vanished (fire and forget)
   const since = new Date(Date.now() - HOSTED_FRESH_MS).toISOString();
-  const r = await restAny('GET', `hosted_worlds?select=id,host_name,name,mode,world_type,privacy,players,max_players,updated_at&updated_at=gte.${encodeURIComponent(since)}&order=players.desc,updated_at.desc&limit=60`);
+  const q = (cols: string) => restAny('GET', `hosted_worlds?select=${cols}&updated_at=gte.${encodeURIComponent(since)}&order=players.desc,updated_at.desc&limit=60`);
+  let r = await q(hostedExtras ? HOSTED_COLS + ',description,image' : HOSTED_COLS);
+  if (!r.ok && hostedExtras && r.status === 400) { hostedExtras = false; r = await q(HOSTED_COLS); } // older database: no pictures yet
   if (!r.ok) return fail(r.status === 404 ? 'World list isn\'t set up yet (run vibeblox_round13.sql in Supabase)' : r.error);
   return { ok: true, worlds: (r.data as HostedRow[]).map(toHosted) };
 }
@@ -245,13 +253,28 @@ export async function getHostedWorld(id: string): Promise<HostedWorld | null> {
   return r.ok && Array.isArray(r.data) && r.data[0] ? toHosted(r.data[0] as HostedRow) : null;
 }
 /** Lists (or refreshes) the world you are hosting. Call it every ~20 seconds while you play. */
-export async function publishHostedWorld(me: Account, w: { id: string; name: string; mode: string; worldType: string; privacy: string; players: number; max: number }): Promise<Result> {
+export async function publishHostedWorld(me: Account, w: { id: string; name: string; mode: string; worldType: string; privacy: string; players: number; max: number; description?: string; image?: string }): Promise<Result> {
   if (!HOSTED_ID_RE.test(w.id)) return fail('Bad world id');
-  const r = await rest('POST', 'hosted_worlds?on_conflict=id', {
+  const row: Record<string, unknown> = {
     id: w.id, host_id: me.userId, host_name: me.username, name: w.name.slice(0, 40) || 'World', mode: w.mode, world_type: w.worldType,
     privacy: w.privacy, players: Math.max(0, Math.min(100, w.players)), max_players: Math.max(1, Math.min(100, w.max)), updated_at: new Date().toISOString(),
-  }, { prefer: 'resolution=merge-duplicates,return=minimal' });
+  };
+  if (hostedExtras) { row.description = (w.description ?? '').slice(0, 200); row.image = cleanWorldImage(w.image); }
+  let r = await rest('POST', 'hosted_worlds?on_conflict=id', row, { prefer: 'resolution=merge-duplicates,return=minimal' });
+  if (!r.ok && hostedExtras && r.status === 400) { // older database: no description/picture columns yet
+    hostedExtras = false;
+    delete row.description; delete row.image;
+    r = await rest('POST', 'hosted_worlds?on_conflict=id', row, { prefer: 'resolution=merge-duplicates,return=minimal' });
+  }
   return r.ok ? { ok: true } : fail(r.error);
+}
+/** A world picture that is safe to list: one of the game's own images, an https address, or a small JPEG/PNG. */
+export function cleanWorldImage(img?: string): string | null {
+  if (!img) return null;
+  if (/^\/images\/[a-z0-9_-]+\.(jpg|jpeg|png|webp)$/i.test(img)) return img;
+  if (/^https:\/\/[^\s"'<>]{4,300}$/.test(img)) return img;
+  if (/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(img) && img.length <= 60_000) return img;
+  return null;
 }
 export async function unpublishHostedWorld(id: string): Promise<void> {
   if (!HOSTED_ID_RE.test(id)) return;
@@ -487,6 +510,59 @@ export async function checkAdmin(): Promise<boolean> {
   const r = await rest('POST', 'rpc/is_admin', {});
   return r.ok && r.data === true;
 }
+// ---------------- Admins (the owner picks them in the Admin panel) ----------------
+/** Everyone who can open the Admin panel. */
+export async function listAdmins(): Promise<Result<{ admins: string[] }>> {
+  const r = await rest('POST', 'rpc/list_admins', {});
+  if (!r.ok) return fail(/function|schema cache|not find/i.test(r.error) ? 'Run vibeblox_round16.sql in Supabase to manage admins here' : r.error);
+  return { ok: true, admins: (Array.isArray(r.data) ? r.data : []).map((x: unknown) => String((x as { username?: string }).username ?? x)) };
+}
+/** The owner makes someone an admin (on = true) or takes it away. Returns the name as stored. */
+export async function setAdmin(username: string, on: boolean): Promise<Result<{ username: string }>> {
+  const name = username.trim();
+  if (!USERNAME_RE.test(name)) return fail('That is not a valid username');
+  if (isOwnerName(name)) return fail('The owner is always an admin');
+  const r = await rest('POST', 'rpc/set_admin', { p_username: name, p_on: on });
+  if (!r.ok) return /owner only/i.test(r.error) || r.status === 403 ? fail('Only the owner can choose admins') : fail(/function|schema cache|not find/i.test(r.error) ? 'Run vibeblox_round16.sql in Supabase to manage admins here' : r.error);
+  if (typeof r.data !== 'string' || !r.data) return fail(`Nobody is called ${name}`);
+  return { ok: true, username: r.data };
+}
+
+// ---------------- Anti-cheat reports (hosts' games send them; admins read them) ----------------
+export type CheatReport = { id: number; world: string; host: string; player: string; kind: string; detail: string; at: string };
+/** Sent by the host's game when anti-cheat catches someone in their world. Fire and forget. */
+export async function reportCheat(me: Account | null, rep: { world: string; player: string; kind: string; detail: string }): Promise<void> {
+  if (!me) return;
+  await rest('POST', 'anticheat_reports', {
+    world: rep.world.slice(0, 40), host_name: me.username, player: rep.player.slice(0, 16), kind: rep.kind.slice(0, 20), detail: rep.detail.slice(0, 200),
+  }, { prefer: 'return=minimal' });
+}
+/** The latest reports from every world (admins only). */
+export async function listCheatReports(limit = 100): Promise<Result<{ reports: CheatReport[] }>> {
+  const r = await rest('GET', `anticheat_reports?select=id,world,host_name,player,kind,detail,created_at&order=created_at.desc&limit=${Math.max(1, Math.min(300, limit))}`);
+  if (!r.ok) return fail(r.error === SETUP_HINT ? 'Run vibeblox_round16.sql in Supabase to collect anti-cheat reports' : r.error);
+  return { ok: true, reports: (r.data as Array<{ id: number; world: string; host_name: string; player: string; kind: string; detail: string; created_at: string }>).map((x) => ({ id: x.id, world: x.world, host: x.host_name, player: x.player, kind: x.kind, detail: x.detail, at: x.created_at })) };
+}
+
+// ---------------- Your level, saved to your account ----------------
+/** Saves your progress (level, XP, coins, cosmetics) to your account, so it follows you to other devices. */
+export async function saveProgressToAccount(progress: unknown): Promise<boolean> {
+  const r = await rest('POST', 'rpc/save_progress', { p_progress: progress });
+  return r.ok;
+}
+/** The progress saved on your account (null: none yet, or not set up). */
+export async function loadProgressFromAccount(): Promise<unknown | null> {
+  const r = await rest('POST', 'rpc/my_progress', {});
+  return r.ok && r.data && typeof r.data === 'object' ? r.data : null;
+}
+export type LevelRow = { username: string; level: number; xp: number; rank: string };
+/** The players with the highest levels (null if it can't be reached / isn't set up). */
+export async function fetchLevelLeaderboard(limit = 50): Promise<LevelRow[] | null> {
+  const r = await rpcPublic('level_leaderboard', { p_limit: limit });
+  if (!r.ok || !Array.isArray(r.data)) return null;
+  return (r.data as Array<{ username: string; level: number | string; xp: number | string; rank?: string }>).map((x) => ({ username: x.username, level: Number(x.level) || 1, xp: Number(x.xp) || 0, rank: x.rank ?? 'none' }));
+}
+
 export type Ban = { username: string; reason: string; by: string };
 export async function listBans(): Promise<Result<{ bans: Ban[] }>> {
   const r = await rest('GET', 'bans?select=username,reason,banned_by&order=created_at.desc&limit=100');

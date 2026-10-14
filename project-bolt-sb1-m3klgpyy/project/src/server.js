@@ -27,7 +27,7 @@ const ENV_MAX = process.env.MAX_PLAYERS ? Number(process.env.MAX_PLAYERS) : null
 const CAPS = { none: 18, rising: 24, popular: 32, star: 48 };
 const TIER_PLAYS = { rising: 1_000, popular: 10_000, star: 100_000 };
 const tierOfPlays = (plays) => (plays >= TIER_PLAYS.star ? 'star' : plays >= TIER_PLAYS.popular ? 'popular' : plays >= TIER_PLAYS.rising ? 'rising' : 'none');
-const OWNER_NAME = 'master_at_pvp';
+const OWNER_NAME = 'master';
 let hostTier = 'none';
 const maxPlayers = () => (ENV_MAX && ENV_MAX > 0 ? ENV_MAX : CAPS[hostTier] || CAPS.none);
 const WORLD_FILE = process.env.WORLD_FILE || path.join(__dirname, 'world.json');
@@ -322,7 +322,7 @@ function system(text) {
 function cleanName(raw, id, verified = false) {
   let name = String(raw || '').replace(/[^A-Za-z0-9_]/g, '').slice(0, 16);
   if (name.length < 3) name = 'Player' + id;
-  if (!verified && name.toLowerCase() === 'master_at_pvp') name = 'Player' + id; // only the signed-in owner may use this name
+  if (!verified && name.toLowerCase() === 'master') name = 'Player' + id; // only the signed-in owner may use this name
   const taken = new Set([...players.values()].filter((p) => p.joined).map((p) => p.name.toLowerCase()));
   let final = name, n = 2;
   while (taken.has(final.toLowerCase())) final = (name.slice(0, 13) + n++);
@@ -503,7 +503,7 @@ function handle(p, msg) {
       p.x = msg.x; p.y = msg.y; p.z = msg.z; p.yaw = msg.yaw; p.pitch = msg.pitch;
       p.mode = typeof msg.mode === 'string' ? msg.mode.slice(0, 12) : 'survival';
       p.held = Number.isInteger(msg.held) && msg.held >= 0 && msg.held < 2000 ? msg.held : 0; // item id in hand (1400+: newer items)
-      p.act = Number.isInteger(msg.act) ? msg.act & 31 : 0; // swinging / aiming / drawing a bow / blocking / sleeping
+      p.act = Number.isInteger(msg.act) ? msg.act & 63 : 0; // swinging / aiming / drawing a bow / blocking / sleeping / sneaking
       p.moved = true;
       return;
     }

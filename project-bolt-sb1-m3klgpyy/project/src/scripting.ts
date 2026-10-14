@@ -249,6 +249,7 @@ const __game = {
   sounds: { play: (name, x, y, z) => __call('sounds.play', name, x, y, z) },
   gui: {
     toast: (text) => __call('gui.toast', String(text)),
+    flash: (seconds) => __call('gui.flash', seconds == null ? 1 : Number(seconds)),
     title: (text, subtitle, seconds) => __call('gui.title', String(text), subtitle == null ? '' : String(subtitle), seconds == null ? 3 : Number(seconds)),
     sidebar: (title, lines) => __call('gui.sidebar', String(title), lines || []),
     clearSidebar: () => __call('gui.clearSidebar'),
@@ -522,6 +523,315 @@ import type { Schematic } from './schematics';
 export type Mod = { id: string; name: string; author: string; description: string; code: string; official: boolean; version?: string; schematics?: Schematic[] };
 
 export const OFFICIAL_MODS: Mod[] = [
+  {
+    id: 'guns',
+    name: 'Guns',
+    author: 'VibeBlox',
+    official: true,
+    description: 'Desert Eagle, AK-47, Sawed-Off and AWP, plus grenades and flashbangs. Left-click shoots, right-click aims (the AWP scopes in); right-click throws grenades and flashbangs.',
+    code: `// Guns: Desert Eagle, AK-47, Sawed-Off and AWP, plus grenades and flashbangs.
+// Left-click shoots (hold it with the AK-47), right-click aims; the AWP scopes in.
+// Bullets are crafted from an iron ingot + coal (smelt the ore in a furnace first).
+const PAL = {"K": "#0e1012", "a": "#e6eaef", "A": "#b5bcc5", "z": "#848c97", "Z": "#585f69", "m": "#6d737c", "M": "#454a52", "N": "#26292e", "p": "#55585e", "P": "#33353a", "Q": "#1b1c1f", "w": "#cf8a4c", "W": "#a1612d", "V": "#6e3f1b", "o": "#7c9a52", "O": "#566f38", "U": "#37491f", "y": "#f4d567", "Y": "#c79b2f", "l": "#c8e8ff", "L": "#4e8fec", "I": "#1f4380", "r": "#d9432b"};
+const ART = {
+  deagle: [
+    '................................',
+    '................................',
+    '................................',
+    '................................',
+    '................................',
+    '................................',
+    '................................',
+    '........K.K.................K...',
+    '.......KNKNK...............KNK..',
+    '.......KNNNKKKKKKKKKKKKKKKKKNK..',
+    '......KaaaaaaaaaaaaaaaaaaaaaaKK.',
+    '......KAAzAzAzAAANNNNNNAAAAAAmmK',
+    '....KKKAAzAzAzAAANMMNNNAAyAAAMNK',
+    '...KmMMAAzAzAzAAAAAAAAAAAYAAAMNK',
+    '...KMMMAAzAzAzAAAAAAAAAAAAAAANNK',
+    '....KKKzzzzzzzzzzzzzzzzzzzzzzKK.',
+    '......KzzzzzzzzzzzzzzzzzzzzzzK..',
+    '.......KKpPPPPQzzzzzzzzKKKKKK...',
+    '........KpPPPPQZZZZZZZZK........',
+    '........KMQPQPPQMMMMMMMK........',
+    '.........KpQPQPQNKKMKKK.........',
+    '..........KQPQPPQKKMK...........',
+    '..........KpQPQPQMMMK...........',
+    '..........KpQPQPQKKK............',
+    '...........KpQPQPQK.............',
+    '...........KQPQPPQK.............',
+    '...........KpPQPQQK.............',
+    '...........KNNNNNNNK............',
+    '............KKKKKKK.............',
+    '................................',
+    '................................',
+    '................................'
+  ],
+  ak47: [
+    '................................',
+    '................................',
+    '................................',
+    '................................',
+    '................................',
+    '................................',
+    '................................',
+    '................................',
+    '...........................K....',
+    '..........................KNK...',
+    '..........K.K........KKKKKKNK...',
+    '.........KNKNK......KzzzzzzNzK..',
+    '.........KNNNKKKKKKKKMMMMMMNMK..',
+    '.KKKKKKKKmmmmmmmmmmmmmKKKKKKK.KK',
+    'KQwwwwwwwMmmmmmmmmmmYMwwwwwwwKNN',
+    'KQWWWWWWWMMMMMMNNNNMMMWWWWWWWzNN',
+    'KQWWWWWWWMMMMMMMNNNMMMVVVVVVVMNN',
+    'KQWVVVVVWMMMMMMMMMMMMMWWWWWWWKNN',
+    'KQWWWWWWWNNNNNNNNNNNNNVVVVVVVKKK',
+    'KQWWWWWWWWKKwWWNNmMMNKKKKKKKK...',
+    'KQVVVVVVVVKKwWWNKNmMMNK.........',
+    '.KKKKKKKKK..KwWNKKNNNNK.........',
+    '............KwWNNNNmMMNK........',
+    '............KwWWVKKmMMNK........',
+    '.............KwWWVKKNNNNK.......',
+    '.............KwWWVKKmMMNK.......',
+    '.............KwWWVK.KmMMNK......',
+    '..............KKKK..KNNNNK......',
+    '.....................KmMMNK.....',
+    '......................KKKK......',
+    '................................',
+    '................................'
+  ],
+  sawed: [
+    '................................',
+    '................................',
+    '................................',
+    '................................',
+    '................................',
+    '................................',
+    '................................',
+    '................................',
+    '...........KK...................',
+    '..........KNNK..................',
+    '..........KMMKK................K',
+    '.........KmmmmmKKKKKKKKKKKKKKKKN',
+    '.........KMMYMMaaaaaaaaaaaaaaaNK',
+    '.........KMMyMMzzzzzzzzzzzzzzzQK',
+    '.........KMMMMMZZZZZZZZZZZZZZZNK',
+    '.........KMMMMMZZZZZZZZZZZZZZZQK',
+    '.........KMMMMMwwwwwwwwKKKKKKKK.',
+    '........KwWWMMNNNNNVVVVK........',
+    '........KwWWWNKKKKNVVVVK........',
+    '.......KwWWWVNKNKKNKKKK.........',
+    '.......KwWWWVNKKKKNK............',
+    '......KwWWWVKNNNNNNK............',
+    '......KwWWWVKKKKKKK.............',
+    '.....KwWWWVK....................',
+    '.....KwWWWVK....................',
+    '....KwWWWVK.....................',
+    '....KwWWWVK.....................',
+    '...KwWWWVK......................',
+    '....KKKKK.......................',
+    '................................',
+    '................................',
+    '................................'
+  ],
+  awp: [
+    '................................',
+    '................................',
+    '................................',
+    '................................',
+    '................................',
+    '................................',
+    '.................KK.............',
+    '......KKK.....KKKMMK..KKKK......',
+    '.....KmmmKKKKKZZKMMKKKmmmmK.....',
+    '.....KlMMmmmmmmmmmmmmmMMMMlK....',
+    '.....KLMMNNNNNNNNNNNNNMMMMLK....',
+    '...KKKMMMQQQQQQQQQQQQQMMMMIK....',
+    '..KoooNNNKKZZKKKKKKZZKNNNNK..KKK',
+    'KKKUUUUUUKKZZKKKKKKZZKKKKKKKKMMM',
+    'QooooooooommmmmmmmmmzzzzzzzzzNMN',
+    'QOOOOOOOOOMMMMNNNNMMMMMMMMMMMNMN',
+    'QOOOOOOOOOMMMMMMMMMMoooooKKKKNNN',
+    'QOOOOUUUOOMMMMMMMMMMOOOOOK...KKK',
+    'QOOOOOOOOONNNNNNNNNNOOOOOK......',
+    'QOOOOOOOOOoOOUMMMMZAUUNUUK......',
+    'QUUUUUUUUUoOOUNNNNKAaKNKK.......',
+    'KKKKKKKKKKKoOONZNNKKKNNNK.......',
+    '..........KoOONNNNK..KKK........',
+    '..........KoOOUKKK..............',
+    '...........KoOOUK...............',
+    '...........KoOOUK...............',
+    '...........KoOOUK...............',
+    '............KKKK................',
+    '................................',
+    '................................',
+    '................................',
+    '................................'
+  ],
+};
+
+const GUNS = {
+  'guns:deagle': { name: 'Desert Eagle', art: 'deagle', hold: 'one_hand', damage: 9, cooldown: 420, auto: false, pellets: 1,
+    spread: 0.012, aimSpread: 0.003, range: 70, recoil: 0.08, zoom: 0.82, knockback: 0.8,
+    lore: ['\\\\gray\\\\A hand cannon.', '\\\\white\\\\Damage: \\\\gold\\\\9 \\\\gray\\\\| Semi-auto', '\\\\white\\\\Held in one hand', '\\\\red\\\\Kicks hard'] },
+  'guns:ak47': { name: 'AK-47', art: 'ak47', hold: 'two_hands', damage: 5, cooldown: 100, auto: true, pellets: 1,
+    spread: 0.035, aimSpread: 0.012, range: 80, recoil: 0.022, zoom: 0.78, knockback: 0.4,
+    lore: ['\\\\gray\\\\Classic assault rifle.', '\\\\white\\\\Damage: \\\\gold\\\\5 \\\\gray\\\\| Full-auto, 600 RPM', '\\\\white\\\\Hold left-click to spray'] },
+  'guns:sawed_off': { name: 'Sawed-Off', art: 'sawed', hold: 'two_hands', damage: 3, cooldown: 750, auto: false, pellets: 9,
+    spread: 0.12, aimSpread: 0.085, range: 18, recoil: 0.13, zoom: 0.9, knockback: 1.6,
+    lore: ['\\\\gray\\\\Double barrel, sawn short.', '\\\\white\\\\Damage: \\\\gold\\\\3 x 9 pellets', '\\\\white\\\\Brutal up close, useless far away'] },
+  'guns:awp': { name: 'AWP', art: 'awp', hold: 'two_hands', damage: 20, cooldown: 1400, auto: false, pellets: 1,
+    spread: 0.07, aimSpread: 0, range: 160, recoil: 0.12, zoom: 0.22, scope: true, knockback: 1.2,
+    lore: ['\\\\gray\\\\Bolt-action sniper rifle.', '\\\\white\\\\Damage: \\\\gold\\\\20 \\\\gray\\\\| One shot, most mobs', '\\\\white\\\\Right-click to scope in', '\\\\red\\\\Wild without the scope'] },
+};
+
+game.items.register({ id: 'guns:bullet', name: 'Bullets', maxStack: 64,
+  lore: ['\\\\gray\\\\Ammo for every gun.', '\\\\white\\\\Iron ingot + coal = 16'],
+  icon: { palette: { b: '#c0c0c0', y: '#e3b341', Y: '#a8801f' }, pixels: [
+    '', '', '', '...b....b....b..', '..bbb..bbb..bbb.', '..yyy..yyy..yyy.', '..yyy..yyy..yyy.', '..yyy..yyy..yyy.', '..yyy..yyy..yyy.', '..YYY..YYY..YYY.'] } });
+for (const [id, g] of Object.entries(GUNS)) {
+  game.items.register({ id, name: g.name, maxStack: 1, hold: g.hold, leftClick: 'use', lore: g.lore, icon: { palette: PAL, pixels: ART[g.art] } });
+}
+
+game.recipes.register({ id: 'bullets', pattern: ['I', 'C'], key: { I: 'iron_ingot', C: 'coal' }, output: 'guns:bullet', count: 16 });
+game.recipes.register({ id: 'deagle', pattern: ['III', 'I  '], key: { I: 'iron_ingot' }, output: 'guns:deagle' });
+game.recipes.register({ id: 'ak47', pattern: ['III', 'PIP'], key: { I: 'iron_ingot', P: 'planks' }, output: 'guns:ak47' });
+game.recipes.register({ id: 'sawed_off', pattern: ['III', 'P  '], key: { I: 'iron_ingot', P: 'planks' }, output: 'guns:sawed_off' });
+game.recipes.register({ id: 'awp', pattern: ['DII', 'III', 'P  '], key: { D: 'diamond', I: 'iron_ingot', P: 'planks' }, output: 'guns:awp' });
+
+const lastShot = {};
+let aiming = null; // the gun being aimed, or null
+let autoTimer = null;
+
+async function fire(id) {
+  const g = GUNS[id];
+  const now = Date.now();
+  if (now - (lastShot[id] || 0) < g.cooldown - 5) return; // fire-rate limit: one click can never shoot twice
+  lastShot[id] = now;
+  const p = await game.player.get();
+  if (!p.heldItem || p.heldItem.item !== id) { stopAuto(); return; }
+  if (p.mode !== 'creative') {
+    if ((await game.player.countItem('guns:bullet')) < 1) {
+      game.sounds.play('click');
+      game.gui.toast('Out of bullets! Craft them from iron ore + coal');
+      stopAuto();
+      return;
+    }
+    game.player.removeItem('guns:bullet', 1);
+  }
+  const steady = aiming === id;
+  game.sounds.play('gunshot');
+  game.player.recoil(steady ? g.recoil * 0.6 : g.recoil);
+  // muzzle flash just in front of the barrel
+  const mx = p.eye.x + p.look.x * 1.1, my = p.eye.y + p.look.y * 1.1 - 0.15, mz = p.eye.z + p.look.z * 1.1;
+  if (!(g.scope && steady)) game.particles.spawn(mx, my, mz, { color: '#ffd27a', count: 4, speed: 1.2, size: 0.07, life: 0.08 });
+  for (let i = 0; i < g.pellets; i++) {
+    const sp = steady ? g.aimSpread : g.spread;
+    const r = () => (Math.random() - 0.5) * 2 * sp;
+    const dir = { x: p.look.x + r(), y: p.look.y + r(), z: p.look.z + r() };
+    const hit = await game.world.raycast(p.eye, dir, g.range);
+    const len = Math.hypot(dir.x, dir.y, dir.z);
+    const end = hit ? hit.point : { x: p.eye.x + (dir.x / len) * g.range, y: p.eye.y + (dir.y / len) * g.range, z: p.eye.z + (dir.z / len) * g.range };
+    game.particles.line(mx, my, mz, end.x, end.y, end.z, { color: '#ffe08a' });
+    if (hit && hit.type === 'entity') {
+      game.entities.damage(hit.entity.id, g.damage, g.knockback);
+      game.particles.spawn(end.x, end.y, end.z, { color: '#b01818', count: 6, speed: 2 });
+    } else if (hit) {
+      game.particles.spawn(end.x, end.y, end.z, { color: '#9a9a9a', count: 4, speed: 1.5 });
+    }
+  }
+}
+
+function stopAuto() {
+  if (autoTimer) game.scheduler.cancel(autoTimer);
+  autoTimer = null;
+}
+
+function stopAiming() {
+  if (!aiming) return;
+  aiming = null;
+  game.player.setAiming(false);
+  game.player.setZoom(1);
+}
+
+game.on('itemAttack', (e) => {
+  const g = GUNS[e.item];
+  if (!g) return;
+  if (!e.pressed) return stopAuto();
+  fire(e.item);
+  if (g.auto) { stopAuto(); autoTimer = game.scheduler.every(g.cooldown, () => fire(e.item)); }
+});
+game.on('itemUse', (e) => {
+  const g = GUNS[e.item];
+  if (!g) return;
+  aiming = e.item;
+  game.player.setAiming(true);
+  game.player.setZoom(g.zoom); // the AWP's 0.22 also switches on the scope view
+});
+game.on('itemUseEnd', (e) => { if (GUNS[e.item]) stopAiming(); });
+game.on('playerDeath', () => { stopAuto(); stopAiming(); });
+
+// ---------------- Grenades and flashbangs ----------------
+// Right-click throws them. A grenade blows up where it lands; a flashbang goes off with a blinding flash:
+// the closer you are and the more you face it, the longer you're blinded.
+const THROWN = {};
+game.items.register({ id: 'guns:grenade', name: 'Grenade', maxStack: 16, hold: 'item',
+  lore: ['\\\\gray\\\\Right-click to throw.', '\\\\white\\\\Explodes where it lands', '\\\\red\\\\Breaks blocks!'],
+  icon: { palette: { K: '#0e1012', g: '#5c7a3a', G: '#3e5526', d: '#2a3a1a', m: '#9aa0a6', M: '#5e646b', r: '#c8c8c8' }, pixels: [
+    '................', '......KKK.......', '.....KmMmK......', '.....KMrMKKK....', '......KMK..rK...', '....KKKKKKK.K...', '...KgggggggK....', '..KggGgggGggK...',
+    '..KgddddddddK...', '..KgGggGggGgK...', '..KggggggggGK...', '..KgddddddddK...', '..KgGggGggGgK...', '...KggggggGK....', '....KKKKKKK.....', '................'] } });
+game.items.register({ id: 'guns:flashbang', name: 'Flashbang', maxStack: 16, hold: 'item',
+  lore: ['\\\\gray\\\\Right-click to throw.', '\\\\white\\\\A blinding flash and a bang', "\\\\yellow\\\\Look away when it goes off!"],
+  icon: { palette: { K: '#0e1012', a: '#e6eaef', A: '#b5bcc5', z: '#848c97', y: '#f4d567', m: '#9aa0a6', M: '#5e646b' }, pixels: [
+    '................', '......KKK.......', '.....KmMmK......', '.....KMyMKKK....', '......KMK..yK...', '....KKKKKKK.K...', '....KaaaaaK.....', '....KAAAAAK.....',
+    '....KyyyyyK.....', '....KAAAAAK.....', '....KaaaaaK.....', '....KzzzzzK.....', '....KAAAAAK.....', '....KaaaaaK.....', '.....KKKKK......', '................'] } });
+game.recipes.register({ id: 'grenade', pattern: [' I ', 'IGI', ' I '], key: { I: 'iron_ingot', G: 'gunpowder' }, output: 'guns:grenade', count: 2 });
+game.recipes.register({ id: 'flashbang', pattern: [' I ', 'IGI', ' Y '], key: { I: 'iron_ingot', G: 'gunpowder', Y: 'gold_ingot' }, output: 'guns:flashbang', count: 2 });
+
+async function throwIt(item) {
+  const p = await game.player.get();
+  if (p.mode !== 'creative') {
+    if ((await game.player.countItem(item)) < 1) return;
+    game.player.removeItem(item, 1);
+  }
+  game.sounds.play('throw');
+  const grenade = item === 'guns:grenade';
+  const id = await game.world.spawnProjectile({
+    x: p.eye.x + p.look.x * 0.6, y: p.eye.y + p.look.y * 0.6, z: p.eye.z + p.look.z * 0.6,
+    vx: p.look.x * 17, vy: p.look.y * 17 + 3, vz: p.look.z * 17, gravity: 20,
+    damage: grenade ? 2 : 0, knockback: 1, lifetime: 6,
+    explosion: grenade ? 3 : 0, color: grenade ? '#4e6b30' : '#d8dde3', size: 0.22,
+  });
+  if (!grenade) THROWN[id] = 'flash';
+}
+
+async function flashAt(x, y, z) {
+  game.sounds.play('explode');
+  game.particles.spawn(x, y + 0.3, z, { color: '#ffffff', count: 30, speed: 6, size: 0.12, life: 0.4 });
+  game.particles.spawn(x, y + 0.3, z, { color: '#fff3b0', count: 14, speed: 3, size: 0.2, life: 0.6 });
+  const p = await game.player.get();
+  const dx = x - p.eye.x, dy = y - p.eye.y, dz = z - p.eye.z;
+  const dist = Math.hypot(dx, dy, dz);
+  if (dist > 24) return;
+  const facing = dist < 0.01 ? 1 : (dx * p.look.x + dy * p.look.y + dz * p.look.z) / dist; // 1 = looking right at it
+  const strength = Math.max(0, 1 - dist / 24) * (facing > 0.3 ? 1 : facing > -0.2 ? 0.55 : 0.25);
+  if (strength < 0.08) return;
+  game.gui.flash(0.6 + strength * 4.5); // seconds of white
+  if (strength > 0.4) game.player.applyEffect('slowness', Math.ceil(strength * 4), 1); // dazed
+}
+
+game.on('itemUse', (e) => {
+  if (e.item === 'guns:grenade' || e.item === 'guns:flashbang') throwIt(e.item);
+});
+game.on('projectileHit', (e) => {
+  if (THROWN[e.projectileId] !== 'flash') return;
+  delete THROWN[e.projectileId];
+  flashAt(e.x, e.y, e.z);
+});
+`,
+  },
   {
     id: 'farmers-delight',
     name: "Farmer's Delight",
@@ -969,6 +1279,7 @@ export const API_DOCS: ApiDoc[] = [
   ['particles.line', '(x1, y1, z1, x2, y2, z2, { color })', 'A line of particles (bullet tracers).'],
   ['sounds.play', '(name, x?, y?, z?)', 'Names: gunshot, reload, click, ding, pop, hurt, pickup, eat, bow, splash, teleport, throw, explode, land, hiss, arrowHit.'],
   ['gui.toast', '(text)', 'Short message above the hotbar.'],
+  ['gui.flash', '(seconds)', 'Turns the screen white, then fades back over that many seconds (flashbangs).'],
   ['gui.title', '(text, subtitle?, seconds?)', 'Big title in the middle of the screen. Colour codes and moving effects work, e.g. game.gui.title("\\green\\\\shiny\\ Hello world!", "\\rainbow\\Welcome"). Codes: colours (\\red\\ \\gold\\ \\#ff8800\\), \\bold\\ \\italic\\ \\underline\\ \\strike\\, effects \\shiny\\ \\rainbow\\ \\neon\\ \\toxic\\ \\pristine\\ \\glitched\\ \\wave\\ \\shake\\ \\pulse\\, fonts \\serif\\ \\mono\\ \\cursive\\ \\comic\\ \\impact\\ \\pixel\\ \\retro\\, \\reset\\.'],
   ['commands.run', '(text)', 'Run a game command like "/title @p \\gold\\ Hi" (title, say, effect, give, summon, tp, time, weather, playsound, rank). Returns { success, output }.'],
   ['gui.sidebar', '(title, lines[])', 'Scoreboard on the right side (up to 15 lines, color codes work).'],

@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef, useMemo, useSyncExternalStore, createContext, useContext, type FormEvent, type ChangeEvent, type MouseEvent as ReactMouseEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
 import { ADVANCEMENT_TABS, advancementsFor, checkItems, checkEvent, loadAdvancements, saveAdvancements, clearAdvancements, type Advancement, type AdvancementTab } from './advancements';
 import { SKINS, CAPES, CUSTOM_SKIN_ID, isCustomSkinData, type PlayerLook } from '@/cosmetics';
-import { CAN_LINK_OUT, CAN_SELL_RANKS, ADS_POSSIBLE, PLATFORM, initAds, triggerRewardedAd, setGameplayActive, reportLoadingFinished, setAdsBlocked, maybeInterstitial } from '@/adEconomy';
+import { CAN_LINK_OUT, CAN_SELL_RANKS, ADS_POSSIBLE, PLATFORM, initAds, triggerRewardedAd, setGameplayActive, reportLoadingFinished, setAdsBlocked, maybeInterstitial, lastAdResult } from '@/adEconomy';
 import {
-  getProgress, subscribeProgress, onLevelUp, setCustomSkin, addActiveSeconds, rewardAdCoins, rewardAdBooster, buyCosmetic, equipCosmetic, currentLook, reloadProgress,
+  getProgress, subscribeProgress, onLevelUp, setCustomSkin, addActiveSeconds, rewardAdCoins, rewardAdBooster, buyCosmetic, equipCosmetic, currentLook, reloadProgress, progressForAccount, mergeAccountProgress,
   xpForLevel, DISCORD_INVITE_URL, TEBEX_STORE_URL, AD_COINS, LEVEL_UP_COINS, XP_PER_PERIOD, SECONDS_PER_PERIOD, BOOSTER_SECONDS, IDLE_AFTER_SECONDS,
 } from '@/progression';
 import { ModBuilder } from '@/ModBuilder';
@@ -14,7 +14,7 @@ import { t, useLanguage, setLanguage, LANGUAGES, type LangCode } from '@/i18n';
 import { useKeybinds, rebind, resetBinds, keyLabel, KEY_ACTIONS, setCapturingKey, isCapturingKey, getBinds } from '@/keybinds';
 import type { OneBlockView, KeyAction } from '@/voxelGame';
 import { ITEM_IRON_INGOT, ITEM_GOLD_INGOT, ITEM_DIAMOND, ITEM_ENDER_PEARL, ITEM_IRON_SWORD, ITEM_IRON_PICKAXE, ITEM_BOW, BLOCK_TNT, BLOCK_GLASS, armorId } from '@/voxelGame';
-import { createVoxelGame, type GameWorldMode, type GraphicsQuality, type Recipe, type PlayMode, type DebugInfo, type WorldType, type Slots, type ItemStack, type SaveData, type WeatherKind, EXPERIMENTAL_IDS, experimentalEnabled, isWater, isLava, BLOCK_WATER, BLOCK_LAVA, BLOCK_GRASS, BLOCK_DIRT, BLOCK_STONE, ARMOR, ARMOR_PIECES, CUSTOM_ITEMS, CUSTOM_BLOCKS, customIdForKey, registerCustomItem, registerCustomBlock, createPlayerPreview, drawLookPreview, getTexturePreviews, setTextureResolution, type TextureRes, type DimensionSpec, type TextureSpec, maxStack, addToSlots, countInSlots, emptySlots, INVENTORY_SIZE, ITEM_INFO, RECIPES, getItemIconURL, matchRecipe, SMELTING, FUEL_SECONDS, isBlockId, type Trade, type Difficulty, ITEM_WAND, CHUNK_SIZE, CHUNK_HEIGHT, isPotionItem, isBrewIngredient, ITEM_BLAZE_POWDER, potionName, ITEM_NAME_TAG } from '@/voxelGame';
+import { createVoxelGame, MINIGAME_SIZES, type GameWorldMode, type GraphicsQuality, type Recipe, type PlayMode, type DebugInfo, type WorldType, type Slots, type ItemStack, type SaveData, type WeatherKind, EXPERIMENTAL_IDS, experimentalEnabled, isWater, isLava, BLOCK_WATER, BLOCK_LAVA, BLOCK_GRASS, BLOCK_DIRT, BLOCK_STONE, ARMOR, ARMOR_PIECES, CUSTOM_ITEMS, CUSTOM_BLOCKS, customIdForKey, registerCustomItem, registerCustomBlock, createPlayerPreview, drawLookPreview, getTexturePreviews, setTextureResolution, type TextureRes, type DimensionSpec, type TextureSpec, maxStack, addToSlots, countInSlots, emptySlots, INVENTORY_SIZE, ITEM_INFO, RECIPES, getItemIconURL, matchRecipe, SMELTING, FUEL_SECONDS, isBlockId, type Trade, type Difficulty, ITEM_WAND, CHUNK_SIZE, CHUNK_HEIGHT, isPotionItem, isBrewIngredient, ITEM_BLAZE_POWDER, potionName, ITEM_NAME_TAG } from '@/voxelGame';
 import * as THREE from 'three';
 import {
   withCount, addStackToSlots, maxDurability, itemDisplayName, enchantLabel, ENCHANTMENTS, enchantFits, enchantsConflict, ITEM_LAPIS, ITEM_BOOK, ITEM_ENCHANTED_BOOK, type Station,
@@ -34,6 +34,7 @@ import { MusicPlayer, SOUNDTRACKS, subscribeNowPlaying, getNowPlaying, type Soun
 import { playlist, isFileStyle } from './playlist';
 import { NowPlayingToast, LookingAtLabel, QolSettings, PlaylistNote, saveScreenshot } from './QolBits';
 import { installUiSounds, setUiSoundVolume, getQol, subscribeQol } from './qol';
+import { useCompactLayout } from './layout';
 import SideNav from './SideNav';
 import { AccountTab, AccountSummaryContext } from './AccountPanel';
 import { subscribeVideo, getVideo } from './videoPrefs';
@@ -46,7 +47,7 @@ import AdminPanel, { type PanelPlayer } from './AdminPanel';
 import { useAccount } from './useAccount';
 import TouchControls, { RotateHint, touchEnabled, loadTouchPref, saveTouchPref, lockViewportForTouch, type TouchPref } from './TouchControls';
 import Tutorial, { tutorialDone } from './Tutorial';
-import { addFriend, unfriendByName, loadFriends, sendDM, startPolling, isGuestName, reportActivity, fetchPlayingCounts, fetchLeaderboard, fetchStanding, recordPlay, setServerPresence, isOwnerName, listHostedWorlds, publishHostedWorld, unpublishHostedWorld, verifyToken, isFriendOf, isBannedName, isAdminToken, type DM, type Activity, type Friend, type LeaderRow, type Standing, type HostedWorld } from './social';
+import { saveProgressToAccount, loadProgressFromAccount, fetchLevelLeaderboard, reportCheat, cleanWorldImage, type LevelRow, addFriend, unfriendByName, loadFriends, sendDM, startPolling, isGuestName, reportActivity, fetchPlayingCounts, fetchLeaderboard, fetchStanding, recordPlay, setServerPresence, isOwnerName, listHostedWorlds, publishHostedWorld, unpublishHostedWorld, verifyToken, isFriendOf, isBannedName, isAdminToken, type DM, type Activity, type Friend, type LeaderRow, type Standing, type HostedWorld } from './social';
 
 // Multiplayer is optional: Vite only includes src/multiplayer.ts if the file
 // exists, so deleting it (or the server folder) never breaks the game.
@@ -64,7 +65,27 @@ const PRIVACY_INFO: Record<WorldPrivacy, { label: string; hint: string }> = {
   private: { label: 'Private', hint: 'Just you: nobody else sees or joins it' },
 };
 const PRIVACY_ORDER: WorldPrivacy[] = ['public', 'accounts', 'friends', 'private'];
-type HostRoomLike = { count: number; full: boolean; setPrivacy(p: WorldPrivacy): void; stop(reason?: string): void };
+type AntiCheatLike = { settings: AcSettings };
+type HostRoomLike = { count: number; full: boolean; setPrivacy(p: WorldPrivacy): void; stop(reason?: string): void; anticheat?: AntiCheatLike };
+/** Anti-cheat (anticheat.ts): an alert about a player in the world you host, and its switches. */
+type CheatAlertLike = { at: number; id: number; player: string; kind: string; detail: string; points: number };
+type AcSettings = { enabled: boolean; autoKick: boolean; kickAt: number };
+const AC_KEY = 'vb-anticheat';
+function loadAcSettings(): AcSettings {
+  try { const o = JSON.parse(localStorage.getItem(AC_KEY) ?? '{}') as Partial<AcSettings>; return { enabled: o.enabled !== false, autoKick: o.autoKick !== false, kickAt: typeof o.kickAt === 'number' && o.kickAt >= 4 && o.kickAt <= 60 ? o.kickAt : 12 }; } catch { return { enabled: true, autoKick: true, kickAt: 12 }; }
+}
+const CHEAT_NAMES: Record<string, string> = { fly: 'Flying', speed: 'Speed', reach: 'Reach', killaura: 'Kill aura', autoclicker: 'Auto clicker', nuker: 'Nuker', spam: 'Chat spam' };
+/** An online EggWars / Bridge Duels match, as the host's room sends it (see hosting.ts). */
+type NetMatch = {
+  phase: 'waiting' | 'countdown' | 'playing' | 'over'; left: number; round: number; winner: number | null;
+  teams: Array<{ score: number; egg: boolean; out: boolean }>;
+  members: Array<[number, number, boolean, number, number]>;
+  kind: ArenaKind; winScore: number;
+};
+type NetGame = { kind: ArenaKind; variant: number; teams: number; teamSize: number; winScore: number };
+const TEAM_KEYS = ['red', 'blue', 'green', 'yellow'];
+/** How the minigame was started: against bots, hosting a match for real players, or joining one. */
+type MinigameOnline = { host: true } | { join: string; hostName: string };
 type HostingMod = {
   HostRoom: new (o: Record<string, unknown>) => HostRoomLike;
   PeerHost: new (id: string, signaling: unknown, room: HostRoomLike) => { start(): Promise<void>; stop(): void };
@@ -83,12 +104,32 @@ function signalingFor(h: HostingMod): unknown {
   return test ?? h.supabaseSignaling(() => import('./auth/supabaseAuth').then((A) => (A as unknown as { getSupabase: () => Promise<unknown> }).getSupabase()));
 }
 const HOSTABLE_TYPES = ['default', 'superflat'];
+/** The picture shown for your open world on the Servers page: game images stay as they are, uploads are shrunk. */
+function listImage(img?: string): Promise<string | undefined> {
+  if (!img) return Promise.resolve(undefined);
+  if (!img.startsWith('data:')) return Promise.resolve(img);
+  return new Promise((resolve) => {
+    const el = new Image();
+    el.onload = () => {
+      try {
+        const c = document.createElement('canvas');
+        c.width = 320; c.height = 180;
+        const ctx = c.getContext('2d')!;
+        const scale = Math.max(320 / el.width, 180 / el.height);
+        ctx.drawImage(el, (320 - el.width * scale) / 2, (180 - el.height * scale) / 2, el.width * scale, el.height * scale);
+        resolve(c.toDataURL('image/jpeg', 0.7));
+      } catch { resolve(undefined); }
+    };
+    el.onerror = () => resolve(undefined);
+    el.src = img;
+  });
+}
 type NetBlock = [number, number, number, number];
 type NetBadge = { owner?: boolean; rank?: string; tier?: string };
 type NetPlayerInfo = { id: number; name: string; x: number; y: number; z: number; yaw: number; pitch: number; mode: string; look?: PlayerLook; badge?: NetBadge };
-type ServerSettings = { difficulty: Difficulty; keepInventory: boolean; scripts: boolean; mods: boolean; commands: boolean };
-const DEFAULT_SERVER: ServerSettings = { difficulty: 'normal', keepInventory: false, scripts: true, mods: true, commands: true };
-type Welcome = { id: number; name: string; seed: number; worldType: 'default' | 'superflat'; mode: string; time: number; changes: NetBlock[]; players: NetPlayerInfo[]; hostId?: number | null; settings?: ServerSettings; weather?: WeatherKind; experimental?: boolean; maxPlayers?: number; ranks?: unknown };
+type ServerSettings = { difficulty: Difficulty; keepInventory: boolean; scripts: boolean; mods: boolean; commands: boolean; pvp?: boolean };
+const DEFAULT_SERVER: ServerSettings = { difficulty: 'normal', keepInventory: false, scripts: true, mods: true, commands: true, pvp: true };
+type Welcome = { game?: NetGame; id: number; name: string; seed: number; worldType: 'default' | 'superflat' | 'eggwars' | 'bridge'; mode: string; time: number; changes: NetBlock[]; players: NetPlayerInfo[]; hostId?: number | null; settings?: ServerSettings; weather?: WeatherKind; experimental?: boolean; maxPlayers?: number; ranks?: unknown };
 type MpEvents = {
   onPing?: (ms: number) => void;
   onWelcome?: (w: Welcome) => void;
@@ -111,9 +152,18 @@ type MpEvents = {
   onWhisperFail?: (to: string) => void;
   onSetMode?: (mode: string, by: string) => void;
   onAdminPlayers?: (list: Array<{ id: number; name: string; mode: string }>) => void;
+  onMatch?: (m: NetMatch) => void;
+  onMatchReset?: (round: number) => void;
+  onHurt?: (h: { by: number; name: string; dmg: number; kx: number; kz: number }) => void;
+  onHurtFx?: (id: number) => void;
   onClose?: (reason: string) => void;
 };
 type MpClient = {
+  sendHit(id: number, dmg: number, kx: number, kz: number): void;
+  sendMatchStart(): void;
+  sendMatchDied(by: number | null): void;
+  sendMatchEgg(team: number): void;
+  sendMatchGoal(team: number): void;
   events: MpEvents;
   connected: boolean;
   connect(url: string, name: string, token?: string | null): void;
@@ -356,12 +406,29 @@ function DiscordBanner() {
 
 const NEWS_SEEN_KEY = 'vibeblox-news-seen';
 function readNewsSeen(): number { try { return parseInt(localStorage.getItem(NEWS_SEEN_KEY) ?? '0', 10) || 0; } catch { return 0; } }
-function Sidebar({ username, view, onNavClick, socialBadge = 0 }: { username: string; view: View; onNavClick: (v: View) => void; socialBadge?: number }) {
+function Sidebar({ username, view, onNavClick, socialBadge = 0, compact = false }: { username: string; view: View; onNavClick: (v: View) => void; socialBadge?: number; compact?: boolean }) {
   useLanguage();
   const initial = username ? username.charAt(0).toUpperCase() : 'P';
   const [seen, setSeen] = useState(readNewsSeen);
   useEffect(() => { if (view === 'news') { try { localStorage.setItem(NEWS_SEEN_KEY, String(GAME_VERSION)); } catch { /* private window */ } setSeen(GAME_VERSION); } }, [view]);
   const newsUnread = seen < GAME_VERSION;
+  if (compact) {
+    // Phones: a row of tabs along the bottom of the screen
+    const tab = (key: string, active: boolean, onClick: () => void, Icon: typeof Home, label: string, badge?: ReactNode) => (
+      <button key={key} onClick={onClick} data-testid={`mnav-${key}`}
+        className={`relative shrink-0 min-w-[52px] h-12 px-1 rounded-xl flex flex-col items-center justify-center text-[9px] transition-colors ${active ? 'bg-[#00e676]/15 text-[#00e676]' : 'text-[#8ea0b8] active:bg-[#1a2230]'}`}>
+        <Icon className="w-5 h-5 mb-0.5" />{label}{badge}
+      </button>
+    );
+    return (
+      <nav className="w-full h-[60px] shrink-0 bg-[#0d131b] border-t border-[#243044] flex items-center justify-around gap-1 px-1 overflow-x-auto vb-scroll" data-testid="mobile-nav" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+        {navItems.filter((it) => it.view).map((item) => tab(item.view!, item.view === view, () => onNavClick(item.view!), item.icon, t('nav.' + item.view),
+          item.view === 'social' && socialBadge > 0 ? <span data-testid="social-badge" className="absolute top-0 right-1 min-w-[16px] h-[16px] px-1 rounded-full bg-[#ff5252] text-white text-[9px] font-bold flex items-center justify-center">{socialBadge > 9 ? '9+' : socialBadge}</span> : undefined))}
+        {tab('news', view === 'news', () => onNavClick('news'), Newspaper, t('nav.news'), newsUnread && view !== 'news' ? <span data-testid="news-dot" className="absolute top-1 right-2 w-2 h-2 rounded-full bg-[#ff5252]" /> : undefined)}
+        <span data-testid="game-version" className="sr-only">v{GAME_VERSION}</span>
+      </nav>
+    );
+  }
   return (
     <nav className="w-20 shrink-0 bg-[#0d131b] border-r border-[#243044] flex flex-col items-center py-6 gap-2">
       <div className="mb-6"><img src="/images/logo.png" alt="VibeBlox" className="w-11 h-11 rounded-xl" /></div>
@@ -522,9 +589,9 @@ function GameCardItem({ game, onPlay, players }: { game: GameCard; onPlay?: () =
           alt={game.title}
           loading="lazy"
           onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }}
-          className="w-full h-full object-cover opacity-60 group-hover:opacity-80 group-hover:scale-105 transition-all duration-500"
+          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+          data-testid="game-thumb"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-[#121822] via-[#121822]/40 to-transparent" />
         <span className={`absolute top-3 left-3 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-gradient-to-r ${game.accent} text-white shadow-lg`}>
           {game.tag}
         </span>
@@ -683,7 +750,6 @@ function PlanetsView({ savedWorlds, limit, onPlayWorld, onCreate, onDelete }: { 
             return (
               <div key={key} className="group rounded-2xl border border-[#243044] bg-[#121822] overflow-hidden hover:border-[#00e676]/60 transition-all" data-testid="planet-card">
                 <div className="h-28 bg-cover bg-center relative" style={{ backgroundImage: `url(${world.image || '/images/survival-bg.jpg'}), linear-gradient(135deg, #0e4f6e, #121822)` }}>
-                  <div className="absolute inset-0 bg-gradient-to-t from-[#121822] to-transparent" />
                   <span className="absolute top-2 left-2 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-black/60 text-white">{world.mode}{world.worldType === 'superflat' ? ' · flat' : world.worldType === 'oneblock' ? ' · oneblock' : ''}</span>
                   {world.experimental && <span className="absolute top-2 right-2 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-[#ffb347] text-[#0a0e14]" data-testid="experimental-badge">Experimental</span>}
                 </div>
@@ -722,9 +788,20 @@ function PlanetsView({ savedWorlds, limit, onPlayWorld, onCreate, onDelete }: { 
 }
 
 /** EggWars / Bridge Duels: play against bots now; real players are coming. */
-function MinigamePicker({ kind, onPlay, onClose }: { kind: ArenaKind; onPlay: (d: BotDifficulty, size: MinigameSize) => void; onClose: () => void }) {
+function MinigamePicker({ kind, onPlay, onClose, onHost, onJoin }: { kind: ArenaKind; onPlay: (d: BotDifficulty, size: MinigameSize) => void; onClose: () => void; onHost?: (size: MinigameSize) => void; onJoin?: (w: HostedWorld) => void }) {
   const [diff, setDiff] = useState<BotDifficulty>('normal');
   const [size, setSize] = useState<MinigameSize>('solo');
+  const [onlineSize, setOnlineSize] = useState<MinigameSize>('solo');
+  const summary = useContext(AccountSummaryContext);
+  // open matches of this game that you can join (refreshes while the menu is open)
+  const [open, setOpen] = useState<HostedWorld[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    const load = () => { void listHostedWorlds().then((r) => { if (live) setOpen(r.ok ? r.worlds.filter((w) => w.worldType === kind) : []); }); };
+    load();
+    const t = window.setInterval(load, 6000);
+    return () => { live = false; window.clearInterval(t); };
+  }, [kind]);
   const sizeBlurb: Record<MinigameSize, string> = kind === 'eggwars'
     ? { solo: 'Every team is one player: you against 3 bots.', duos: 'Teams of 2: you and a bot teammate against three bot duos.', squads: 'Teams of 4: you and 3 bot teammates against three bot squads.' }
     : { solo: '1 v 1: you against one bot.', duos: '2 v 2: you and a bot teammate against two bots.', squads: '4 v 4: you and 3 bot teammates against four bots.' };
@@ -755,17 +832,37 @@ function MinigamePicker({ kind, onPlay, onClose }: { kind: ArenaKind; onPlay: (d
           </div>
           <button onClick={() => onPlay(diff, size)} data-testid="play-vs-ai" className="w-full py-3 rounded-xl bg-[#00e676] text-[#0a0e14] font-bold text-sm hover:brightness-110 active:scale-95 transition-all">Play vs AI</button>
         </div>
-        <div className="rounded-xl border border-[#243044] bg-[#121822] p-4 opacity-70">
-          <div className="flex items-center gap-2 mb-1"><Users className="w-4 h-4 text-[#8ea0b8]" /><span className="text-white font-bold text-sm">Play against players</span></div>
-          <p className="text-[#5a6b80] text-xs mb-3">Real players from all over VibeBlox.</p>
-          <button disabled data-testid="play-vs-players" className="w-full py-3 rounded-xl bg-[#1a2230] text-[#5a6b80] font-bold text-sm cursor-not-allowed">Coming soon</button>
+        <div className="rounded-xl border border-[#7c4dff]/40 bg-[#7c4dff]/5 p-4" data-testid="play-online">
+          <div className="flex items-center gap-2 mb-1"><Users className="w-4 h-4 text-[#b39dff]" /><span className="text-white font-bold text-sm">Play against players</span></div>
+          <p className="text-[#5a6b80] text-xs mb-3">Real players, real teams. Join an open match, or host your own and start it when everyone is in.</p>
+          <div className="flex flex-col gap-1.5 mb-3 max-h-40 overflow-y-auto vb-scroll" data-testid="open-matches">
+            {open === null && <p className="text-[#5a6b80] text-xs">Looking for matches…</p>}
+            {open !== null && !open.length && <p className="text-[#5a6b80] text-xs" data-testid="no-matches">No open matches right now. Host one!</p>}
+            {open?.map((w) => (
+              <div key={w.id} className="flex items-center gap-2 rounded-lg bg-[#0a0e14] border border-[#243044] px-3 py-2" data-testid="open-match">
+                <span className="flex-1 min-w-0 text-white text-xs font-medium truncate">{w.name}</span>
+                <span className="text-[#8ea0b8] text-[11px] tabular-nums">{w.players}/{w.max}</span>
+                <button onClick={() => onJoin?.(w)} disabled={w.players >= w.max || !onJoin} data-testid="join-match"
+                  className="px-3 py-1 rounded-lg bg-[#7c4dff] text-white text-[11px] font-bold disabled:opacity-40 active:scale-95">{w.players >= w.max ? 'Full' : 'Join'}</button>
+              </div>
+            ))}
+          </div>
+          <div className="grid grid-cols-3 gap-2 mb-2" data-testid="online-size">
+            {(['solo', 'duos', 'squads'] as MinigameSize[]).map((z) => (
+              <button key={z} onClick={() => setOnlineSize(z)} data-testid={`online-size-${z}`} className={`py-1.5 rounded-xl text-[11px] font-bold capitalize ${onlineSize === z ? 'bg-[#b39dff] text-[#0a0e14]' : 'bg-[#121822] border border-[#243044] text-[#8ea0b8] hover:text-white'}`}>{z}</button>
+            ))}
+          </div>
+          <button onClick={() => onHost?.(onlineSize)} disabled={!onHost} data-testid="play-vs-players"
+            className="w-full py-3 rounded-xl bg-[#7c4dff] text-white font-bold text-sm hover:brightness-110 active:scale-95 transition-all disabled:opacity-40">
+            {summary.signedIn ? 'Host a match' : 'Sign in to host a match'}
+          </button>
         </div>
       </div>
     </div>
   );
 }
 
-function HomeView({ username, onPlaySurvival, savedWorlds, onPlayWorld, onCreatePreset, onMinigame, counts }: { username: string; onPlaySurvival: (activity?: Activity) => void; savedWorlds: any[]; onPlayWorld: (config: any) => void; onCreatePreset: (mode: WorldMode, worldType: WorldType) => void; onMinigame: (kind: ArenaKind, d: BotDifficulty, size: MinigameSize) => void; counts: Record<string, number> | null }) {
+function HomeView({ username, onPlaySurvival, savedWorlds, onPlayWorld, onCreatePreset, onMinigame, counts }: { username: string; onPlaySurvival: (activity?: Activity) => void; savedWorlds: any[]; onPlayWorld: (config: any) => void; onCreatePreset: (mode: WorldMode, worldType: WorldType) => void; onMinigame: (kind: ArenaKind, d: BotDifficulty, size: MinigameSize, online?: MinigameOnline) => void; counts: Record<string, number> | null }) {
   useLanguage();
   const displayName = username.toUpperCase() || 'PLAYER';
   const [picker, setPicker] = useState<ArenaKind | null>(null);
@@ -814,7 +911,9 @@ function HomeView({ username, onPlaySurvival, savedWorlds, onPlayWorld, onCreate
           ))}
         </div>
       </section>
-      {picker && <MinigamePicker kind={picker} onClose={() => setPicker(null)} onPlay={(d, z) => { const k = picker; setPicker(null); onMinigame(k, d, z); }} />}
+      {picker && <MinigamePicker kind={picker} onClose={() => setPicker(null)} onPlay={(d, z) => { const k = picker; setPicker(null); onMinigame(k, d, z); }}
+        onHost={(z) => { const k = picker; setPicker(null); onMinigame(k, 'normal', z, { host: true }); }}
+        onJoin={(w) => { setPicker(null); onMinigame(picker, 'normal', 'solo', { join: w.id, hostName: w.host }); }} />}
 
     </div>
   );
@@ -858,6 +957,7 @@ type WorldConfig = {
   experimental?: boolean; // early-access features, chosen at creation and fixed after
   privacy?: WorldPrivacy; // who may join while you play it (public when not set)
   bans?: string[];        // players banned from this world
+  description?: string;   // shown with the world's picture on the Servers page while it is open
 };
 
 const modeConfig: Record<WorldMode, { image: string; tag: string; accent: string; icon: typeof Swords; description: string }> = {
@@ -913,6 +1013,7 @@ function CreateWorldView({ onSave, onBack, used, limit, initialMode = 'survival'
   const [difficulty, setDifficulty] = useState<Difficulty>('normal');
   const [experimental, setExperimental] = useState(false);
   const [privacy, setPrivacy] = useState<WorldPrivacy>('public');
+  const [description, setDescription] = useState('');
 
   function onImagePick(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -956,6 +1057,7 @@ function CreateWorldView({ onSave, onBack, used, limit, initialMode = 'survival'
       keepInventory: false,
       experimental,
       privacy,
+      description: description.trim().slice(0, 200) || undefined,
     });
   }
 
@@ -1002,6 +1104,16 @@ function CreateWorldView({ onSave, onBack, used, limit, initialMode = 'survival'
               autoFocus
             />
             <p className="text-[#364860] text-[10px] mt-2">{worldName.length}/32 characters</p>
+            <label className="block text-[#8ea0b8] text-xs mt-4">Description (optional)</label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value.slice(0, 200))}
+              placeholder="What is this world about? Players see it on the Servers page when your world is open."
+              rows={2}
+              data-testid="world-description"
+              className="mt-1.5 w-full bg-[#0a0e14] border border-[#243044] rounded-xl px-4 py-2.5 text-white text-sm placeholder-[#364860] focus:border-[#00e676] focus:outline-none resize-none"
+            />
+            <p className="text-[#364860] text-[10px] mt-1">{description.length}/200 · add a picture below too</p>
           </section>
 
           <section className="bg-[#121822] rounded-2xl border border-[#243044] p-6">
@@ -1029,11 +1141,8 @@ function CreateWorldView({ onSave, onBack, used, limit, initialMode = 'survival'
                         src={cfg.image}
                         alt={`${modeLabels[mode]} background`}
                         onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }}
-                        className={`w-full h-full object-cover transition-all duration-300 ${
-                          isSelected ? 'opacity-90' : 'opacity-50 group-hover:opacity-70'
-                        }`}
+                        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                       />
-                      <div className="absolute inset-0 bg-gradient-to-t from-[#121822] via-[#121822]/30 to-transparent" />
                       {isSelected && (
                         <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-[#00e676] flex items-center justify-center">
                           <Check className="w-3.5 h-3.5 text-[#0a0e14]" />
@@ -1753,7 +1862,13 @@ function ShopView({ compact = false }: { compact?: boolean }) {
       onEnd: () => window.dispatchEvent(new CustomEvent('vb-ad', { detail: false })),
     });
     setAdBusy(null);
-    if (!ok) { setNote("The ad didn't finish, so there's no reward this time."); return; }
+    if (!ok) {
+      const why = lastAdResult();
+      setNote(why === 'notReady' || why === 'noAdPreloaded' || why === 'adUnavailable' || why === 'unfilled' ? 'No ad was ready to show. Try again in a minute.'
+        : why === 'frequencyCapped' ? 'Ads are limited right now. Try again in a few minutes.'
+        : "The ad didn't finish, so there's no reward this time.");
+      return;
+    }
     if (kind === 'coins') { rewardAdCoins(); setNote(`+${AD_COINS} coins!`); }
     else { rewardAdBooster(); setNote(`2x XP for the next ${BOOSTER_SECONDS / 60} minutes of play!`); }
   }
@@ -1919,6 +2034,7 @@ function ShopView({ compact = false }: { compact?: boolean }) {
   );
 }
 function MainContent({
+  compact = false,
   username,
   view,
   onPlaySurvival,
@@ -1960,8 +2076,9 @@ function MainContent({
   onMinigame,
   playingCounts,
 }: {
+  compact?: boolean;
   socialView?: ReactNode;
-  onMinigame: (kind: ArenaKind, d: BotDifficulty, size: MinigameSize) => void;
+  onMinigame: (kind: ArenaKind, d: BotDifficulty, size: MinigameSize, online?: MinigameOnline) => void;
   playingCounts: Record<string, number> | null;
   username: string;
   view: View;
@@ -2005,9 +2122,10 @@ function MainContent({
     return <main className="flex-1 flex flex-col overflow-hidden bg-[#0a0e14] min-w-0">{socialView}</main>;
   }
   return (
-    <main className="flex-1 overflow-y-auto vb-scroll bg-[#0a0e14]">
-      <div className="px-8 py-6">
-        {view === 'home' && <DiscordBanner />}
+    <main className="flex-1 min-h-0 overflow-y-auto vb-scroll bg-[#0a0e14]">
+      <div className={compact ? 'px-3 py-3' : 'px-8 py-6'}>
+        {view === 'home' && compact && <MobileProfileBar username={username} onPlayNow={() => onPlaySurvival()} />}
+        {view === 'home' && !compact && <DiscordBanner />}
         {view === 'home' && <HomeView username={username} onPlaySurvival={onPlaySurvival} savedWorlds={savedWorlds} onPlayWorld={onPlayWorld} onCreatePreset={onCreatePreset} onMinigame={onMinigame} counts={playingCounts} />}
         {view === 'shop' && <ShopView />}
         {view === 'news' && <NewsView />}
@@ -2103,9 +2221,29 @@ function TierBadge({ tier, small = false }: { tier: CreatorTier; small?: boolean
 }
 const NEXT_TIER: Record<CreatorTier, CreatorTier | null> = { none: 'rising', rising: 'popular', popular: 'star', star: null };
 
+function useLevelLeaderboard(limit: number): LevelRow[] | null {
+  const [rows, setRows] = useState<LevelRow[] | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const load = () => { void fetchLevelLeaderboard(limit).then((r) => { if (alive) setRows(r ?? []); }); };
+    load();
+    const timer = window.setInterval(load, 60_000);
+    return () => { alive = false; window.clearInterval(timer); };
+  }, [limit]);
+  return rows;
+}
+function LevelBadge({ level, you = false }: { level: number; you?: boolean }) {
+  return <span data-testid="lb-level" className={`shrink-0 inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-bold tabular-nums ${you ? 'bg-[#00e676] text-[#0a0e14]' : 'bg-[#7c4dff]/20 text-[#b39dff]'}`}>Lv {level}</span>;
+}
+
+/** "See all" on the top creators card opens the creators board; the sidebar's Top opens the levels. */
+let nextBoard: 'levels' | 'creators' = 'levels';
 function LeaderboardView({ username }: { username: string }) {
   useLanguage();
   const rows = useLeaderboard(50);
+  const [board, setBoard] = useState<'levels' | 'creators'>(() => { const b = nextBoard; nextBoard = 'levels'; return b; });
+  const levelRows = useLevelLeaderboard(50);
+  const prog = useProgress();
   const { standing, rising, tier, signedIn } = useContext(StandingContext);
   const plays = standing?.plays ?? 0;
   const next = NEXT_TIER[tier];
@@ -2131,18 +2269,68 @@ function LeaderboardView({ username }: { username: string }) {
         </div>
       )}
 
-      <div className="rounded-2xl bg-[#121822] border border-[#243044] overflow-hidden">
+      <div className="flex gap-2 mb-3" data-testid="lb-tabs">
+        {([['levels', 'Top levels'], ['creators', 'Top creators']] as const).map(([k, label]) => (
+          <button key={k} onClick={() => setBoard(k)} data-testid={`lb-tab-${k}`}
+            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${board === k ? 'bg-[#00e676] text-[#0a0e14]' : 'bg-[#121822] border border-[#243044] text-[#8ea0b8] hover:text-white'}`}>{label}</button>
+        ))}
+        <span className="ml-auto self-center text-[#8ea0b8] text-xs" data-testid="my-level">Your level: <b className="text-white">{prog.level}</b></span>
+      </div>
+
+      {board === 'levels' && (
+        <div className="rounded-2xl bg-[#121822] border border-[#243044] overflow-hidden" data-testid="level-board">
+          {levelRows === null && <div className="p-6 text-center text-[#5a6b80] text-sm">…</div>}
+          {levelRows !== null && levelRows.length === 0 && <div className="p-6 text-center text-[#5a6b80] text-sm">Nobody is on the board yet. Sign in and play to get your level here.</div>}
+          {levelRows?.map((r, i) => {
+            const you = r.username.toLowerCase() === username.toLowerCase();
+            return (
+              <div key={r.username} data-testid="lb-level-row" className={`flex items-center gap-3 px-4 py-2.5 border-b border-[#1a2230] last:border-0 ${you ? 'bg-[#00e676]/10' : ''}`}>
+                <span className={`w-7 text-center font-[var(--font-display)] ${i === 0 ? 'text-[#ffd23a]' : i === 1 ? 'text-[#cfd8e3]' : i === 2 ? 'text-[#e8a87c]' : 'text-[#5a6b80]'}`}>{i + 1}</span>
+                <span className="text-white text-sm font-semibold truncate flex-1">{r.username}</span>
+                <LevelBadge level={r.level} you={you} />
+                <span className="text-[#5a6b80] text-xs tabular-nums w-20 text-right">{r.xp.toLocaleString()} XP</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {board === 'creators' && <div className="rounded-2xl bg-[#121822] border border-[#243044] overflow-hidden">
         {rows === null && <div className="p-6 text-center text-[#5a6b80] text-sm">…</div>}
         {rows !== null && rows.length === 0 && <div className="p-6 text-center text-[#5a6b80] text-sm">{t('lb.empty')}</div>}
         {rows?.map((r, i) => (
           <div key={r.username} data-testid="lb-row" className={`flex items-center gap-3 px-4 py-2.5 border-b border-[#1a2230] last:border-0 ${r.username.toLowerCase() === username.toLowerCase() ? 'bg-[#00e676]/10' : ''}`}>
             <span className={`w-7 text-center font-[var(--font-display)] ${i === 0 ? 'text-[#ffd23a]' : i === 1 ? 'text-[#cfd8e3]' : i === 2 ? 'text-[#e8a87c]' : 'text-[#5a6b80]'}`}>{i + 1}</span>
             <span className="text-white text-sm font-semibold truncate flex-1">{r.username}</span>
+            {r.level != null && <LevelBadge level={r.level} you={r.username.toLowerCase() === username.toLowerCase()} />}
             <TierBadge tier={creatorTier(r.plays)} small />
             <span className="text-[#8ea0b8] text-sm tabular-nums">{t('lb.plays', { n: r.plays.toLocaleString() })}</span>
           </div>
         ))}
+      </div>}
+    </div>
+  );
+}
+
+/** Phones: the profile column is hidden, so the home page starts with your name, level and a big PLAY NOW. */
+function MobileProfileBar({ username, onPlayNow }: { username: string; onPlayNow: () => void }) {
+  useLanguage();
+  const p = useProgress();
+  const curXp = xpForLevel(p.level), nextXp = xpForLevel(p.level + 1);
+  const pct = Math.max(0, Math.min(100, ((p.xp - curXp) / (nextXp - curXp)) * 100));
+  return (
+    <div className="mb-4 flex items-center gap-3 rounded-2xl bg-[#121822] border border-[#243044] p-3" data-testid="mobile-profile">
+      <div className="w-11 h-11 shrink-0 rounded-xl bg-gradient-to-br from-[#3b5998] to-[#00e676] flex items-center justify-center text-white font-[var(--font-display)]">{(username || 'P').charAt(0).toUpperCase()}</div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-white text-sm font-bold truncate">{username || 'PlayerOne'}</span>
+          <span className="text-[#8ea0b8] text-[11px] shrink-0" data-testid="panel-level">{t('profile.level', { n: p.level })} · {p.coins} coins</span>
+        </div>
+        <div className="h-1.5 mt-1.5 bg-[#0a0e14] rounded-full overflow-hidden"><div className="h-full bg-gradient-to-r from-[#00e676] to-[#00b248]" style={{ width: `${pct}%` }} /></div>
       </div>
+      <button onClick={onPlayNow} className="shrink-0 px-4 py-2.5 rounded-xl bg-gradient-to-r from-[#00e676] to-[#00b248] text-[#0a0e14] font-[var(--font-display)] text-xs tracking-wide flex items-center gap-1.5 active:scale-95">
+        <Play className="w-3.5 h-3.5 fill-current" /> PLAY NOW
+      </button>
     </div>
   );
 }
@@ -2217,7 +2405,7 @@ function ProfilePanel({ username, onPlayNow, onOpenLeaderboard }: { username: st
             </li>
           ))}
         </ol>
-        <button onClick={onOpenLeaderboard} data-testid="lb-see-all" className="mt-3 w-full py-1.5 rounded-lg bg-[#1a2230] text-[#8ea0b8] text-xs font-bold hover:text-white hover:bg-[#243044] transition-colors">{t('lb.seeAll')}</button>
+        <button onClick={() => { nextBoard = 'creators'; onOpenLeaderboard(); }} data-testid="lb-see-all" className="mt-3 w-full py-1.5 rounded-lg bg-[#1a2230] text-[#8ea0b8] text-xs font-bold hover:text-white hover:bg-[#243044] transition-colors">{t('lb.seeAll')}</button>
       </div>
     </aside>
   );
@@ -2509,8 +2697,54 @@ const WEATHER_OPTIONS: Array<{ kind: WeatherKind; label: string }> = [
   { kind: 'clear', label: 'Clear' }, { kind: 'rain', label: 'Rain' }, { kind: 'snow', label: 'Snow' },
 ];
 
-function ManageServerView({ settings, hardcore, online, isHost, players, myId, hostId, weather, onChange, onKick, onBan, onTime, onWeather, tagOf, privacy }: {
+/** Manage Server > Anti-cheat: its switches, and what it caught in the world you host. */
+function AntiCheatPanel({ settings, onChange, alerts, onKick, onBan, hosting }: {
+  settings: AcSettings; onChange: (s: AcSettings) => void; alerts: CheatAlertLike[]; hosting: boolean;
+  onKick: (name: string) => void; onBan: (name: string) => void;
+}) {
+  const row = (on: boolean, label: string, hint: string, flip: () => void, id: string) => (
+    <button onClick={flip} data-testid={id} aria-pressed={on}
+      className="flex items-center justify-between gap-3 w-full rounded-xl bg-[#121822] border border-[#243044] px-4 py-3 text-left">
+      <span><span className="block text-white text-sm">{label}</span><span className="block text-[#5a6b80] text-[11px]">{hint}</span></span>
+      <span className={`w-11 h-6 shrink-0 rounded-full p-0.5 transition-colors ${on ? 'bg-[#00e676]' : 'bg-[#2a3444]'}`}><span className={`block w-5 h-5 rounded-full bg-white transition-transform ${on ? 'translate-x-5' : ''}`} /></span>
+    </button>
+  );
+  return (
+    <div className="flex flex-col gap-3" data-testid="anticheat-panel">
+      <p className="text-[#8ea0b8] text-xs">Watches players who join your world for flying, speed, reach, kill aura, auto clickers, nukers and chat spam. Alerts show here and in chat, and go to the VibeBlox admins.</p>
+      <div className="grid sm:grid-cols-2 gap-2">
+        {row(settings.enabled, 'Anti-cheat', 'Check players in your world', () => onChange({ ...settings, enabled: !settings.enabled }), 'ac-enabled')}
+        {row(settings.autoKick, 'Kick cheaters', `Kick a player after ${settings.kickAt} warning points`, () => onChange({ ...settings, autoKick: !settings.autoKick }), 'ac-autokick')}
+      </div>
+      <label className="text-[#8ea0b8] text-xs flex items-center gap-3">Strictness
+        <input type="range" min={4} max={40} step={1} value={settings.kickAt} onChange={(e) => onChange({ ...settings, kickAt: Number(e.target.value) })} className="flex-1" data-testid="ac-kickat" />
+        <span className="text-white tabular-nums w-16 text-right">{settings.kickAt} points</span>
+      </label>
+      <div className="rounded-xl bg-[#121822] border border-[#243044] p-3">
+        <div className="text-white text-sm font-medium mb-2">Caught in this world</div>
+        {!hosting && <p className="text-[#5a6b80] text-xs">Your world isn't open to others right now.</p>}
+        {hosting && !alerts.length && <p className="text-[#5a6b80] text-xs" data-testid="ac-none">Nothing suspicious so far.</p>}
+        <div className="flex flex-col gap-1.5 max-h-72 overflow-y-auto vb-scroll">
+          {alerts.map((a, i) => (
+            <div key={`${a.at}-${i}`} className="flex items-center gap-2 rounded-lg bg-[#0a0e14] border border-[#243044] px-3 py-2" data-testid="ac-alert">
+              <span className="text-[#ff6b6b] text-[11px] font-bold w-24 shrink-0">{CHEAT_NAMES[a.kind] ?? a.kind}</span>
+              <span className="flex-1 min-w-0 text-xs"><span className="text-white font-semibold">{a.player}</span> <span className="text-[#5a6b80]">{a.detail} · {new Date(a.at).toLocaleTimeString()}</span></span>
+              <button onClick={() => onKick(a.player)} className="px-2 py-1 rounded-md bg-[#ff9800]/15 text-[#ff9800] text-[11px] font-bold">Kick</button>
+              <button onClick={() => onBan(a.player)} className="px-2 py-1 rounded-md bg-[#ff5252]/15 text-[#ff5252] text-[11px] font-bold">Ban</button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ManageServerView({ settings, hardcore, online, isHost, players, myId, hostId, weather, onChange, onKick, onBan, onTime, onWeather, tagOf, privacy, schematics, anticheat }: {
   tagOf?: (name: string) => string;
+  /** The schematic maker (select, save, paste and share builds), shown in the Schematics tab */
+  schematics?: ReactNode;
+  /** Anti-cheat alerts about players in this world (host only) */
+  anticheat?: ReactNode;
   /** Your own world: who may join it (null when this isn't a world you can open to others). */
   privacy?: { value: WorldPrivacy; open: boolean; players: number; signedIn: boolean; onChange: (p: WorldPrivacy) => void } | null;
   settings: ServerSettings; hardcore: boolean; online: boolean; isHost: boolean;
@@ -2519,17 +2753,20 @@ function ManageServerView({ settings, hardcore, online, isHost, players, myId, h
   onTime: (t: number) => void; onWeather: (k: WeatherKind) => void;
 }) {
   const [confirmBan, setConfirmBan] = useState<number | null>(null);
-  const [tab, setTab] = useState<'world' | 'rules' | 'players' | 'schematics'>('world');
-  const toggle = (key: 'keepInventory' | 'scripts' | 'mods' | 'commands', label: string, hint: string) => (
-    <button disabled={!isHost} onClick={() => onChange({ [key]: !settings[key] })} data-testid={`toggle-${key}`}
-      className="flex items-center justify-between gap-3 w-full rounded-xl bg-[#121822] border border-[#243044] px-4 py-3 text-left disabled:opacity-60">
-      <span><span className="block text-white text-sm">{label}</span><span className="block text-[#5a6b80] text-[11px]">{hint}</span></span>
-      <span className={`w-11 h-6 rounded-full p-0.5 transition-colors ${settings[key] ? 'bg-[#00e676]' : 'bg-[#2a3444]'}`}><span className={`block w-5 h-5 rounded-full bg-white transition-transform ${settings[key] ? 'translate-x-5' : ''}`} /></span>
-    </button>
-  );
+  const [tab, setTab] = useState<'world' | 'rules' | 'players' | 'schematics' | 'anticheat'>('world');
+  const toggle = (key: 'keepInventory' | 'scripts' | 'mods' | 'commands' | 'pvp', label: string, hint: string) => {
+    const on = key === 'pvp' ? settings.pvp !== false : settings[key];
+    return (
+      <button disabled={!isHost} onClick={() => onChange({ [key]: !on })} data-testid={`toggle-${key}`}
+        className="flex items-center justify-between gap-3 w-full rounded-xl bg-[#121822] border border-[#243044] px-4 py-3 text-left disabled:opacity-60">
+        <span><span className="block text-white text-sm">{label}</span><span className="block text-[#5a6b80] text-[11px]">{hint}</span></span>
+        <span className={`w-11 h-6 shrink-0 rounded-full p-0.5 transition-colors ${on ? 'bg-[#00e676]' : 'bg-[#2a3444]'}`}><span className={`block w-5 h-5 rounded-full bg-white transition-transform ${on ? 'translate-x-5' : ''}`} /></span>
+      </button>
+    );
+  };
   return (
     <div className="flex gap-5" data-testid="manage-server">
-     <SideNav tabs={[{ id: 'world', label: 'World' }, { id: 'rules', label: 'Rules' }, { id: 'players', label: 'Players' }, { id: 'schematics', label: 'Schematics' }]} active={tab} onSelect={setTab} testid="manage-sidenav" />
+     <SideNav tabs={[{ id: 'world', label: 'World' }, { id: 'rules', label: 'Rules' }, { id: 'players', label: 'Players' }, { id: 'schematics', label: 'Schematics' }, ...(anticheat ? [{ id: 'anticheat' as const, label: 'Anti-cheat' }] : [])]} active={tab} onSelect={setTab} testid="manage-sidenav" />
      <div className="flex-1 min-w-0 flex flex-col gap-4">
       {!isHost && <p className="text-[#ffb347] text-xs">Only the host can change these.</p>}
       {tab === 'world' && <>
@@ -2591,12 +2828,20 @@ function ManageServerView({ settings, hardcore, online, isHost, players, myId, h
         {toggle('commands', 'Allow commands', 'Chat commands like /give and /tp')}
         {toggle('scripts', 'Allow scripts', 'Off hides the Scripts button')}
         {toggle('mods', 'Allow mods', 'Off hides the Mods button')}
+        {toggle('pvp', 'PvP', 'Players can hit each other (when others join your world)')}
       </div>}
       {tab === 'schematics' && (
-        <div>
-          <p className="text-[#8ea0b8] text-xs mb-2">Upload schematic files (.vbschem) here. Everyone building in this world finds them on the Schematics page of the game menu.</p>
-          <SchematicUpload />
+        <div className="flex flex-col gap-5" data-testid="manage-schematics">
+          {schematics}
+          <div className="rounded-xl bg-[#121822] border border-[#243044] p-4">
+            <p className="text-white text-sm font-medium mb-1">Upload a schematic file</p>
+            <p className="text-[#8ea0b8] text-xs mb-2">Add .vbschem files someone shared with you. They show up in the list above.</p>
+            <SchematicUpload />
+          </div>
         </div>
+      )}
+      {tab === 'anticheat' && (
+        <div data-testid="manage-anticheat">{anticheat ?? <p className="text-[#5a6b80] text-xs">Anti-cheat watches players who join your world.</p>}</div>
       )}
       {tab === 'players' && <div>
         <p className="text-[#8ea0b8] text-xs mb-1.5">Players</p>
@@ -3306,7 +3551,7 @@ function InventoryOverlay({
       onMouseDown={onBackdrop}
       onContextMenu={(e) => e.preventDefault()}
     >
-      <div className="w-fit min-w-[480px] max-w-[96vw] bg-[#0d131b] border border-[#243044] rounded-2xl p-6 shadow-2xl">
+      <div className="w-fit max-w-[96vw] max-h-[96vh] overflow-y-auto vb-scroll bg-[#0d131b] border border-[#243044] rounded-2xl p-5 shadow-2xl" data-testid="inventory-panel">
         <div className="flex items-center justify-between gap-6 mb-4">
           <h3 className="font-[var(--font-retro)] text-white text-sm tracking-wider uppercase">{title}</h3>
           <div className="flex items-center gap-3">
@@ -3329,10 +3574,10 @@ function InventoryOverlay({
           </div>
         </div>
 
-        <div className={!chestKey && !furnaceKey && !atCraftingTable && !station ? 'flex gap-4 items-start mb-5' : ''}>
+        <div className={!chestKey && !furnaceKey && !atCraftingTable && !station ? 'flex gap-3 items-start mb-4' : ''}>
         {!chestKey && !furnaceKey && !atCraftingTable && !station && (
           <>
-            <div className="flex flex-col gap-1">
+            <div className="flex flex-col gap-0.5">
               {[0, 1, 2, 3].map((i) => (
                 <div key={i} className="relative" title={ARMOR_PIECES[i]}>
                   <ItemSlot id={arm[i] ? arm[i]!.id : null} st={arm[i]} slotKey={`armor:${i}`} onMouseDown={(e) => onSlotDown(e, 'armor', i)} />
@@ -3340,14 +3585,16 @@ function InventoryOverlay({
                 </div>
               ))}
             </div>
-            <PlayerPreview armor={arm} mouse={mouse} />
-            <div className="flex flex-col items-center self-end" title="Off-hand (F swaps)">
-              <ItemSlot id={off ? off.id : null} count={off?.count} st={off} slotKey="offhand:0" onMouseDown={(e) => onSlotDown(e, 'offhand', 0)} onMouseEnter={(e) => onSlotEnter(e, 'offhand', 0)} />
-              <span className="text-[#5a6b80] text-[9px] mt-0.5">Off-hand</span>
+            <div className="relative">
+              <PlayerPreview armor={arm} mouse={mouse} />
+              <div className="absolute -right-1 bottom-0 translate-x-full flex flex-col items-center" title="Off-hand (F swaps)">
+                <ItemSlot id={off ? off.id : null} count={off?.count} st={off} slotKey="offhand:0" onMouseDown={(e) => onSlotDown(e, 'offhand', 0)} onMouseEnter={(e) => onSlotEnter(e, 'offhand', 0)} />
+                <span className="text-[#5a6b80] text-[9px] mt-0.5">Off-hand</span>
+              </div>
             </div>
           </>
         )}
-        <div className="flex-1 min-w-0">
+        <div className={!chestKey && !furnaceKey && !atCraftingTable && !station ? 'flex-1 min-w-0 self-stretch flex items-center justify-end pl-14' : 'flex-1 min-w-0'}>
         {station?.kind === 'enchanting' ? (
           <div className="flex items-start gap-5 mb-5" data-testid="enchanting">
             <div className="flex flex-col items-center gap-1.5">
@@ -3438,7 +3685,7 @@ function InventoryOverlay({
             </div>
           </div>
         ) : chestKey ? (
-          <div className="grid grid-cols-9 gap-1 mb-5 w-fit">{slotRow('chest', chest, 0, chest.length)}</div>
+          <div className="grid grid-cols-9 gap-0.5 mb-5 w-fit">{slotRow('chest', chest, 0, chest.length)}</div>
         ) : craftMode === 'quick' ? (
           <div className="flex flex-col gap-1.5 mb-5 max-h-64 overflow-y-auto vb-scroll pr-1">
             {RECIPES.filter((r) => {
@@ -3477,8 +3724,8 @@ function InventoryOverlay({
             })}
           </div>
         ) : (
-          <div className="flex items-center gap-5 mb-5">
-            <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${gridSize}, minmax(0, 1fr))` }}>
+          <div className={`flex items-center gap-4 ${atCraftingTable ? 'mb-5' : ''}`}>
+            <div className="grid gap-0.5" style={{ gridTemplateColumns: `repeat(${gridSize}, minmax(0, 1fr))` }}>
               {slotRow('grid', grid, 0, grid.length)}
             </div>
             <span className="text-[#5a6b80] text-2xl">→</span>
@@ -3490,10 +3737,8 @@ function InventoryOverlay({
         </div>
 
         <h4 className="text-white text-xs font-medium mb-2">Inventory</h4>
-        <div className="grid grid-cols-9 gap-1 w-full justify-items-center">{slotRow('inv', inv, 9, INVENTORY_SIZE)}</div>
-        <div className="flex items-end gap-3 mt-2.5">
-          <div className="grid grid-cols-9 gap-1 w-full justify-items-center">{slotRow('inv', inv, 0, 9)}</div>
-        </div>
+        <div className="grid grid-cols-9 gap-0.5 w-fit" data-testid="inv-grid">{slotRow('inv', inv, 9, INVENTORY_SIZE)}</div>
+        <div className="grid grid-cols-9 gap-0.5 w-fit mt-2" data-testid="inv-hotbar">{slotRow('inv', inv, 0, 9)}</div>
 
         {previewRecipe && (
           <div className="mt-4 p-3 rounded-xl bg-[#121822] border border-[#243044] vb-fade-in">
@@ -4133,13 +4378,22 @@ function OneBlockHud({ view }: { view: OneBlockView }) {
   );
 }
 
-function MinigameHud({ view, onPlayAgain, onExit }: { view: MinigameView; onPlayAgain: (d: BotDifficulty) => void; onExit: () => void }) {
+function MinigameHud({ view, onPlayAgain, onExit, isHost = false, onStartMatch, waitingFor }: { view: MinigameView; onPlayAgain: (d: BotDifficulty) => void; onExit: () => void; isHost?: boolean; onStartMatch?: () => void; waitingFor?: number }) {
   const [diff, setDiff] = useState<BotDifficulty>(view.difficulty);
   const [watching, setWatching] = useState(false); // knocked out: keep watching the rest of the game
-  const showResult = !!view.result && (view.phase === 'over' || (view.you.out && !watching));
+  const showResult = !!view.result && (view.phase === 'over' || (view.you.out && !watching && !view.online));
   useEffect(() => { if (showResult && document.pointerLockElement) document.exitPointerLock(); }, [showResult]);
   useEffect(() => { if (view.phase === 'countdown') setWatching(false); }, [view.phase]);
-  const teamName = (t: MinigameView['teams'][number]) => (t.you ? `${t.name} (you)` : view.size === 'solo' ? `${t.name} Bot` : `${t.name} Team`);
+  // Online: the host starts the match (G, or the button)
+  const teamsWithPlayers = view.teams.filter((t) => t.alive > 0 || t.you).length;
+  const canStart = !!view.online && isHost && (view.phase === 'waiting' || view.phase === 'over') && teamsWithPlayers >= 2;
+  useEffect(() => {
+    if (!canStart || !onStartMatch) return;
+    const k = (e: KeyboardEvent) => { if (e.code === 'KeyG' && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLTextAreaElement)) onStartMatch(); };
+    window.addEventListener('keydown', k);
+    return () => window.removeEventListener('keydown', k);
+  }, [canStart, onStartMatch]);
+  const teamName = (t: MinigameView['teams'][number]) => (t.you ? `${t.name} (you)` : view.online ? `${t.name} Team` : view.size === 'solo' ? `${t.name} Bot` : `${t.name} Team`);
   const mins = Math.floor(view.elapsed / 60), secs = view.elapsed % 60;
   return (
     <>
@@ -4166,6 +4420,16 @@ function MinigameHud({ view, onPlayAgain, onExit }: { view: MinigameView; onPlay
         )}
         {view.message && <div className="bg-black/60 text-white text-sm font-bold px-3 py-1 rounded-md vb-fade-in" data-testid="minigame-message">{view.message}</div>}
       </div>
+      {view.online && view.phase === 'waiting' && (
+        <div className="absolute top-28 left-1/2 -translate-x-1/2 z-[24] w-[340px] max-w-[92vw] rounded-2xl bg-black/65 border border-white/15 p-4 text-center vb-fade-in" data-testid="match-waiting">
+          <div className="text-white font-bold mb-1">Waiting for players</div>
+          <p className="text-white/60 text-xs mb-3">{view.teams.filter((t) => t.alive > 0 || t.you).length < 2 ? 'At least two teams need players. Others join from the Servers page.' : isHost ? 'Everyone ready? Start the game.' : 'The host starts the game when everyone is in.'}{typeof waitingFor === 'number' ? ` (${waitingFor} here)` : ''}</p>
+          {isHost && (
+            <button onClick={onStartMatch} disabled={!canStart} data-testid="match-start"
+              className="w-full py-2.5 rounded-xl bg-[#00e676] text-[#0a0e14] font-bold text-sm disabled:opacity-40 hover:brightness-110 active:scale-95 pointer-events-auto">Start the game (G)</button>
+          )}
+        </div>
+      )}
       {view.phase === 'countdown' && (
         <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none">
           <div key={view.countdown} className="font-[var(--font-retro)] text-[#ffe066] text-7xl drop-shadow-[0_4px_0_rgba(0,0,0,0.7)] vb-fade-in" data-testid="minigame-countdown">{view.countdown}</div>
@@ -4177,14 +4441,18 @@ function MinigameHud({ view, onPlayAgain, onExit }: { view: MinigameView; onPlay
             <div className={`font-[var(--font-retro)] text-3xl mb-2 ${view.result.win ? 'text-[#ffe066]' : 'text-[#ff6b6b]'}`}>{view.result.win ? 'VICTORY!' : 'GAME OVER'}</div>
             <p className="text-white text-sm mb-1">{view.result.text}</p>
             <p className="text-[#5a6b80] text-xs mb-5">Kills {view.you.kills} · Deaths {view.you.deaths} · {mins}:{String(secs).padStart(2, '0')}</p>
+            {view.online ? (
+              <p className="text-[#8ea0b8] text-xs mb-4" data-testid="match-next">{isHost ? 'Start the next game when everyone is ready.' : 'The host can start another game in a moment.'}</p>
+            ) : <>
             <p className="text-[#8ea0b8] text-xs mb-2">Bots for the next game</p>
             <div className="grid grid-cols-3 gap-2 mb-4">
               {(['easy', 'normal', 'hard'] as BotDifficulty[]).map((d) => (
                 <button key={d} onClick={() => setDiff(d)} className={`py-2 rounded-xl text-xs font-bold capitalize ${diff === d ? 'bg-[#00e676] text-[#0a0e14]' : 'bg-[#121822] border border-[#243044] text-[#8ea0b8] hover:text-white'}`}>{d}</button>
               ))}
             </div>
+            </>}
             <div className="flex gap-2">
-              <button onClick={() => onPlayAgain(diff)} data-testid="play-again" className="flex-1 py-3 rounded-xl bg-[#00e676] text-[#0a0e14] font-bold text-sm hover:brightness-110 active:scale-95">Play again</button>
+              {(!view.online || isHost) && <button onClick={() => (view.online ? onStartMatch?.() : onPlayAgain(diff))} disabled={!!view.online && !canStart} data-testid="play-again" className="flex-1 py-3 rounded-xl bg-[#00e676] text-[#0a0e14] font-bold text-sm hover:brightness-110 active:scale-95 disabled:opacity-40">Play again</button>}
               <button onClick={onExit} className="flex-1 py-3 rounded-xl bg-[#121822] border border-[#243044] text-white font-bold text-sm hover:border-[#3a4a60] active:scale-95">Back to menu</button>
             </div>
             {view.phase !== 'over' && <button onClick={() => setWatching(true)} className="mt-3 text-[#8ea0b8] text-xs hover:text-white underline">Keep watching</button>}
@@ -4227,6 +4495,8 @@ const MENU_COLORS = {
   blue: 'bg-[#2a5d9c] border-[#5b8fd1]',
   teal: 'bg-[#0f7a6e] border-[#45a99d]',
   red: 'bg-[#8b2a2a] border-[#c25a5a]',
+  orange: 'bg-[#b85a10] border-[#f0954a]',
+  yellow: 'bg-[#a8800a] border-[#f2cc3a]',
 } as const;
 
 function MenuButton({ color, label, icon: Icon, onClick, soon = false, disabled = false }: {
@@ -4350,20 +4620,19 @@ function GameMenu({ page, onResume, onOpenSettings, onOpenScripts, onOpenMods, o
           <h2 className="font-[var(--font-retro)] text-white text-2xl text-center mb-4 [@media(max-height:500px)]:mb-1 [@media(max-height:500px)]:text-lg drop-shadow-[0_3px_0_rgba(0,0,0,0.6)]">{t('menu.title')}</h2>
           <MenuButton color="green" icon={Play} label={t('menu.resume')} onClick={onResume} />
           <MenuButton color="gray" icon={Settings} label={t('menu.settings')} onClick={onOpenSettings} />
-          {showServer && <MenuButton color="gray" icon={Users} label={t('menu.server')} onClick={onOpenServer} />}
+          {showServer && <MenuButton color="orange" icon={Users} label={t('menu.server')} onClick={onOpenServer} />}
           {(showScripts || showMods) && (
             <div className={`grid gap-2.5 ${showScripts && showMods ? 'grid-cols-2' : 'grid-cols-1'}`}>
               {showScripts && <MenuButton color="blue" icon={ScrollText} label={t('menu.scripts')} onClick={onOpenScripts} />}
               {showMods && <MenuButton color="teal" icon={Package} label={t('menu.mods')} onClick={onOpenMods} />}
             </div>
           )}
-          {showSchematics && onOpenSchematics && <MenuButton color="teal" icon={Package} label={t('menu.schematics')} onClick={onOpenSchematics} />}
-          {showAdvancements && <MenuButton color="gray" icon={Trophy} label={t('menu.advancements')} onClick={onOpenAdvancements} />}
+          {showAdvancements && <MenuButton color="yellow" icon={Trophy} label={t('menu.advancements')} onClick={onOpenAdvancements} />}
           <MenuButton color="red" icon={LogOut} label={t('menu.exit')} onClick={onExit} />
           <p className="text-center text-white/50 text-[11px] mt-2">{t('menu.hint')}</p>
         </div>
       ) : (
-        <div className={`${page === 'settings' ? 'w-[640px]' : page === 'scripts' ? 'w-[1180px]' : 'w-[820px]'} max-w-[96vw] max-h-[86vh] flex flex-col bg-[#0a0e14]/95 border border-[#243044] rounded-2xl shadow-2xl overflow-hidden vb-fade-in`}>
+        <div className={`${page === 'settings' ? 'w-[960px]' : page === 'scripts' ? 'w-[1180px]' : page === 'server' ? 'w-[1040px]' : 'w-[820px]'} max-w-[96vw] max-h-[90vh] flex flex-col bg-[#0a0e14]/95 border border-[#243044] rounded-2xl shadow-2xl overflow-hidden vb-fade-in vb-themed`}>
           <div className="flex items-center gap-3 px-5 py-3 border-b border-[#243044]">
             <button
               onClick={onBack}
@@ -4435,8 +4704,10 @@ function ServersView({ serverUrl, onServerUrlChange, onJoin, status, error, avai
   useEffect(() => { if (!connecting) setJoiningId(null); }, [connecting]);
   const canJoin = available && hostingAvailable;
   const privacyBadge = (p: HostedWorld['privacy']) => (p === 'friends' ? { icon: Users, text: 'Friends', cls: 'text-[#c8a2ff]' } : p === 'accounts' ? { icon: Shield, text: 'Accounts', cls: 'text-[#6ec6ff]' } : { icon: Globe, text: 'Public', cls: 'text-[#7cfc7c]' });
+  const gameLabel = (w: HostedWorld) => (w.worldType === 'eggwars' ? 'EggWars' : w.worldType === 'bridge' ? 'Bridge Duels' : `${w.mode.charAt(0).toUpperCase()}${w.mode.slice(1)}${w.worldType === 'superflat' ? ' · Superflat' : ''}`);
+  const fallbackImage = (w: HostedWorld) => (w.worldType === 'eggwars' ? '/images/eggwars-bg.jpg' : w.worldType === 'bridge' ? '/images/bridgeduels-bg.jpg' : w.worldType === 'superflat' ? '/images/superflat-bg.jpg' : (modeConfig as Record<string, { image: string }>)[w.mode]?.image ?? '/images/survival-bg.jpg');
   return (
-    <div className="vb-fade-in max-w-2xl">
+    <div className="vb-fade-in max-w-5xl">
       <header className="mb-6">
         <div className="flex items-center gap-2 mb-2">
           <Globe className="w-5 h-5 text-[#00e676]" />
@@ -4460,28 +4731,33 @@ function ServersView({ serverUrl, onServerUrlChange, onJoin, status, error, avai
             <p className="text-[#5a6b80] text-xs mt-1">Play one of your own worlds (signed in) and it shows up here for others.</p>
           </div>
         )}
-        <div className="flex flex-col gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
           {worlds?.map((w) => {
             const b = privacyBadge(w.privacy);
             const full = w.players >= w.max;
             const mine = !!summary.username && w.host.toLowerCase() === summary.username.toLowerCase();
+            const img = w.image || fallbackImage(w);
+            const minigame = w.worldType === 'eggwars' || w.worldType === 'bridge';
             return (
-              <div key={w.id} className="flex items-center gap-3 rounded-xl bg-[#0a0e14] border border-[#243044] px-4 py-3" data-testid="world-row">
-                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#00e676]/30 to-[#00b248]/10 flex items-center justify-center text-white font-bold">{w.name.charAt(0).toUpperCase()}</div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-white text-sm font-medium truncate" data-testid="world-name">{w.name}</div>
-                  <div className="text-[#5a6b80] text-[11px] flex items-center gap-2 flex-wrap">
+              <div key={w.id} className="flex flex-col rounded-2xl bg-[#0a0e14] border border-[#243044] overflow-hidden hover:border-[#364860] transition-colors" data-testid="world-row">
+                <div className="relative aspect-video bg-gradient-to-br from-[#00e676]/25 to-[#00b248]/5">
+                  <img src={img} alt="" className="absolute inset-0 w-full h-full object-cover" onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }} data-testid="world-image" />
+                  <span className={`absolute top-2 left-2 px-2 py-0.5 rounded-md text-[10px] font-bold ${minigame ? 'bg-[#ffb300] text-[#0a0e14]' : 'bg-black/60 text-white'}`} data-testid="world-mode">{gameLabel(w)}</span>
+                  <span className={`absolute top-2 right-2 px-2 py-0.5 rounded-md text-[10px] font-bold bg-black/60 ${full ? 'text-[#ff8a8a]' : 'text-white'}`}>{w.players}/{w.max}</span>
+                </div>
+                <div className="flex-1 flex flex-col p-3 gap-1.5">
+                  <div className="text-white text-sm font-bold truncate" data-testid="world-name">{w.name}</div>
+                  <p className="text-[#8ea0b8] text-xs leading-snug line-clamp-2 min-h-[2rem]" data-testid="world-description">{w.description || (minigame ? 'An online match: join a team and play against real players.' : 'No description.')}</p>
+                  <div className="text-[#5a6b80] text-[11px] flex items-center gap-2 flex-wrap mt-auto">
                     <span>by <span className="text-[#8ea0b8]">{w.host}</span></span>
-                    <span className="capitalize">{w.mode}{w.worldType === 'superflat' ? ' · flat' : ''}</span>
                     <span className={`inline-flex items-center gap-1 ${b.cls}`}><b.icon className="w-3 h-3" />{b.text}</span>
                   </div>
+                  <button disabled={!canJoin || connecting || full || mine} data-testid="world-join"
+                    onClick={() => { setJoiningId(w.id); onJoin('p2p:' + w.id, w.host); }}
+                    className={`mt-1 w-full py-2 rounded-xl text-xs font-bold transition-all ${connecting && joiningId === w.id ? 'bg-[#243044] text-[#8ea0b8] cursor-wait' : 'bg-gradient-to-r from-[#00e676] to-[#00b248] text-[#0a0e14] hover:brightness-110 active:scale-95'} disabled:opacity-50 disabled:cursor-not-allowed`}>
+                    {connecting && joiningId === w.id ? 'Joining…' : mine ? 'Yours' : full ? 'Full' : 'Join'}
+                  </button>
                 </div>
-                <span className={`text-xs font-bold ${full ? 'text-[#ff8a8a]' : 'text-[#8ea0b8]'}`}>{w.players}/{w.max}</span>
-                <button disabled={!canJoin || connecting || full || mine} data-testid="world-join"
-                  onClick={() => { setJoiningId(w.id); onJoin('p2p:' + w.id, w.host); }}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${connecting && joiningId === w.id ? 'bg-[#243044] text-[#8ea0b8] cursor-wait' : 'bg-gradient-to-r from-[#00e676] to-[#00b248] text-[#0a0e14] hover:scale-[1.03] active:scale-95'} disabled:opacity-40 disabled:hover:scale-100`}>
-                  {connecting && joiningId === w.id ? 'Joining…' : mine ? 'Yours' : full ? 'Full' : 'Join'}
-                </button>
               </div>
             );
           })}
@@ -4968,6 +5244,30 @@ export default function App() {
   // Your plays decide if you are a Rising Creator (1000 plays); your rank comes from your account
   const [standing, setStanding] = useState<Standing | null>(null);
   const isOwnerAccount = isOwnerName(account?.username);
+  // Your level, XP, coins and cosmetics are kept on your account too, so they follow you to other devices
+  useEffect(() => {
+    if (!account || isGuestName(account.username)) return;
+    let live = true, lastSaved = '', ready = false;
+    const save = () => {
+      if (!ready) return;
+      const p = progressForAccount();
+      const key = `${p.xp}|${p.coins}|${p.ownedSkins.length}|${p.ownedCapes.length}|${p.currentSkin}|${p.currentCape}|${p.level}`;
+      if (key === lastSaved) return;
+      lastSaved = key;
+      void saveProgressToAccount(p);
+    };
+    void loadProgressFromAccount().then((remote) => {
+      if (!live) return;
+      if (remote) mergeAccountProgress(remote);
+      ready = true;
+      save(); // the account gets the merged copy (or its first copy)
+    });
+    const t = window.setInterval(save, 30_000);
+    const offLevel = onLevelUp(() => save());
+    const onHide = () => { if (document.visibilityState === 'hidden') save(); };
+    document.addEventListener('visibilitychange', onHide);
+    return () => { live = false; save(); window.clearInterval(t); offLevel(); document.removeEventListener('visibilitychange', onHide); };
+  }, [account?.username]); // eslint-disable-line react-hooks/exhaustive-deps
   const myRank: RankId = effectiveRank(account, isOwnerAccount);
   const myTier: CreatorTier = isOwnerAccount ? 'star' : creatorTier(standing?.plays ?? 0);
   const rising = myTier !== 'none';
@@ -5049,6 +5349,21 @@ export default function App() {
   const [minigame, setMinigame] = useState<MinigameView | null>(null);
   const minigameDifficultyRef = useRef<BotDifficulty>('normal');
   const minigameSizeRef = useRef<MinigameSize>('solo');
+  // Online EggWars / Bridge Duels: which arena map, whether you host or joined, and how the match stands
+  const arenaVariantRef = useRef<number | undefined>(undefined);
+  const onlineMgRef = useRef<{ host: boolean; kind: ArenaKind; size: MinigameSize } | null>(null);
+  const [match, setMatch] = useState<NetMatch | null>(null);
+  const matchRef = useRef<NetMatch | null>(null);
+  const memberTeamsRef = useRef<Record<number, number>>({});
+  // Anti-cheat alerts about players in the world you host
+  const [cheatAlerts, setCheatAlerts] = useState<CheatAlertLike[]>([]);
+  const [acSettings, setAcSettingsState] = useState<AcSettings>(loadAcSettings);
+  function setAcSettings(next: AcSettings) {
+    setAcSettingsState(next);
+    try { localStorage.setItem(AC_KEY, JSON.stringify(next)); } catch { /* storage blocked */ }
+    const ac = hostingRef.current?.room.anticheat;
+    if (ac) ac.settings = { ...next };
+  }
   // "N playing" on the home cards: what everyone is playing right now (and we tell it what we play)
   const [playingCounts, setPlayingCounts] = useState<Record<string, number> | null>(null);
   const activityRef = useRef<Activity | null>(null);
@@ -5229,6 +5544,8 @@ export default function App() {
   const [health, setHealth] = useState(20);
   const [hunger, setHunger] = useState(20);
   const [inventoryOpen, setInventoryOpen] = useState(false);
+  const [flash, setFlash] = useState<{ key: number; secs: number } | null>(null); // flashbangs: the screen goes white
+  const compactLayout = useCompactLayout(); // phones: menu bar at the bottom, no profile column
   const [atCraftingTable, setAtCraftingTable] = useState(false);
   const [openChest, setOpenChest] = useState<string | null>(null);
   const [openFurnace, setOpenFurnace] = useState<string | null>(null);
@@ -5624,7 +5941,7 @@ export default function App() {
       hadLockRef.current = false;
       lastStatTickRef.current = Date.now();
       const applyRules = (h: { setRules: (r: { difficulty: Difficulty; keepInventory: boolean; hardcore: boolean }) => void }) => h.setRules({ difficulty: serverSettingsRef.current.difficulty, keepInventory: serverSettingsRef.current.keepInventory, hardcore: hardcoreRef.current });
-      const handle = createVoxelGame(canvasRef.current, renderDistance, activeWorldMode, graphicsQuality, fov, activeWorldType, sfxVolume, activeSeed, activeExperimental);
+      const handle = createVoxelGame(canvasRef.current, renderDistance, activeWorldMode, graphicsQuality, fov, activeWorldType, sfxVolume, activeSeed, activeExperimental, arenaVariantRef.current);
       gameHandleRef.current = handle;
       handle.setPlayerLook(currentLook());
       handle.setOwnSkin(currentLook().skin);
@@ -5636,7 +5953,20 @@ export default function App() {
       handle.onMinigame((v) => setMinigame(v));
       setOneBlock(null);
       handle.onOneBlock((v) => setOneBlock(v));
-      if (activeWorldType === 'eggwars' || activeWorldType === 'bridge') handle.startMinigame(minigameDifficultyRef.current, minigameSizeRef.current);
+      if (activeWorldType === 'eggwars' || activeWorldType === 'bridge') {
+        if (onlineMgRef.current) { handle.startOnlineMinigame(); if (matchRef.current) window.setTimeout(() => { if (matchRef.current && gameHandleRef.current === handle) applyMatchRef.current(matchRef.current); }, 0); } // real players: no bots, the host's room keeps the score
+        else handle.startMinigame(minigameDifficultyRef.current, minigameSizeRef.current);
+      }
+      // Online matches and PvP: what happens to you goes to the room, and your hits on other players too
+      handle.onMatchEvent((e) => {
+        const mp = mpRef.current;
+        if (!mp) return;
+        if (e.type === 'died') mp.sendMatchDied(e.by);
+        else if (e.type === 'egg') mp.sendMatchEgg(e.team);
+        else mp.sendMatchGoal(e.team);
+      });
+      handle.onPvpHit((id, dmg, kx, kz) => mpRef.current?.sendHit(id, dmg, kx, kz));
+      if (onlineMgRef.current?.host) window.setTimeout(() => { if (gameHandleRef.current === handle) void startMatchHostingRef.current(); }, 600);
       // Advancements belong to this planet; whatever you already hold on load is granted quietly
       advRef.current = loadAdvancements(activeWorldIdRef.current);
       setAdvHave(new Set(advRef.current));
@@ -6113,7 +6443,17 @@ export default function App() {
         // Everyone on a server shares its seed, world type and game mode
         const m = w.mode === 'creative' || w.mode === 'adventure' ? w.mode : 'survival';
         setActiveWorldMode(m);
-        setActiveWorldType(w.worldType === 'superflat' ? 'superflat' : 'default');
+        if (w.game && (w.game.kind === 'eggwars' || w.game.kind === 'bridge')) {
+          // an online EggWars / Bridge Duels match: the same arena map as the host
+          arenaVariantRef.current = w.game.variant;
+          onlineMgRef.current = { host: false, kind: w.game.kind, size: w.game.teamSize >= 4 ? 'squads' : w.game.teamSize >= 2 ? 'duos' : 'solo' };
+          activityRef.current = w.game.kind;
+          setActiveWorldType(w.game.kind);
+        } else {
+          onlineMgRef.current = null;
+          arenaVariantRef.current = undefined;
+          setActiveWorldType(w.worldType === 'superflat' ? 'superflat' : 'default');
+        }
         setActiveSeed(w.seed);
         setActiveExperimental(!!w.experimental);
         setGameMode('playing');
@@ -6133,7 +6473,8 @@ export default function App() {
           if (id === myNetIdRef.current) continue;
           const nm = onlineNamesRef.current[id] ?? 'Player';
           h.setRemotePlayer(id, nm, x, y, z, yaw, pitch, mode, held, act);
-          h.setRemoteTag(id, `${tagsFor(nm)}${nm}`);
+          const team = matchRef.current ? memberTeamsRef.current[id] : undefined;
+          h.setRemoteTag(id, team !== undefined ? `\\${TEAM_KEYS[team] ?? 'white'}\\${nm}` : `${tagsFor(nm)}${nm}`);
         }
       },
       onLook: (id, look) => { gameHandleRef.current?.setRemoteLook(id, look); },
@@ -6171,6 +6512,10 @@ export default function App() {
       },
       onSetMode: (mode, by) => applyAdminMode(mode, by),
       onAdminPlayers: (list) => setAdminPlayers(list),
+      onMatch: (m) => applyMatch(m),
+      onMatchReset: () => gameHandleRef.current?.onlineMatchReset(),
+      onHurt: (hh) => gameHandleRef.current?.hurtByPlayer(hh.dmg, hh.kx, hh.kz, hh.name, hh.by),
+      onHurtFx: (id) => gameHandleRef.current?.remoteHurtFx(id),
       onClose: (reason) => {
         if (hostingSelf) { stopHostingRef.current(true); return; } // (only if your own room shut down by itself)
         mpRef.current = null;
@@ -6196,13 +6541,13 @@ export default function App() {
   }
 
   // ---------------- Hosting: your world, open to others while you play ----------------
-  type Hosting = { id: string; room: HostRoomLike; peer: { start(): Promise<void>; stop(): void }; worldId: string; privacy: WorldPrivacy; name: string; mode: string; worldType: string; max: number; timer: number };
+  type Hosting = { id: string; room: HostRoomLike; peer: { start(): Promise<void>; stop(): void }; worldId: string; privacy: WorldPrivacy; name: string; mode: string; worldType: string; max: number; timer: number; description?: string; image?: string };
   const hostingRef = useRef<Hosting | null>(null);
   const [hostingInfo, setHostingInfo] = useState<{ privacy: WorldPrivacy; players: number } | null>(null);
   function publishHosting() {
     const hs = hostingRef.current, me = accountRef.current;
     if (!hs || !me) return;
-    void publishHostedWorld(me, { id: hs.id, name: hs.name, mode: hs.mode, worldType: hs.worldType, privacy: hs.privacy, players: hs.room.count, max: hs.max });
+    void publishHostedWorld(me, { id: hs.id, name: hs.name, mode: hs.mode, worldType: hs.worldType, privacy: hs.privacy, players: hs.room.count, max: hs.max, description: hs.description, image: hs.image });
     void setServerPresence('p2p:' + hs.id);
   }
   /** Opens the world you're playing to others (unless it's private, you're a guest, or it's a minigame). */
@@ -6226,18 +6571,13 @@ export default function App() {
     const room = new hMod.HostRoom({
       seed: activeSeedRef.current, worldType, mode, changes: save.edits, time: save.time, weather: weatherRef.current,
       settings: serverSettingsRef.current, ranks: fakeRanksRef.current, experimental: !!cfg.experimental, privacy, hostName: me.username, maxPlayers: max, bans: cfg.bans ?? [],
-      services: {
-        verify: verifyToken,
-        isFriend: (uid: string) => isFriendOf(me.userId, uid),
-        isBanned: isBannedName,
-        isAdmin: isAdminToken,
-        standing: async (name: string) => { const st = await fetchStanding(name); return { rank: st?.rank ?? 'none', tier: creatorTier(st?.plays ?? 0) }; },
-      },
+      services: roomServices(me),
+      ...anticheatOptions(cfg.name),
       onCount: (n: number) => { setHostingInfo((x) => (x ? { ...x, players: n } : x)); publishHosting(); },
       onBans: (bans: string[]) => setSavedWorlds((prev) => prev.map((w) => (w.id === worldId ? { ...w, bans } : w))),
     });
     const peer = new hMod.PeerHost(id, signalingFor(hMod), room);
-    hostingRef.current = { id, room, peer, worldId, privacy, name: cfg.name, mode, worldType, max, timer: 0 };
+    hostingRef.current = { id, room, peer, worldId, privacy, name: cfg.name, mode, worldType, max, timer: 0, description: cfg.description, image: await listImage(cfg.image) };
     joinedAddressRef.current = 'p2p:' + id;
     connectWith((mpMod as { MultiplayerClient: new () => MpClient }).MultiplayerClient, undefined, { hostSocket: hMod.loopback(room) });
     setHostingInfo({ privacy, players: 1 });
@@ -6250,6 +6590,98 @@ export default function App() {
     publishHosting();
     hostingRef.current.timer = window.setInterval(publishHosting, 20_000);
   }
+  // ---------------- Online EggWars / Bridge Duels ----------------
+  /** The host's room says how the match stands: your team, the score, eggs, who is out. */
+  function applyMatch(m: NetMatch) {
+    matchRef.current = m;
+    setMatch(m);
+    const me = myNetIdRef.current;
+    const teams: Record<number, number> = {};
+    for (const [id, team] of m.members) teams[id] = team;
+    memberTeamsRef.current = teams;
+    const mine = m.members.find(([id]) => id === me);
+    const h = gameHandleRef.current;
+    if (!h) return;
+    h.setOnlineMatch({
+      phase: m.phase, left: m.left, round: m.round, winner: m.winner,
+      teams: m.teams.map((t, i) => ({ score: t.score, egg: t.egg, out: t.out, players: m.members.filter(([, team]) => team === i).length, alive: m.members.filter(([, team, out]) => team === i && !out).length })),
+      myTeam: mine ? mine[1] : -1, out: mine ? mine[2] : true, kills: mine ? mine[3] : 0, deaths: mine ? mine[4] : 0,
+    });
+    // you may hit players of the other teams
+    const myTeam = mine ? mine[1] : -1;
+    h.setPvp(myTeam >= 0 ? (id) => { const t = memberTeamsRef.current[id]; return t !== undefined && t !== myTeam; } : null);
+    refreshNameTags();
+  }
+  const applyMatchRef = useRef(applyMatch);
+  applyMatchRef.current = applyMatch;
+  // PvP in ordinary worlds follows the world's PvP rule (online minigames use the teams instead)
+  useEffect(() => {
+    const h = gameHandleRef.current;
+    if (!h || onlineMgRef.current) return;
+    h.setPvp(netStatus === 'online' && serverSettings.pvp !== false ? () => true : null);
+  }, [netStatus, serverSettings.pvp, gameMode]);
+
+  /** You host an online match: your browser runs the room, others join from the Servers page or the minigame menu. */
+  async function startMatchHosting() {
+    const online = onlineMgRef.current, h = gameHandleRef.current, me = accountRef.current;
+    if (!online?.host || !h || !me || hostingRef.current || mpRef.current) return;
+    const load = Object.values(multiplayerModules)[0];
+    const [mpMod, hMod] = await Promise.all([load ? load().catch(() => null) : null, loadHosting()]);
+    if (!mpMod || !hMod) { pushMessage("Online games aren't installed in this copy of the game.", '#ff9a3c'); return; }
+    if (gameHandleRef.current !== h || hostingRef.current || mpRef.current) return;
+    const kind = online.kind;
+    const teamSize = MINIGAME_SIZES[online.size] ?? 1;
+    const teams = kind === 'bridge' ? 2 : 4;
+    const id = hMod.randomId(16);
+    const name = `${me.username}'s ${kind === 'bridge' ? 'Bridge Duel' : 'EggWars'}`;
+    const room = new hMod.HostRoom({
+      seed: activeSeedRef.current, worldType: kind, mode: 'survival', changes: [], time: 0.3, weather: 'clear',
+      settings: { ...DEFAULT_SERVER, difficulty: 'normal', keepInventory: false, scripts: false, mods: false, commands: false, pvp: true },
+      ranks: fakeRanksRef.current, experimental: false, privacy: 'public', hostName: me.username, maxPlayers: teams * teamSize, bans: [],
+      game: { kind, variant: arenaVariantRef.current ?? 0, teams, teamSize, winScore: kind === 'bridge' ? 5 : 1 },
+      services: roomServices(me),
+      ...anticheatOptions(name),
+      onCount: (n: number) => { setHostingInfo((x) => (x ? { ...x, players: n } : x)); publishHosting(); },
+    });
+    const peer = new hMod.PeerHost(id, signalingFor(hMod), room);
+    hostingRef.current = { id, room, peer, worldId: '', privacy: 'public', name, mode: 'survival', worldType: kind, max: teams * teamSize, timer: 0,
+      description: kind === 'bridge' ? `Bridge Duels, ${online.size}. First to 5 goals.` : `EggWars, ${online.size}. Protect your egg!`, image: kind === 'bridge' ? '/images/bridgeduels-bg.jpg' : '/images/eggwars-bg.jpg' };
+    joinedAddressRef.current = 'p2p:' + id;
+    connectWith((mpMod as { MultiplayerClient: new () => MpClient }).MultiplayerClient, undefined, { hostSocket: hMod.loopback(room) });
+    setHostingInfo({ privacy: 'public', players: 1 });
+    peer.start().then(() => {
+      if (hostingRef.current?.id === id) pushMessage('Your match is open! Players can join from the Servers page. Press Start when everyone is in.', '#7cfc7c');
+    }).catch(() => {
+      if (hostingRef.current?.id === id) pushMessage("Couldn't open your match to other players right now (the matchmaking service didn't answer).", '#ff9a3c');
+    });
+    publishHosting();
+    hostingRef.current.timer = window.setInterval(publishHosting, 20_000);
+  }
+  const startMatchHostingRef = useRef(startMatchHosting);
+  startMatchHostingRef.current = startMatchHosting;
+  /** What every room needs to know who people are. */
+  function roomServices(me: { userId: string }) {
+    return {
+      verify: verifyToken,
+      isFriend: (uid: string) => isFriendOf(me.userId, uid),
+      isBanned: isBannedName,
+      isAdmin: isAdminToken,
+      standing: async (name: string) => { const st = await fetchStanding(name); return { rank: st?.rank ?? 'none', tier: creatorTier(st?.plays ?? 0) }; },
+    };
+  }
+  /** Anti-cheat for a world you host: alerts go to you (chat + Manage Server) and to the admins' report list. */
+  function anticheatOptions(worldName: string) {
+    return {
+      anticheat: { ...acSettings },
+      ground: (x: number, y: number, z: number) => gameHandleRef.current?.probeGround(x, y, z) ?? null,
+      onCheat: (a: CheatAlertLike) => {
+        setCheatAlerts((prev) => [a, ...prev].slice(0, 100));
+        pushMessage(`[Anti-cheat] ${a.player}: ${CHEAT_NAMES[a.kind] ?? a.kind} (${a.detail})`, '#ff6b6b');
+        void reportCheat(accountRef.current, { world: worldName, player: a.player, kind: a.kind, detail: a.detail });
+      },
+    };
+  }
+
   /** Closes your world to others. stillPlaying: you stay in it (it was made private). */
   function stopHosting(stillPlaying: boolean) {
     const hs = hostingRef.current;
@@ -6632,6 +7064,11 @@ export default function App() {
         window.clearTimeout(hintTimerRef.current);
         hintTimerRef.current = window.setTimeout(() => setHint(null), 2200);
         return null;
+      case 'gui.flash': {
+        const secs = Math.max(0.1, Math.min(10, Number(args[0]) || 1));
+        setFlash({ key: Date.now(), secs });
+        return null;
+      }
       case 'gui.title':
         showTitle(String(args[0]), String(args[1] ?? ''), Number(args[2]) > 0 ? Number(args[2]) : 3);
         return null;
@@ -7628,8 +8065,14 @@ export default function App() {
   }, [gameMode, activeWorldType, activeWorldMode]);
 
   /** EggWars or Bridge Duels against bots: a fresh arena every time (never saved). */
-  function handlePlayMinigame(kind: ArenaKind, difficulty: BotDifficulty, size: MinigameSize = 'solo') {
+  function handlePlayMinigame(kind: ArenaKind, difficulty: BotDifficulty, size: MinigameSize = 'solo', online?: MinigameOnline) {
+    if (online && 'join' in online) { friendJoinErrorRef.current = false; joinServer('p2p:' + online.join, online.hostName); return; }
+    if (online && (!account || isGuestName(account.username))) { setShowModal(true); return; } // hosting needs an account (others check who you are)
     if (!startGuard()) return;
+    onlineMgRef.current = online ? { host: true, kind, size } : null;
+    arenaVariantRef.current = online ? Math.floor(Math.random() * 1000) : undefined;
+    matchRef.current = null;
+    setMatch(null);
     minigameDifficultyRef.current = difficulty;
     minigameSizeRef.current = size;
     const s: ServerSettings = { ...DEFAULT_SERVER, difficulty: 'normal', keepInventory: false };
@@ -7649,6 +8092,12 @@ export default function App() {
   function handleExitGame() {
     saveWorldNow(); // save before the world is thrown away
     stopHosting(false); // everyone in your world is sent home
+    onlineMgRef.current = null;
+    arenaVariantRef.current = undefined;
+    matchRef.current = null;
+    setMatch(null);
+    memberTeamsRef.current = {};
+    setCheatAlerts([]);
     void maybeInterstitial({ onStart: () => window.dispatchEvent(new CustomEvent('vb-ad', { detail: true })), onEnd: () => window.dispatchEvent(new CustomEvent('vb-ad', { detail: false })) }); // never for ranked players
     runnerRef.current?.stopAll(); // mods and scripts stop with the world
     setSidebar(null);
@@ -7689,12 +8138,14 @@ export default function App() {
       <audio ref={audioRef} loop onEnded={() => setIsPlaying(false)} className="hidden" />
 
       <div
-        className={`h-screen w-screen flex overflow-hidden bg-[#0a0e14] transition-opacity duration-300 ${
+        className={`vb-themed h-[100dvh] w-screen flex ${compactLayout ? 'flex-col-reverse' : ''} overflow-hidden bg-[#0a0e14] transition-opacity duration-300 ${
           showMenu ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
+        data-layout={compactLayout ? 'compact' : 'wide'}
       >
-        <Sidebar username={currentUsername} view={view} onNavClick={handleNavClick} socialBadge={(Object.values(unread) as number[]).reduce((a, b) => a + b, 0) + pendingRequests} />
+        <Sidebar compact={compactLayout} username={currentUsername} view={view} onNavClick={handleNavClick} socialBadge={(Object.values(unread) as number[]).reduce((a, b) => a + b, 0) + pendingRequests} />
         <MainContent
+          compact={compactLayout}
           username={currentUsername}
           view={view}
           onMinigame={handlePlayMinigame}
@@ -7756,7 +8207,7 @@ export default function App() {
           netStatus={netStatus}
           netError={netError}
         />
-        <ProfilePanel username={currentUsername} onPlayNow={handlePlayNow} onOpenLeaderboard={() => handleNavClick('leaderboard')} />
+        {!compactLayout && <ProfilePanel username={currentUsername} onPlayNow={handlePlayNow} onOpenLeaderboard={() => handleNavClick('leaderboard')} />}
         {showModal && <LoginOverlay onGuest={handleGuest} onClose={username ? () => setShowModal(false) : undefined} />}
       </div>
 
@@ -7808,6 +8259,9 @@ export default function App() {
             view={minigame}
             onPlayAgain={(d) => { minigameDifficultyRef.current = d; gameHandleRef.current?.startMinigame(d); gameHandleRef.current?.relock(); }}
             onExit={exitToHome}
+            isHost={!!onlineMgRef.current?.host}
+            onStartMatch={() => { mpRef.current?.sendMatchStart(); gameHandleRef.current?.relock(); }}
+            waitingFor={match ? match.members.length : undefined}
           />
         )}
         {!showMenu && inventoryOpen && (
@@ -7908,6 +8362,7 @@ export default function App() {
         {!showMenu && hint && (
           <div className="absolute bottom-36 left-1/2 -translate-x-1/2 z-20 px-3 py-1.5 rounded-md bg-black/60 text-white text-sm pointer-events-none vb-fade-in">{hint}</div>
         )}
+        {flash && <div key={flash.key} data-testid="screen-flash" className="absolute inset-0 z-[46] bg-white pointer-events-none" onAnimationEnd={() => setFlash(null)} style={{ animation: `vbFlash ${flash.secs}s ease-in forwards` }}><style>{'@keyframes vbFlash{0%,25%{opacity:1}100%{opacity:0}}'}</style></div>}
         {!showMenu && <NowPlayingToast />}
         {!showMenu && <LookingAtLabel getName={() => gameHandleRef.current?.getTargetName() ?? ''} paused={chatOpen || helpOpen || inventoryOpen} />}
         {!showMenu && showPlayerList && netStatus === 'online' && <PlayerList players={onlinePlayers} myId={myNetIdRef.current} max={serverMax} tagOf={tagsFor} />}
@@ -7981,14 +8436,12 @@ export default function App() {
                 onBan={(id) => mpRef.current?.ban(id)}
                 onTime={(t) => { changeTime(t); }}
                 onWeather={(k) => { changeWeather(k); }}
-                privacy={(() => {
-                  const wid = activeWorldIdRef.current;
-                  const cfg = wid ? savedWorlds.find((w) => w.id === wid) : null;
-                  if (!cfg || !HOSTABLE_TYPES.includes(cfg.worldType ?? 'default') || (mpRef.current && !hostingInfo)) return null;
-                  return { value: cfg.privacy ?? 'public', open: !!hostingInfo, players: hostingInfo?.players ?? 1, signedIn: !!account && !isGuestName(account.username), onChange: setWorldPrivacy };
-                })()}
-              />
-            ) : menuPage === 'schematics' ? (
+                anticheat={
+                  <AntiCheatPanel settings={acSettings} onChange={setAcSettings} alerts={cheatAlerts} hosting={!!hostingInfo}
+                    onKick={(n) => { const id = (Object.entries(onlinePlayers) as Array<[string, string]>).find(([, nm]) => nm.toLowerCase() === n.toLowerCase())?.[0]; if (id) mpRef.current?.kick(Number(id)); }}
+                    onBan={(n) => { const id = (Object.entries(onlinePlayers) as Array<[string, string]>).find(([, nm]) => nm.toLowerCase() === n.toLowerCase())?.[0]; if (id) mpRef.current?.ban(Number(id)); }} />
+                }
+                schematics={
               <SchematicsPage
                 makeEnv={makeSchemEnv}
                 onGetWand={() => { gameHandleRef.current?.addItem(ITEM_WAND, 1); }}
@@ -8002,6 +8455,14 @@ export default function App() {
                     gameHandleRef.current!.setSelection([cx * CHUNK_SIZE, 0, cz * CHUNK_SIZE], [cx * CHUNK_SIZE + CHUNK_SIZE - 1, CHUNK_HEIGHT - 1, cz * CHUNK_SIZE + CHUNK_SIZE - 1]);
                   },
                 }}
+              />
+                }
+                privacy={(() => {
+                  const wid = activeWorldIdRef.current;
+                  const cfg = wid ? savedWorlds.find((w) => w.id === wid) : null;
+                  if (!cfg || !HOSTABLE_TYPES.includes(cfg.worldType ?? 'default') || (mpRef.current && !hostingInfo)) return null;
+                  return { value: cfg.privacy ?? 'public', open: !!hostingInfo, players: hostingInfo?.players ?? 1, signedIn: !!account && !isGuestName(account.username), onChange: setWorldPrivacy };
+                })()}
               />
             ) : menuPage === 'advancements' ? (
               <AdvancementsPanel have={advHave} experimental={experimentalEnabled()} />

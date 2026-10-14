@@ -1,4 +1,4 @@
-// The built-in Schematics page (Esc menu) and the upload box in Manage Server.
+// The schematic maker and the upload box, both in Esc > Manage Server > Schematics.
 // Pick a box with the Selection Wand, copy it, save it, turn it, and paste it anywhere. Files (.vbschem) can be shared.
 import { useState, type ReactNode } from 'react';
 import { runSchem, clipboardInfo, undoDepth, type SchemEnv } from './schemCommands';
@@ -158,7 +158,7 @@ export function SchematicUpload() {
       if (typeof sc === 'string') { fail(sc); return; }
       const err = saveLibrary({ ...loadLibrary(), [nameKey(sc.name)]: sc });
       if (err) { fail(err); return; }
-      out(`Uploaded "${sc.name}" (${describe(sc)}). Paste it from the Schematics page in the game menu.`);
+      out(`Uploaded "${sc.name}" (${describe(sc)}). Paste it from the list above (Manage Server > Schematics).`);
     });
     bump();
   }

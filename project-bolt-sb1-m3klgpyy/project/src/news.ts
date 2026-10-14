@@ -1,10 +1,29 @@
 // What's new. Add a new entry at the TOP of NEWS (and bump GAME_VERSION) with every update;
 // the News page in the sidebar shows this list, and a dot appears on it until the newest one has been read.
-export const GAME_VERSION = 23;
+export const GAME_VERSION = 24;
 
 export type NewsEntry = { version: number; date: string; title: string; changes: string[] };
 
 export const NEWS: NewsEntry[] = [
+  {
+    version: 24,
+    date: 'October 13, 2026',
+    title: 'Online EggWars & Bridge Duels, anti-cheat and a lot more',
+    changes: [
+      'Play EggWars and Bridge Duels against real players: pick "Host a match" in the game\'s menu (signed in), or join an open match from that menu or the Servers page. Teams are filled automatically, the host presses Start (or G), and players can fight each other.',
+      'PvP in your own worlds too, with a switch in Manage Server > Rules.',
+      'Anti-cheat watches players in worlds you host: flying, speed, reach, kill aura, auto clickers, nukers and chat spam. Alerts show in chat and in Manage Server > Anti-cheat, can kick cheaters by themselves, and go to the admins.',
+      'Admin panel: the owner adds and removes admins right in the panel, admins see anti-cheat reports from every world, there is an Ads check, and a light mode.',
+      'Light mode for the menus: Settings > Video > Theme.',
+      'Your level is saved to your account, and the leaderboard has a Top levels board.',
+      'The Servers page shows big cards with a picture and a description. Add a description when you create a world.',
+      'The schematic maker moved into Manage Server > Schematics.',
+      'Sneaking looks like Minecraft now: you lean forward and step back, and other players see it.',
+      'Right-click with a Cinderbone Skull to summon the Hollow Tyrant. Cinderbones drop it 1 time in 10.',
+      'The Guns mod is back, with grenades and flashbangs.',
+      'Phones get a menu bar along the bottom and a bigger PLAY NOW. The inventory is tighter, the Esc settings are wider, Manage Server is orange, Advancements are yellow, and the game mode pictures have no dark tint.',
+    ],
+  },
   {
     version: 23,
     date: 'October 13, 2026',
