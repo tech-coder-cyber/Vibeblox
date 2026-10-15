@@ -714,7 +714,8 @@ function drawLogTopCanvas(): HTMLCanvasElement {
 function withLeafHoles(src: HTMLCanvasElement): HTMLCanvasElement {
   const c = makeCanvas(64, 64);
   const ctx = c.getContext('2d')!;
-  ctx.drawImage(src, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(src, 0, 0, 64, 64); // spruce/birch/dark oak/acacia pass a 16x16 canvas: stretch it to fill the whole texture
   for (let i = 0; i < 28; i++) {
     ctx.clearRect(Math.floor(Math.random() * 16) * 4, Math.floor(Math.random() * 16) * 4, 4, 4);
   }

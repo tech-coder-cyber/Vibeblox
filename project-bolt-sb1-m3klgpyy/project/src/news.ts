@@ -1,10 +1,20 @@
 // What's new. Add a new entry at the TOP of NEWS (and bump GAME_VERSION) with every update;
 // the News page in the sidebar shows this list, and a dot appears on it until the newest one has been read.
-export const GAME_VERSION = 24;
+export const GAME_VERSION = 25;
 
 export type NewsEntry = { version: number; date: string; title: string; changes: string[] };
 
 export const NEWS: NewsEntry[] = [
+  {
+    version: 25,
+    date: 'October 14, 2026',
+    title: 'Temporary ranks, free claims for ranks and a leaves fix',
+    changes: [
+      'Admin panel: the owner can give a rank for 1 hour, 1 day, 3 days, 7 days, 30 days, any custom time, or for good. A rank that runs out goes away by itself.',
+      'Players with a rank can claim the coins (50 coins, up to 5 times an hour) and the 2x XP booster (once every 15 minutes) in the Shop without watching ads.',
+      'Birch, spruce, dark oak and acacia leaves were mostly see-through. They are solid leaves now, like oak.',
+    ],
+  },
   {
     version: 24,
     date: 'October 13, 2026',

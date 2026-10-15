@@ -3,7 +3,7 @@ import { ADVANCEMENT_TABS, advancementsFor, checkItems, checkEvent, loadAdvancem
 import { SKINS, CAPES, CUSTOM_SKIN_ID, isCustomSkinData, type PlayerLook } from '@/cosmetics';
 import { CAN_LINK_OUT, CAN_SELL_RANKS, ADS_POSSIBLE, PLATFORM, initAds, triggerRewardedAd, setGameplayActive, reportLoadingFinished, setAdsBlocked, maybeInterstitial, lastAdResult } from '@/adEconomy';
 import {
-  getProgress, subscribeProgress, onLevelUp, setCustomSkin, addActiveSeconds, rewardAdCoins, rewardAdBooster, buyCosmetic, equipCosmetic, currentLook, reloadProgress, progressForAccount, mergeAccountProgress,
+  getProgress, subscribeProgress, onLevelUp, setCustomSkin, addActiveSeconds, rewardAdCoins, rewardAdBooster, claimCoins, claimBooster, claimStatus, COIN_CLAIMS_PER_HOUR, buyCosmetic, equipCosmetic, currentLook, reloadProgress, progressForAccount, mergeAccountProgress,
   xpForLevel, DISCORD_INVITE_URL, TEBEX_STORE_URL, AD_COINS, LEVEL_UP_COINS, XP_PER_PERIOD, SECONDS_PER_PERIOD, BOOSTER_SECONDS, IDLE_AFTER_SECONDS,
 } from '@/progression';
 import { ModBuilder } from '@/ModBuilder';
@@ -1846,7 +1846,10 @@ function ShopView({ compact = false }: { compact?: boolean }) {
   const [adsOk, setAdsOk] = useState<boolean>(false);
   const [note, setNote] = useState<string | null>(null);
   const { rank: adRank, isOwner: adOwner } = useContext(StandingContext);
-  const adsFree = !adsAllowedFor(adRank, adOwner); // a rank means no ads, ever: the rewards are simply handed over
+  const adsFree = !adsAllowedFor(adRank, adOwner); // a rank means no ads, ever: the rewards are claimed instead (with limits)
+  const [clockNow, setClockNow] = useState(() => Date.now());
+  useEffect(() => { if (!adsFree) return; const t = setInterval(() => setClockNow(Date.now()), 1000); return () => clearInterval(t); }, [adsFree]);
+  const claim = claimStatus(clockNow);
   useEffect(() => { if (ADS_POSSIBLE && !adsFree) void initAds().then(setAdsOk); }, [adsFree]);
   useEffect(() => { if (!note) return; const t = setTimeout(() => setNote(null), 3500); return () => clearTimeout(t); }, [note]);
 
@@ -1856,8 +1859,16 @@ function ShopView({ compact = false }: { compact?: boolean }) {
   const untilXp = (SECONDS_PER_PERIOD - p.activeSeconds) / (boosted ? 2 : 1);
 
   async function watch(kind: 'coins' | 'booster') {
+    if (adsFree) { // claiming instead of watching: coins 5 times an hour, the booster every 15 minutes
+      const r = kind === 'coins' ? claimCoins() : claimBooster();
+      setClockNow(Date.now());
+      if (!r.ok) setNote(`Not yet. You can claim ${kind === 'coins' ? 'more coins' : 'another booster'} in ${fmtTime(Math.ceil(r.waitMs / 1000))}.`);
+      else if (kind === 'coins') setNote(`+${AD_COINS} coins!`);
+      else setNote(`2x XP for the next ${BOOSTER_SECONDS / 60} minutes of play!`);
+      return;
+    }
     setAdBusy(kind);
-    const ok = adsFree || await triggerRewardedAd({
+    const ok = await triggerRewardedAd({
       onStart: () => window.dispatchEvent(new CustomEvent('vb-ad', { detail: true })),
       onEnd: () => window.dispatchEvent(new CustomEvent('vb-ad', { detail: false })),
     });
@@ -1962,21 +1973,23 @@ function ShopView({ compact = false }: { compact?: boolean }) {
           {/* Earn coins */}
           <div className="grid sm:grid-cols-2 gap-3 mb-5">
             <button
-              disabled={(!adsOk && !adsFree) || adBusy !== null}
+              disabled={(!adsOk && !adsFree) || adBusy !== null || (adsFree && claim.coinsLeft <= 0)}
+              data-testid="claim-coins"
               onClick={() => watch('coins')}
               className="flex items-center justify-center gap-2 rounded-xl py-3 font-bold text-sm bg-gradient-to-r from-[#ffd23a] to-[#ff9a1a] text-[#0a0e14] transition-all duration-200 hover:scale-[1.02] active:scale-95 disabled:opacity-40 disabled:hover:scale-100"
             >
-              <Tv className="w-4 h-4" />{adBusy === 'coins' ? 'Playing ad…' : adsFree ? `Claim ${AD_COINS} Coins` : `Watch Ad for ${AD_COINS} Coins`}
+              <Tv className="w-4 h-4" />{adBusy === 'coins' ? 'Playing ad…' : adsFree ? (claim.coinsLeft > 0 ? `Claim ${AD_COINS} Coins (${claim.coinsLeft} left this hour)` : `Next coins in ${fmtTime(Math.ceil(claim.coinsWaitMs / 1000))}`) : `Watch Ad for ${AD_COINS} Coins`}
             </button>
             <button
-              disabled={(!adsOk && !adsFree) || adBusy !== null}
+              disabled={(!adsOk && !adsFree) || adBusy !== null || (adsFree && claim.boosterWaitMs > 0)}
+              data-testid="claim-booster"
               onClick={() => watch('booster')}
               className="flex items-center justify-center gap-2 rounded-xl py-3 font-bold text-sm bg-gradient-to-r from-[#00e5ff] to-[#7c4dff] text-[#0a0e14] transition-all duration-200 hover:scale-[1.02] active:scale-95 disabled:opacity-40 disabled:hover:scale-100"
             >
-              <Sparkles className="w-4 h-4" />{adBusy === 'booster' ? 'Playing ad…' : adsFree ? 'Claim a 2x XP Playtime Booster' : 'Watch Ad for a 2x XP Playtime Booster'}
+              <Sparkles className="w-4 h-4" />{adBusy === 'booster' ? 'Playing ad…' : adsFree ? (claim.boosterWaitMs > 0 ? `Next booster in ${fmtTime(Math.ceil(claim.boosterWaitMs / 1000))}` : 'Claim a 2x XP Playtime Booster') : 'Watch Ad for a 2x XP Playtime Booster'}
             </button>
           </div>
-          {adsFree && <p className="-mt-3 mb-5 text-[#5a6b80] text-xs" data-testid="no-ads-note">You have a rank, so you never see ads. The rewards are yours without watching one.</p>}
+          {adsFree && <p className="-mt-3 mb-5 text-[#5a6b80] text-xs" data-testid="no-ads-note">You have a rank, so you never see ads. Claim coins up to {COIN_CLAIMS_PER_HOUR} times an hour and a booster every 15 minutes instead.</p>}
           {!adsOk && !adsFree && <p className="-mt-3 mb-5 text-[#5a6b80] text-xs">{ADS_POSSIBLE ? 'No ads are available right now. Try again in a moment.' : 'Ads are available when you play VibeBlox on CrazyGames or Poki. Here you earn coins by levelling up.'}</p>}
 
           <div className="flex gap-2 mb-4">

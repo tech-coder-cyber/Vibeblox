@@ -8,7 +8,7 @@ import SideNav from './SideNav';
 import AccountPanel from './AccountPanel';
 import { ShieldCheck, Megaphone, Gavel, UserX, Ban, X, Loader2, Undo2, Crown, Sun, Moon, ShieldAlert, Tv, UserPlus } from 'lucide-react';
 import {
-  postAnnouncement, banEverywhere, unbanEverywhere, listBans, getLastAnnouncement, setLastAnnouncement, isOwnerName, giveRank, rankOf, RANKS, RANK_LABELS, ANNOUNCE_MAX, USERNAME_RE,
+  postAnnouncement, banEverywhere, unbanEverywhere, listBans, getLastAnnouncement, setLastAnnouncement, isOwnerName, giveRank, rankInfo, RANKS, RANK_LABELS, ANNOUNCE_MAX, USERNAME_RE,
   listAdmins, setAdmin, listCheatReports, type Account, type Ban as BanRow, type RankName, type CheatReport,
 } from './social';
 import { adStatus } from './adEconomy';
@@ -299,43 +299,84 @@ function AntiCheatSection({ account, say }: Ctx) {
 }
 
 // ---------------- Ranks (owner) ----------------
+/** How long a rank lasts: hours (null = for good). */
+const RANK_DURATIONS: Array<{ id: string; label: string; hours: number | null }> = [
+  { id: 'perm', label: 'Permanent', hours: null },
+  { id: '1h', label: '1 hour', hours: 1 },
+  { id: '1d', label: '1 day', hours: 24 },
+  { id: '3d', label: '3 days', hours: 72 },
+  { id: '7d', label: '7 days', hours: 168 },
+  { id: '30d', label: '30 days', hours: 720 },
+  { id: 'custom', label: 'Custom…', hours: null },
+];
+function untilText(until: string | null): string {
+  if (!until) return 'for good';
+  const ms = Date.parse(until) - Date.now();
+  if (!(ms > 0)) return 'ran out';
+  const h = Math.floor(ms / 3_600_000), d = Math.floor(h / 24);
+  return `for ${d >= 1 ? `${d} day${d === 1 ? '' : 's'} ${h % 24} h` : h >= 1 ? `${h} h ${Math.floor((ms % 3_600_000) / 60_000)} min` : `${Math.max(1, Math.ceil(ms / 60_000))} min`} more`;
+}
 function RanksSection({ owner, say }: Ctx) {
   const [rankName, setRankName] = useState('');
   const [rankPick, setRankPick] = useState<RankName>('vanguard');
-  const [rankNow, setRankNow] = useState<string | null>(null);
+  const [duration, setDuration] = useState('perm');
+  const [customAmount, setCustomAmount] = useState('12');
+  const [customUnit, setCustomUnit] = useState<'hours' | 'days'>('hours');
+  const [rankNow, setRankNow] = useState<{ rank: string; until: string | null } | '?' | null>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     setRankNow(null);
     if (!USERNAME_RE.test(rankName)) return;
     let live = true;
-    const t = setTimeout(() => { void rankOf(rankName).then((r) => { if (live) setRankNow(r === null ? '?' : r); }); }, 350);
+    const t = setTimeout(() => { void rankInfo(rankName).then((r) => { if (live) setRankNow(r === null ? '?' : r); }); }, 350);
     return () => { live = false; clearTimeout(t); };
   }, [rankName]);
+  const temp = rankPick !== 'none';
+  /** The hours for the chosen duration (null = permanent); NaN if the custom number is no good. */
+  const hours: number | null = !temp ? null : duration === 'custom'
+    ? (() => { const n = Math.floor(Number(customAmount)); const h = customUnit === 'days' ? n * 24 : n; return Number.isFinite(h) && h >= 1 && h <= 87600 ? h : NaN; })()
+    : RANK_DURATIONS.find((d) => d.id === duration)?.hours ?? null;
   async function apply() {
-    if (busy) return;
+    if (busy || Number.isNaN(hours)) return;
     setBusy(true);
-    const r = await giveRank(rankName, rankPick);
+    const r = await giveRank(rankName, rankPick, hours);
     setBusy(false);
     if (!r.ok) { say(false, r.error); return; }
-    say(true, rankPick === 'none' ? `${r.username} no longer has a rank.` : `${r.username} is now ${RANK_LABELS[rankPick]}. They see it the next time they sign in.`);
-    setRankNow(rankPick);
+    const until = hours === null ? null : new Date(Date.now() + hours * 3_600_000).toISOString();
+    say(true, rankPick === 'none' ? `${r.username} no longer has a rank.` : `${r.username} is now ${RANK_LABELS[rankPick]} ${hours === null ? 'for good' : `for ${hours >= 48 && hours % 24 === 0 ? `${hours / 24} days` : `${hours} hour${hours === 1 ? '' : 's'}`}`}. They see it the next time they sign in.`);
+    setRankNow({ rank: rankPick, until });
   }
+  const sel = 'bg-[#0a0e14] border border-[#243044] rounded-xl text-sm text-white px-3 py-2.5';
   return (
     <div className={ui.section} data-testid="admin-ranks">
       <div className={ui.h2}><Crown className="w-5 h-5 text-[#ffd700]" />Give a rank</div>
       {!owner && <p className="text-[#ff9800] text-xs mb-3">Only the owner can give ranks.</p>}
       <div className="flex flex-wrap gap-2 items-center">
         <input value={rankName} onChange={(e) => setRankName(e.target.value.replace(/[^A-Za-z0-9_]/g, '').slice(0, 16))} placeholder="Username" data-testid="rank-name" className={`${ui.input} flex-1 min-w-[140px]`} />
-        <select value={rankPick} onChange={(e) => setRankPick(e.target.value as RankName)} data-testid="rank-pick" aria-label="Rank" className="bg-[#0a0e14] border border-[#243044] rounded-xl text-sm text-white px-3 py-2.5">
+        <select value={rankPick} onChange={(e) => setRankPick(e.target.value as RankName)} data-testid="rank-pick" aria-label="Rank" className={sel}>
           {RANKS.map((r) => <option key={r} value={r}>{RANK_LABELS[r]}</option>)}
         </select>
-        <button onClick={apply} disabled={!owner || !USERNAME_RE.test(rankName) || busy} data-testid="rank-give"
+        {temp && (
+          <select value={duration} onChange={(e) => setDuration(e.target.value)} data-testid="rank-duration" aria-label="How long" className={sel}>
+            {RANK_DURATIONS.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
+          </select>
+        )}
+        {temp && duration === 'custom' && (
+          <>
+            <input value={customAmount} onChange={(e) => setCustomAmount(e.target.value.replace(/[^0-9]/g, '').slice(0, 5))} inputMode="numeric" data-testid="rank-custom" aria-label="How many" className={`${ui.input} w-20`} />
+            <select value={customUnit} onChange={(e) => setCustomUnit(e.target.value as 'hours' | 'days')} data-testid="rank-custom-unit" aria-label="Unit" className={sel}>
+              <option value="hours">hours</option><option value="days">days</option>
+            </select>
+          </>
+        )}
+        <button onClick={apply} disabled={!owner || !USERNAME_RE.test(rankName) || busy || Number.isNaN(hours)} data-testid="rank-give"
           className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#ffd700] text-[#0a0e14] font-bold text-sm disabled:opacity-40 hover:brightness-110 active:scale-95 transition-all">
-          {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Crown className="w-4 h-4" />}{rankPick === 'none' ? 'Remove rank' : 'Give rank'}
+          {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Crown className="w-4 h-4" />}{rankPick === 'none' ? 'Remove rank' : hours === null ? 'Give rank for good' : 'Give temporary rank'}
         </button>
       </div>
       <p className="text-[11px] text-[#5a6b80] mt-2" data-testid="rank-now">
-        {rankNow === null ? 'Type a username to see their rank.' : rankNow === '?' ? 'Nobody has that name.' : `Current rank: ${RANK_LABELS[(RANKS as readonly string[]).includes(rankNow) ? rankNow as RankName : 'none']}`}
+        {rankNow === null ? 'Type a username to see their rank.' : rankNow === '?' ? 'Nobody has that name.'
+          : `Current rank: ${RANK_LABELS[(RANKS as readonly string[]).includes(rankNow.rank) ? rankNow.rank as RankName : 'none']}${rankNow.rank !== 'none' ? ` (${untilText(rankNow.until)})` : ''}`}
       </p>
     </div>
   );

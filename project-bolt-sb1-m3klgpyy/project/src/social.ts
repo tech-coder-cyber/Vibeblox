@@ -10,7 +10,7 @@
 export const SUPABASE_URL = 'https://okhtosecqytklgwouwxv.supabase.co';
 export const SUPABASE_ANON_KEY = 'sb_publishable_kyklbTdQk64bRSdGSrEX0w_1lKAD4X0';
 
-export type Account = { userId: string; username: string; token: string; /** 'none' | 'vanguard' | 'elite' | 'champion' (set by the database, never by the player) */ rank?: string; /** When the name was last changed (you can change it once a week) */ nameChangedAt?: string | null };
+export type Account = { userId: string; username: string; token: string; /** 'none' | 'vanguard' | 'elite' | 'champion' (set by the database, never by the player) */ rank?: string; /** When a temporary rank runs out (ISO time), or null/undefined if it lasts for good */ rankUntil?: string | null; /** When the name was last changed (you can change it once a week) */ nameChangedAt?: string | null };
 export type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string };
 
 type Config = {
@@ -139,13 +139,16 @@ async function profilesById(ids: string[]): Promise<Map<string, Profile>> {
 
 /** Makes sure the signed-in user has a profile (the database trigger normally does it) and returns their account. */
 export async function loadAccount(userId: string, token: string, wantedName: string): Promise<Account> {
-  type Full = Profile & { rank?: string; username_changed_at?: string | null };
+  type Full = Profile & { rank?: string; rank_until?: string | null; username_changed_at?: string | null };
   const id = encodeURIComponent(userId);
-  // Older databases do not have the rank / username_changed_at columns yet: fall back to the basics
-  let r = await rest('GET', `profiles?select=id,username,rank,username_changed_at&id=eq.${id}&limit=1`, undefined, {}, token);
+  // Temporary ranks that ran out are taken away first (older databases just don't have this function)
+  await rest('POST', 'rpc/expire_ranks', {}, {}, token).catch(() => undefined);
+  // Older databases do not have the rank_until / rank / username_changed_at columns yet: fall back step by step
+  let r = await rest('GET', `profiles?select=id,username,rank,rank_until,username_changed_at&id=eq.${id}&limit=1`, undefined, {}, token);
+  if (!r.ok) r = await rest('GET', `profiles?select=id,username,rank,username_changed_at&id=eq.${id}&limit=1`, undefined, {}, token);
   if (!r.ok) r = await rest('GET', `profiles?select=id,username&id=eq.${id}&limit=1`, undefined, {}, token);
   const row = r.ok ? (r.data as Full[])[0] : undefined;
-  if (row) return { userId, username: row.username, token, rank: row.rank ?? 'none', nameChangedAt: row.username_changed_at ?? null };
+  if (row) return { userId, username: row.username, token, rank: row.rank ?? 'none', rankUntil: row.rank_until ?? null, nameChangedAt: row.username_changed_at ?? null };
   // No profile yet (the SQL trigger was not installed, or this account is older): make one
   let name = wantedName.replace(/[^A-Za-z0-9_]/g, '').slice(0, 16);
   if (name.length < 3) name = 'Player' + Math.floor(Math.random() * 9000 + 1000);
@@ -490,21 +493,33 @@ export const RANKS = ['none', 'vanguard', 'elite', 'champion'] as const;
 export type RankName = (typeof RANKS)[number];
 export const RANK_LABELS: Record<RankName, string> = { none: 'No rank', vanguard: 'Vanguard', elite: 'Elite', champion: 'Champion' };
 /** Owner only: give a player a rank (or take it away with 'none'). Returns their name as the database spells it. */
-export async function giveRank(username: string, rank: string): Promise<Result<{ username: string }>> {
+export async function giveRank(username: string, rank: string, hours?: number | null): Promise<Result<{ username: string }>> {
   const name = username.trim();
   if (!USERNAME_RE.test(name)) return fail('That is not a valid username');
   if (!(RANKS as readonly string[]).includes(rank)) return fail('Pick a rank');
-  const r = await rest('POST', 'rpc/give_rank', { p_username: name, p_rank: rank });
+  const temp = hours != null && rank !== 'none';
+  if (temp && !(Number.isInteger(hours) && hours! >= 1 && hours! <= 87600)) return fail('Pick how long the rank lasts (1 hour or more)');
+  const r = await rest('POST', 'rpc/give_rank', temp ? { p_username: name, p_rank: rank, p_hours: hours } : { p_username: name, p_rank: rank });
+  if (!r.ok && temp && /p_hours|function|schema cache|not find/i.test(r.error)) return fail('Run vibeblox_round17.sql in Supabase to give ranks for a limited time');
   if (!r.ok) return r.status === 403 || /owner only/i.test(r.error) ? fail('Only the owner can give ranks. ' + NOT_ADMIN_HINT) : fail(r.error);
   if (typeof r.data !== 'string' || !r.data) return fail(`Nobody is called ${name}`);
   return { ok: true, username: r.data };
 }
 /** A player's rank, or null if there is no such player. */
 export async function rankOf(username: string): Promise<string | null> {
+  const i = await rankInfo(username);
+  return i ? i.rank : null;
+}
+/** A player's rank and when it runs out (until = null: it lasts for good), or null if there is no such player. */
+export async function rankInfo(username: string): Promise<{ rank: string; until: string | null } | null> {
   if (!USERNAME_RE.test(username.trim())) return null;
-  const r = await rest('GET', `profiles?select=username,rank&username=ilike.${encodeURIComponent(username.trim())}&limit=1`);
+  const q = encodeURIComponent(username.trim());
+  await rest('POST', 'rpc/expire_ranks', {}).catch(() => undefined);
+  let r = await rest('GET', `profiles?select=username,rank,rank_until&username=ilike.${q}&limit=1`);
+  if (!r.ok) r = await rest('GET', `profiles?select=username,rank&username=ilike.${q}&limit=1`);
   if (!r.ok || !Array.isArray(r.data) || !r.data[0]) return null;
-  return String((r.data[0] as { rank?: string }).rank ?? 'none');
+  const row = r.data[0] as { rank?: string; rank_until?: string | null };
+  return { rank: String(row.rank ?? 'none'), until: row.rank_until ?? null };
 }
 export async function checkAdmin(): Promise<boolean> {
   const r = await rest('POST', 'rpc/is_admin', {});

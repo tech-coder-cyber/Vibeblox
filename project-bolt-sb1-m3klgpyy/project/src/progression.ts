@@ -25,6 +25,10 @@ export const LEVEL_UP_COINS = 100;
 export const AD_COINS = 50;
 export const BOOSTER_SECONDS = 15 * 60;
 export const IDLE_AFTER_SECONDS = 120;
+/** Players with a rank never see ads, so they claim the rewards instead, with limits: coins 5 times an hour, the booster once every 15 minutes. */
+export const COIN_CLAIMS_PER_HOUR = 5;
+export const COIN_CLAIM_WINDOW_MS = 60 * 60 * 1000;
+export const BOOSTER_CLAIM_COOLDOWN_MS = 15 * 60 * 1000;
 
 export function levelForXp(xp: number): number { return Math.floor(Math.sqrt(Math.max(0, xp) / 50)) + 1; }
 /** Total XP needed to reach a level (inverse of the formula above). */
@@ -37,6 +41,9 @@ export type Progress = {
   activeSeconds: number;   // active play not yet turned into XP (0..1799)
   boosterSeconds: number;  // 2x booster time left (counts down with active play only)
   totalActiveSeconds: number;
+  /** Free claims (players with a rank, who never see ads): when each of the last coin claims happened, and the last booster claim (ms) */
+  coinClaims?: number[];
+  boosterClaimAt?: number;
   /** A Champion's own skin (PNG data URL); wearing it means currentSkin is 'custom' */
   customSkin?: string;
 };
@@ -65,6 +72,10 @@ function sanitize(p: Partial<Progress>): Progress {
     boosterSeconds: Math.min(BOOSTER_SECONDS * 20, n(p.boosterSeconds, 0)),
     totalActiveSeconds: n(p.totalActiveSeconds, 0),
   };
+  const nowMs = Date.now();
+  const claims = Array.isArray(p.coinClaims) ? p.coinClaims.filter((t) => typeof t === 'number' && Number.isFinite(t) && t > nowMs - COIN_CLAIM_WINDOW_MS && t <= nowMs + 60_000).sort((a, b) => a - b).slice(-COIN_CLAIMS_PER_HOUR) : [];
+  if (claims.length) out.coinClaims = claims;
+  if (typeof p.boosterClaimAt === 'number' && Number.isFinite(p.boosterClaimAt) && p.boosterClaimAt > nowMs - BOOSTER_CLAIM_COOLDOWN_MS && p.boosterClaimAt <= nowMs + 60_000) out.boosterClaimAt = p.boosterClaimAt;
   for (const s of ['classic']) if (!out.ownedSkins.includes(s)) out.ownedSkins.unshift(s);
   if (!out.ownedCapes.includes('none')) out.ownedCapes.unshift('none');
   out.level = levelForXp(out.xp);
@@ -139,6 +150,36 @@ export function addActiveSeconds(seconds: number): number[] {
 export function rewardAdCoins() { commit({ ...state, coins: state.coins + AD_COINS }); }
 export function rewardAdBooster() { commit({ ...state, boosterSeconds: state.boosterSeconds + BOOSTER_SECONDS }); }
 
+export type ClaimStatus = {
+  coinsLeft: number;      // claims left in this hour
+  coinsWaitMs: number;    // 0 if you can claim now, else how long until the next claim opens
+  boosterWaitMs: number;  // 0 if you can claim now
+};
+/** What a rank holder can claim right now. */
+export function claimStatus(now = Date.now()): ClaimStatus {
+  const recent = (state.coinClaims ?? []).filter((t) => t > now - COIN_CLAIM_WINDOW_MS);
+  const coinsLeft = Math.max(0, COIN_CLAIMS_PER_HOUR - recent.length);
+  const coinsWaitMs = coinsLeft > 0 ? 0 : Math.max(0, Math.min(...recent) + COIN_CLAIM_WINDOW_MS - now);
+  const boosterWaitMs = state.boosterClaimAt ? Math.max(0, state.boosterClaimAt + BOOSTER_CLAIM_COOLDOWN_MS - now) : 0;
+  return { coinsLeft, coinsWaitMs, boosterWaitMs };
+}
+export type ClaimResult = { ok: true } | { ok: false; waitMs: number };
+/** Claim the coins without watching an ad (ranks): 5 times an hour. */
+export function claimCoins(now = Date.now()): ClaimResult {
+  const st = claimStatus(now);
+  if (st.coinsLeft <= 0) return { ok: false, waitMs: st.coinsWaitMs };
+  const recent = (state.coinClaims ?? []).filter((t) => t > now - COIN_CLAIM_WINDOW_MS);
+  commit({ ...state, coins: state.coins + AD_COINS, coinClaims: [...recent, now] });
+  return { ok: true };
+}
+/** Claim the 2x XP booster without watching an ad (ranks): once every 15 minutes. */
+export function claimBooster(now = Date.now()): ClaimResult {
+  const st = claimStatus(now);
+  if (st.boosterWaitMs > 0) return { ok: false, waitMs: st.boosterWaitMs };
+  commit({ ...state, boosterSeconds: state.boosterSeconds + BOOSTER_SECONDS, boosterClaimAt: now });
+  return { ok: true };
+}
+
 export type BuyResult = 'ok' | 'owned' | 'poor' | 'unknown';
 export function buyCosmetic(kind: 'skin' | 'cape', id: string): BuyResult {
   const def = kind === 'skin' ? SKINS[id] : CAPES[id];
@@ -177,6 +218,9 @@ export function mergeAccountProgress(remote: unknown): boolean {
     ownedSkins: [...new Set([...state.ownedSkins, ...r.ownedSkins])],
     ownedCapes: [...new Set([...state.ownedCapes, ...r.ownedCapes])],
     customSkin: base.customSkin ?? state.customSkin ?? r.customSkin,
+    // claim limits can't be dodged by switching device: keep every claim either side knows about
+    coinClaims: [...new Set([...(state.coinClaims ?? []), ...(r.coinClaims ?? [])])].sort((a, b) => a - b).slice(-COIN_CLAIMS_PER_HOUR),
+    boosterClaimAt: Math.max(state.boosterClaimAt ?? 0, r.boosterClaimAt ?? 0) || undefined,
   };
   const before = JSON.stringify(state);
   const next = sanitize(merged);

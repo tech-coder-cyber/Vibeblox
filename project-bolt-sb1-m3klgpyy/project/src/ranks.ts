@@ -21,8 +21,9 @@ export function setRank(rank: RankId): void {
 }
 
 /** The rank that counts: the one the database gave your account (the owner is always Champion). Guests have none. */
-export function effectiveRank(account: { username: string; rank?: string } | null | undefined, isOwner = false): RankId {
+export function effectiveRank(account: { username: string; rank?: string; rankUntil?: string | null } | null | undefined, isOwner = false): RankId {
   if (isOwner) return 'champion';
+  if (account?.rankUntil && Date.parse(account.rankUntil) <= Date.now()) return 'none'; // a temporary rank that ran out
   const r = account?.rank;
   if (r === 'vanguard' || r === 'elite' || r === 'champion') return r;
   return account ? 'none' : readRank();
