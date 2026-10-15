@@ -19,7 +19,7 @@ type Settings = { difficulty: 'peaceful' | 'easy' | 'normal' | 'hard'; keepInven
 
 // ---------------- Online EggWars and Bridge Duels ----------------
 /** An online minigame: teams of real players. The room keeps the score, eggs, who is out, and the countdowns. */
-export type MatchConfig = { kind: 'eggwars' | 'bridge'; variant: number; teams: number; teamSize: number; winScore: number };
+export type MatchConfig = { kind: 'eggwars' | 'bridge'; variant: number; teams: number; teamSize: number; winScore: number; /** Starts by itself when enough players are in (no Start button) */ auto?: boolean; minPlayers?: number; /** (tests) shorter lobby timers, in milliseconds */ lobbyMs?: number; fullMs?: number };
 export type MatchPhase = 'waiting' | 'countdown' | 'playing' | 'over';
 /** What every player's game gets (message "match"). members: [player id, team, out, kills, deaths] */
 export type MatchView = {
@@ -27,9 +27,11 @@ export type MatchView = {
   teams: Array<{ score: number; egg: boolean; out: boolean }>;
   members: Array<[number, number, boolean, number, number]>;
   kind: MatchConfig['kind']; winScore: number;
+  /** auto-start rooms: seconds until the game starts by itself (0: waiting for more players) */
+  starts: number; auto: boolean; min: number;
 };
 type MatchMember = { team: number; out: boolean; kills: number; deaths: number };
-const COUNTDOWN_MS = 5000, ROUND_COUNTDOWN_MS = 3000, OVER_MS = 10_000;
+const LOBBY_MS = 30_000, FULL_LOBBY_MS = 5000, COUNTDOWN_MS = 5000, ROUND_COUNTDOWN_MS = 3000, OVER_MS = 10_000;
 type Badge = { owner?: boolean; rank?: string; tier?: string };
 type Look = { skin: string; cape: string; custom?: string };
 
@@ -148,7 +150,7 @@ export class HostRoom {
   privacy: Privacy;
   /** Watches the players who join (never the host's own game) */
   readonly anticheat: AntiCheat;
-  private match: { phase: MatchPhase; endsAt: number; round: number; winner: number | null; teams: Array<{ score: number; egg: boolean; out: boolean }>; members: Map<number, MatchMember>; inPlay: Set<number> } | null = null;
+  private match: { phase: MatchPhase; endsAt: number; round: number; winner: number | null; teams: Array<{ score: number; egg: boolean; out: boolean }>; members: Map<number, MatchMember>; inPlay: Set<number>; lobbyEndsAt: number } | null = null;
 
   constructor(opts: RoomOptions) {
     this.opts = opts;
@@ -172,7 +174,7 @@ export class HostRoom {
     }, opts.anticheat);
     if (opts.game) {
       const n = Math.max(2, Math.min(4, opts.game.teams));
-      this.match = { phase: 'waiting', endsAt: 0, round: 0, winner: null, teams: Array.from({ length: n }, () => ({ score: 0, egg: true, out: false })), members: new Map(), inPlay: new Set() };
+      this.match = { phase: 'waiting', endsAt: 0, round: 0, winner: null, teams: Array.from({ length: n }, () => ({ score: 0, egg: true, out: false })), members: new Map(), inPlay: new Set(), lobbyEndsAt: 0 };
       if (this.settings.pvp === undefined) this.settings.pvp = true;
     }
     // Everyone's movement 10 times a second, batched into one message
@@ -221,7 +223,7 @@ export class HostRoom {
     this.players.delete(p.id);
     this.anticheat.remove(p.id);
     if (!p.joined) return;
-    if (this.match && this.match.members.delete(p.id)) { this.matchCheckEnd(); this.sendMatch(); }
+    if (this.match && this.match.members.delete(p.id)) { this.matchCheckEnd(); this.sendMatch(); this.autoCheck(); }
     this.broadcast({ t: 'leave', id: p.id, name: p.name });
     this.system(`${p.name} left the game`);
     if (p.id === this.hostId) this.pickHost();
@@ -503,19 +505,20 @@ export class HostRoom {
           const a = this.match.members.get(p.id), b = this.match.members.get(target.id);
           if (this.match.phase !== 'playing' || !a || !b || a.out || b.out || a.team === b.team) return;
         } else if (!this.settings.pvp) return;
-        if (!p.conn.local) this.anticheat.onHit(p.id, p.name, { x: p.x, y: p.y, z: p.z, yaw: p.yaw }, { x: target.x, y: target.y, z: target.z });
-        const dmg = Math.max(0, Math.min(30, msg.dmg));
+        if (!p.conn.local && msg.bow !== true) this.anticheat.onHit(p.id, p.name, { x: p.x, y: p.y, z: p.z, yaw: p.yaw }, { x: target.x, y: target.y, z: target.z });
+        const dmg = Math.max(0, Math.min(msg.bow === true ? 14 : 30, msg.dmg));
         const kx = num(msg.kx) ? Math.max(-1, Math.min(1, msg.kx)) : 0, kz = num(msg.kz) ? Math.max(-1, Math.min(1, msg.kz)) : 0;
         target.conn.send({ t: 'hurt', by: p.id, name: p.name, dmg, kx, kz });
         this.broadcast({ t: 'hurtFx', id: target.id }, target.id);
         return;
       }
       case 'mgStart':
-        if (!isHost || !this.match) return;
+        if (!isHost || !this.match || this.opts.game?.auto) return;
         this.matchStart(p);
         return;
       case 'mgDied': this.matchDied(p, int(msg.by) ? msg.by : null); return;
       case 'mgEgg': if (int(msg.team)) this.matchEgg(p, msg.team); return;
+      case 'mgOut': this.matchOut(p); return;
       case 'mgGoal': if (int(msg.team)) this.matchGoal(p, msg.team); return;
       default:
     }
@@ -531,6 +534,7 @@ export class HostRoom {
       teams: m.teams.map((t) => ({ ...t })),
       members: [...m.members.entries()].map(([id, mm]) => [id, mm.team, mm.out, mm.kills, mm.deaths]),
       kind: g.kind, winScore: g.winScore,
+      starts: m.lobbyEndsAt ? Math.max(0, Math.ceil((m.lobbyEndsAt - Date.now()) / 1000)) : 0, auto: !!g.auto, min: g.minPlayers ?? 2,
     };
   }
   private sendMatch() { const v = this.matchView(); if (v) this.broadcast({ t: 'match', ...v }); }
@@ -545,22 +549,37 @@ export class HostRoom {
     m.members.set(p.id, { team, out: late, kills: 0, deaths: 0 });
     if (late) p.conn.send({ t: 'system', text: 'A game is already going: you can watch until the next one starts.' });
     this.sendMatch();
+    this.autoCheck();
   }
   /** The host pressed Start: everyone back to their island, eggs back, scores to 0, then a countdown. */
-  private matchStart(by: Player) {
+  private matchStart(by: Player | null, countdownMs = COUNTDOWN_MS) {
     const m = this.match!;
     if (m.phase === 'countdown' || m.phase === 'playing') return;
     const teamsWithPlayers = new Set([...m.members.values()].map((x) => x.team));
-    if (teamsWithPlayers.size < 2) { by.conn.send({ t: 'system', text: 'You need players on at least two teams to start.' }); return; }
+    if (teamsWithPlayers.size < 2) { by?.conn.send({ t: 'system', text: 'You need players on at least two teams to start.' }); return; }
     m.teams = m.teams.map(() => ({ score: 0, egg: true, out: false }));
     for (const mm of m.members.values()) { mm.out = false; mm.kills = 0; mm.deaths = 0; }
     m.inPlay = teamsWithPlayers;
     m.teams.forEach((t, i) => { if (!teamsWithPlayers.has(i)) { t.out = true; t.egg = false; } });
     m.round++;
     m.winner = null;
+    m.lobbyEndsAt = 0;
     this.resetArena();
-    this.startCountdown(COUNTDOWN_MS);
+    this.startCountdown(countdownMs);
     this.system(this.opts.game!.kind === 'bridge' ? `The duel is starting! First to ${this.opts.game!.winScore} goals wins.` : 'The game is starting! Protect your egg and break theirs.');
+  }
+  /** Auto-start rooms: 30 seconds once enough players are in, 5 seconds when the lobby is full (never slower than it was). */
+  private autoCheck() {
+    const m = this.match, g = this.opts.game;
+    if (!m || !g?.auto || m.phase !== 'waiting') { if (m && m.lobbyEndsAt && m.phase !== 'waiting') m.lobbyEndsAt = 0; return; }
+    const members = [...m.members.values()];
+    const enough = members.length >= (g.minPlayers ?? 2) && new Set(members.map((x) => x.team)).size >= 2;
+    if (!enough) { if (m.lobbyEndsAt) { m.lobbyEndsAt = 0; this.system('Not enough players: the countdown stopped.'); this.sendMatch(); } return; }
+    const full = members.length >= g.teams * g.teamSize;
+    const now = Date.now();
+    if (!m.lobbyEndsAt) { m.lobbyEndsAt = now + (full ? (g.fullMs ?? FULL_LOBBY_MS) : (g.lobbyMs ?? LOBBY_MS)); this.wakeAt(m.lobbyEndsAt - now); this.system(`Enough players! The game starts in ${Math.ceil((m.lobbyEndsAt - now) / 1000)} seconds.`); }
+    else if (full && m.lobbyEndsAt - now > (g.fullMs ?? FULL_LOBBY_MS)) { m.lobbyEndsAt = now + (g.fullMs ?? FULL_LOBBY_MS); this.wakeAt(g.fullMs ?? FULL_LOBBY_MS); this.system('The lobby is full: starting in 5 seconds!'); }
+    this.sendMatch();
   }
   private matchTimer: ReturnType<typeof setTimeout> | null = null;
   /** Wake up exactly when a countdown (or the results screen) ends, as well as every second. */
@@ -582,6 +601,10 @@ export class HostRoom {
   private matchTick(now: number) {
     const m = this.match;
     if (!m) return;
+    if (m.phase === 'waiting' && m.lobbyEndsAt) {
+      if (now >= m.lobbyEndsAt) { this.matchStart(null, 1000); return; }
+      this.autoCheck(); this.wakeAt(Math.min(1000, m.lobbyEndsAt - now)); return;
+    }
     if (m.phase === 'countdown' && now >= m.endsAt) { m.phase = 'playing'; m.endsAt = 0; this.sendMatch(); return; }
     if (m.phase === 'countdown') { this.sendMatch(); return; }
     if (m.phase === 'over' && now >= m.endsAt) {
@@ -592,6 +615,7 @@ export class HostRoom {
       this.resetArena();
       this.broadcast({ t: 'mgReset', round: m.round });
       this.sendMatch();
+      this.autoCheck();
     }
   }
   private matchDied(p: Player, by: number | null) {
@@ -615,6 +639,17 @@ export class HostRoom {
     if (!me || me.out || me.team === team || !t || !t.egg) return;
     t.egg = false;
     this.system(`${p.name} destroyed ${TEAM_NAMES[team] ?? 'a'} team's egg!`);
+    this.matchCheckEnd();
+    this.sendMatch();
+  }
+  /** A player's respawn countdown ended after their egg broke: they are out. */
+  private matchOut(p: Player) {
+    const m = this.match;
+    if (!m || m.phase !== 'playing' || this.opts.game!.kind !== 'eggwars') return;
+    const me = m.members.get(p.id);
+    if (!me || me.out || m.teams[me.team].egg) return;
+    me.out = true;
+    this.system(`${p.name} is out!`);
     this.matchCheckEnd();
     this.sendMatch();
   }

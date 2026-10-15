@@ -1,10 +1,25 @@
 // What's new. Add a new entry at the TOP of NEWS (and bump GAME_VERSION) with every update;
 // the News page in the sidebar shows this list, and a dot appears on it until the newest one has been read.
-export const GAME_VERSION = 25;
+export const GAME_VERSION = 26;
 
 export type NewsEntry = { version: number; date: string; title: string; changes: string[] };
 
 export const NEWS: NewsEntry[] = [
+  {
+    version: 26,
+    date: 'October 15, 2026',
+    title: 'Daily rewards, lootboxes, free rank gifts and stairs & slabs',
+    changes: [
+      'Daily reward: come back every day to keep a streak. Seven days make a week (coins, lootboxes, and a random skin on day 7). Watch an ad for 2x, or get 2x automatically if you have a rank. Streak Freezes (find them in lootboxes or buy them in the Shop) save your streak when you miss a day.',
+      'Lootboxes: every level up now gives 100 coins plus 1-2 lootboxes. Inside: coins, Streak Freezes, XP Boosters, skins, and rarely a top skin or cape.',
+      'Free rank gifts for signed-in players: after your account is 1 month old, then every 2 months, pick Vanguard for 7 days, Elite for 5 days or Champion for 3 days (or say no thanks). At 1 year pick Vanguard for good, Elite for 3 months or Champion for 1 month.',
+      'Shop: buy Streak Freezes and XP Boosters with coins.',
+      'EggWars now starts by itself: press "Find a game" and you are put in a match with other players, no hosting needed. It starts 30 seconds after enough players join, and 5 seconds once the match is full.',
+      'When you die in a minigame you wait 5 seconds in spectator mode, then come back. In third person (F5) as a spectator you only show as a see-through head that other players cannot see.',
+      'Stairs and slabs: every wood, stone and brick type has them, with top/bottom halves, left/right turns and corner shapes. Two slabs make a full block, and you walk up stairs without jumping.',
+      'Arrows now fly when shot and hurt players they hit. TNT now blows up buttons and trapdoors. No more hand showing when you hold a sword or tool. Fixed the sword landing in the wrong hotbar slot after respawning in Bridge Duels and EggWars, the Shop giving items twice, and armor now swaps automatically (the Shop sells chestplates only).',
+    ],
+  },
   {
     version: 25,
     date: 'October 14, 2026',

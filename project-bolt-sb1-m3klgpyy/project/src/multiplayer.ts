@@ -20,6 +20,7 @@ export type NetMatch = {
   /** [player id, team, out, kills, deaths] */
   members: Array<[number, number, boolean, number, number]>;
   kind: 'eggwars' | 'bridge'; winScore: number;
+  starts?: number; auto?: boolean; min?: number;
 };
 export type Welcome = {
   hostId?: number | null;
@@ -241,12 +242,14 @@ export class MultiplayerClient {
   /** A private message to a player on this server. */
   sendWhisper(to: string, text: string) { this.send({ t: 'whisper', to, text }); }
   /** You hit another player: dmg before their armor, k = the direction they get knocked (unit vector on the ground). */
-  sendHit(id: number, dmg: number, kx: number, kz: number) { this.send({ t: 'hit', id, dmg: Math.round(dmg * 10) / 10, kx: Math.round(kx * 100) / 100, kz: Math.round(kz * 100) / 100 }); }
+  sendHit(id: number, dmg: number, kx: number, kz: number, bow = false) { this.send({ t: 'hit', id, dmg: Math.round(dmg * 10) / 10, kx: Math.round(kx * 100) / 100, kz: Math.round(kz * 100) / 100, ...(bow ? { bow: true } : {}) }); }
   /** Online minigames: start (host), you died (by: who killed you), you broke a team's egg, you scored in a team's goal. */
   sendMatchStart() { this.send({ t: 'mgStart' }); }
   sendMatchDied(by: number | null) { this.send({ t: 'mgDied', ...(by !== null ? { by } : {}) }); }
   sendMatchEgg(team: number) { this.send({ t: 'mgEgg', team }); }
   sendMatchGoal(team: number) { this.send({ t: 'mgGoal', team }); }
+  /** You ran out of respawns (your egg broke while you were waiting to come back) */
+  sendMatchOut() { this.send({ t: 'mgOut' }); }
   /** Admin panel actions. The server checks the token with Supabase before doing anything. */
   sendAdmin(token: string, action: 'check' | 'players' | 'kick' | 'ban' | 'gamemode', extra: { name?: string; mode?: string } = {}) {
     this.send({ t: 'admin', token, action, ...extra });

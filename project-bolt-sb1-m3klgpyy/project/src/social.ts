@@ -559,6 +559,26 @@ export async function listCheatReports(limit = 100): Promise<Result<{ reports: C
   return { ok: true, reports: (r.data as Array<{ id: number; world: string; host_name: string; player: string; kind: string; detail: string; created_at: string }>).map((x) => ({ id: x.id, world: x.world, host: x.host_name, player: x.player, kind: x.kind, detail: x.detail, at: x.created_at })) };
 }
 
+// ---------------- Loyalty rewards (see loyalty.ts and vibeblox_round18.sql) ----------------
+export type LoyaltyInfo = { createdAt: number; now: number; claimed: number[] };
+/** How old your account is and which loyalty rewards you already took (null: not signed in, or not set up). */
+export async function fetchLoyalty(): Promise<LoyaltyInfo | null> {
+  const r = await rest('POST', 'rpc/loyalty_status', {});
+  if (!r.ok || !r.data || typeof r.data !== 'object') return null;
+  const d = r.data as { created_at?: string; now?: string; claimed?: number[] };
+  const created = Date.parse(d.created_at ?? '');
+  if (!Number.isFinite(created)) return null;
+  const serverNow = Date.parse(d.now ?? '');
+  return { createdAt: created, now: Number.isFinite(serverNow) ? serverNow : Date.now(), claimed: Array.isArray(d.claimed) ? d.claimed.filter((n) => typeof n === 'number') : [] };
+}
+/** Take a loyalty reward: the rank you picked (or 'skip' for the 1, 3, 5... month rewards). */
+export async function claimLoyalty(month: number, choice: 'vanguard' | 'elite' | 'champion' | 'skip'): Promise<Result<{ outcome: 'ok' | 'kept' | 'skipped' }>> {
+  const r = await rest('POST', 'rpc/claim_loyalty', { p_milestone: month, p_choice: choice });
+  if (!r.ok) return fail(/function|schema cache|not find/i.test(r.error) ? 'Run vibeblox_round18.sql in Supabase to turn on loyalty rewards' : /not yet/i.test(r.error) ? 'This reward is not ready yet' : /already claimed/i.test(r.error) ? 'You already took this reward' : /earlier rewards/i.test(r.error) ? 'Take your earlier rewards first' : r.error);
+  const o = r.data === 'kept' || r.data === 'skipped' ? r.data : 'ok';
+  return { ok: true, outcome: o };
+}
+
 // ---------------- Your level, saved to your account ----------------
 /** Saves your progress (level, XP, coins, cosmetics) to your account, so it follows you to other devices. */
 export async function saveProgressToAccount(progress: unknown): Promise<boolean> {

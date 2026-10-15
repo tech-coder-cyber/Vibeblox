@@ -2574,6 +2574,7 @@ function faceCanvases(): Record<string, HTMLCanvasElement> {
 
 /** Face textures for anything that should look like a cube; null for flat items. */
 export function blockFaces(id: number): FaceSet | null {
+  if (id >= STAIR_FIRST && id < STAIR_END) { const base = stepBase(id); return base === null ? null : blockFaces(base); }
   const f = faceCanvases();
   const all = (c: HTMLCanvasElement): FaceSet => ({ top: c, side: c, bottom: c });
   if (isConcrete(id)) return all(f[`concrete${id}`]);
@@ -2806,9 +2807,21 @@ export function getItemIconURL(id: number): string {
         ctx.fillRect(0, 0, T, T);
       }
     };
+    if (isStepBlock(id)) {
+      // a slab: the lower half of the cube; a stair adds a half-height step on the far half
+      drawFace(faces.side, 21, 11, 0, 11, 3, 24, 0.18);
+      drawFace(faces.side, 21, -11, 0, 11, 24, 35, 0.36);
+      drawFace(faces.top, 21, -11, 21, 11, 3, 24, 0);
+      if (isStairBlock(id)) {
+        drawFace(faces.side, 10.5, 5.5, 0, 11, 3, 13, 0.18);
+        drawFace(faces.side, 21, -11, 0, 11, 13.5, 18.5, 0.36);
+        drawFace(faces.top, 21, -11, 10.5, 5.5, 3, 13, 0);
+      }
+    } else {
     drawFace(faces.side, 21, 11, 0, 22, 3, 13, 0.18);   // left face
     drawFace(faces.side, 21, -11, 0, 22, 24, 24, 0.36); // right face (darker)
     drawFace(faces.top, 21, -11, 21, 11, 3, 13, 0);     // top face
+    }
     ctx.setTransform(1, 0, 0, 1, 0, 0);
   } else {
     const art = itemCanvas(id);
@@ -3088,8 +3101,8 @@ export const LIGHT_MARGIN = 14; // light reaches this far into a chunk from its 
 // ---------------- Phase 2 blocks: ids 1000-1199 (built-in blocks used to stop at 99) ----------------
 // A placeable block is any id below 100 (built-in 0-59, mods 60-99) or 1000-1399. Items are 100-999
 // (mods use 200-999) and 1400 and up for newer built-in items.
-export const MAX_BLOCK_ID = 1400;
-export function isBlockId(id: number): boolean { return (id >= 0 && id < 100) || (id >= 1000 && id < MAX_BLOCK_ID); }
+export const MAX_BLOCK_ID = 2300; // (stairs and slabs live at 2000 and up, see STAIR_FIRST)
+export function isBlockId(id: number): boolean { return (id >= 0 && id < 100) || (id >= 1000 && id < 1400) || (id >= STAIR_FIRST && id < STAIR_END); }
 export const BLOCK_GRAVEL = 1000;
 export const BLOCK_GRANITE = 1001;
 export const BLOCK_DIORITE = 1002;
@@ -3258,6 +3271,7 @@ function mapFacing(b: number, f: (d: number) => number): number {
   if (b >= 1040 && b <= 1047) { const base = b >= 1044 ? 1044 : 1040; return base + f(b - base); } // beds
   if (b >= BLOCK_DOOR_N && b < BLOCK_DOOR_TOP) return BLOCK_DOOR_N + f(b - BLOCK_DOOR_N); // wooden door (bottom half)
   if (b >= 1050 && b <= 1053) return 1050 + f(b - 1050); // iron door (bottom half)
+  if (isStairBlock(b)) { const k = (b - STAIR_FIRST) % STAIR_STRIDE; return b - k + f(k >> 1) * 2 + (k & 1); }
   if (b >= BLOCK_TRAPDOOR && b <= BLOCK_TRAPDOOR + 7) { const v = b - BLOCK_TRAPDOOR; return BLOCK_TRAPDOOR + (v >= 4 ? 4 : 0) + f(v % 4); }
   if (b >= BLOCK_ITEM_FRAME && b <= BLOCK_ITEM_FRAME + 3) return BLOCK_ITEM_FRAME + f(b - BLOCK_ITEM_FRAME);
   for (const base of [BLOCK_LEVER, BLOCK_BUTTON, BLOCK_REDSTONE_TORCH]) {
@@ -3437,7 +3451,7 @@ export const COOK_SECONDS = 8;
  * cubes: doors and glass panes. `at` reads the neighbouring blocks. null = a cube.
  */
 /** Blocks drawn as boxes rather than whole cubes. */
-export function hasShape(b: number): boolean { return b === BLOCK_GLASS_PANE || isDoor(b) || isBed(b) || b === BLOCK_CACTUS || isTorch(b) || isHead(b) || isEgg(b) || (b >= BLOCK_TRAPDOOR && b <= BLOCK_CAMPFIRE) || (b >= BLOCK_ENCHANTING_TABLE && b <= BLOCK_ITEM_FRAME + 5) || (b >= BLOCK_REDSTONE_WIRE && b <= BLOCK_REPEATER + 31) || isComparator(b) || isPistonHead(b) || (isPiston(b) && pistonExtended(b)) || b === BLOCK_BREWING_STAND; }
+export function hasShape(b: number): boolean { return isStepBlock(b) || b === BLOCK_GLASS_PANE || isDoor(b) || isBed(b) || b === BLOCK_CACTUS || isTorch(b) || isHead(b) || isEgg(b) || (b >= BLOCK_TRAPDOOR && b <= BLOCK_CAMPFIRE) || (b >= BLOCK_ENCHANTING_TABLE && b <= BLOCK_ITEM_FRAME + 5) || (b >= BLOCK_REDSTONE_WIRE && b <= BLOCK_REPEATER + 31) || isComparator(b) || isPistonHead(b) || (isPiston(b) && pistonExtended(b)) || b === BLOCK_BREWING_STAND; }
 /** A box inside the cell (0..1): x0, y0, z0, x1, y1, z1, and optionally its own texture. */
 export type ShapeBox = [number, number, number, number, number, number, number?];
 
@@ -3539,6 +3553,7 @@ function newBlockShape(b: number, at: (dx: number, dy: number, dz: number) => nu
 }
 
 export function shapeBoxes(b: number, at: (dx: number, dy: number, dz: number) => number): ShapeBox[] | null {
+  if (b >= STAIR_FIRST && b < STAIR_END) return isStepBlock(b) ? stepBoxes(b, at) : null;
   if ((b >= BLOCK_ENCHANTING_TABLE && b <= BLOCK_REPEATER + 31) || isComparator(b)) return newBlockShape(b, at);
   if (isTrapdoor(b)) {
     const s = b - BLOCK_TRAPDOOR, T = 3 / 16;
@@ -3677,8 +3692,94 @@ export const CONCRETE: Array<{ id: number; name: string; color: string }> = [
 ];
 export function isConcrete(b: number): boolean { return b >= 33 && b <= 40; }
 
+// ---------------- Stairs and slabs ----------------
+// Each material takes 12 ids from STAIR_FIRST: +0..7 stairs (+ facing*2 + upside-down), +8 bottom slab, +9 top slab.
+// A stair's facing is the way its tall back side lies (N, E, S, W = 0-3). Where stairs meet at a corner they turn into
+// inside and outside corners (shapeBoxes works that out from the neighbours). Two slabs of one material make the full block.
+export const STAIR_FIRST = 2000;
+const STAIR_STRIDE = 12;
+export const STEP_MATERIALS: Array<{ key: string; name: string; base: number; color: string }> = [
+  { key: 'oak', name: 'Oak', base: ITEM_PLANKS, color: '#c19a5b' }, { key: 'spruce', name: 'Spruce', base: 1020, color: '#73532f' },
+  { key: 'birch', name: 'Birch', base: 1021, color: '#d4c48a' }, { key: 'dark_oak', name: 'Dark Oak', base: 1022, color: '#4a3220' },
+  { key: 'acacia', name: 'Acacia', base: 1023, color: '#b85e2e' }, { key: 'stone', name: 'Stone', base: BLOCK_STONE, color: '#8a8a8a' },
+  { key: 'sandstone', name: 'Sandstone', base: BLOCK_SANDSTONE, color: '#dccb8c' }, { key: 'nether_brick', name: 'Nether Brick', base: BLOCK_NETHER_BRICK, color: '#4a1a1e' },
+  { key: 'granite', name: 'Granite', base: BLOCK_GRANITE, color: '#9a6b5a' }, { key: 'diorite', name: 'Diorite', base: BLOCK_DIORITE, color: '#c8c8c4' },
+  { key: 'andesite', name: 'Andesite', base: BLOCK_ANDESITE, color: '#8a8a8c' }, { key: 'terracotta', name: 'Terracotta', base: BLOCK_TERRACOTTA, color: '#985e43' },
+  ...CONCRETE.map((c) => ({ key: `concrete_${c.name.toLowerCase()}`, name: `${c.name} Concrete`, base: c.id, color: c.color })),
+];
+export const STAIR_END = STAIR_FIRST + STEP_MATERIALS.length * STAIR_STRIDE;
+export const isStepBlock = (b: number): boolean => b >= STAIR_FIRST && b < STAIR_END && (b - STAIR_FIRST) % STAIR_STRIDE < 10;
+export const isStairBlock = (b: number): boolean => b >= STAIR_FIRST && b < STAIR_END && (b - STAIR_FIRST) % STAIR_STRIDE < 8;
+export const isSlabBlock = (b: number): boolean => isStepBlock(b) && !isStairBlock(b);
+/** The full block a stair or slab is made of (null for anything else). */
+export function stepBase(b: number): number | null { return isStepBlock(b) ? STEP_MATERIALS[Math.floor((b - STAIR_FIRST) / STAIR_STRIDE)].base : null; }
+/** The stair or slab block for a material: kind 'stair' (facing 0-3, upside-down) or 'slab' (top half or bottom half). */
+export function stairId(material: number, facing: number, upsideDown: boolean): number { return STAIR_FIRST + material * STAIR_STRIDE + facing * 2 + (upsideDown ? 1 : 0); }
+export function slabId(material: number, top: boolean): number { return STAIR_FIRST + material * STAIR_STRIDE + 8 + (top ? 1 : 0); }
+const stepMaterial = (b: number) => Math.floor((b - STAIR_FIRST) / STAIR_STRIDE);
+export const stairFacing = (b: number) => ((b - STAIR_FIRST) % STAIR_STRIDE) >> 1;
+export const stepUpsideDown = (b: number) => isStairBlock(b) ? ((b - STAIR_FIRST) % STAIR_STRIDE) % 2 === 1 : (b - STAIR_FIRST) % STAIR_STRIDE === 9;
+/** What a broken stair or slab gives back: the right-way-up one, whichever way it was placed. */
+export function stepItem(b: number): number { const m = stepMaterial(b); return isStairBlock(b) ? stairId(m, 0, false) : slabId(m, false); }
+/** The corner a stair makes with the stairs around it. */
+export type StairShape = 'straight' | 'inner_left' | 'inner_right' | 'outer_left' | 'outer_right';
+export function stairShape(b: number, at: (dx: number, dy: number, dz: number) => number): StairShape {
+  const f = stairFacing(b), flip = stepUpsideDown(b);
+  const [hx, hz] = SIDES[f];
+  const same = (n: number) => isStairBlock(n) && stepUpsideDown(n) === flip;
+  const canTake = (d: number) => { const [dx, dz] = SIDES[d]; const n = at(dx, 0, dz); return !same(n) || stairFacing(n) !== f; };
+  const behind = at(hx, 0, hz);
+  if (same(behind)) {
+    const d1 = stairFacing(behind);
+    if (d1 % 2 !== f % 2 && canTake((d1 + 2) % 4)) return d1 === (f + 3) % 4 ? 'outer_left' : 'outer_right';
+  }
+  const front = at(-hx, 0, -hz);
+  if (same(front)) {
+    const d2 = stairFacing(front);
+    if (d2 % 2 !== f % 2 && canTake(d2)) return d2 === (f + 3) % 4 ? 'inner_left' : 'inner_right';
+  }
+  return 'straight';
+}
+/** The boxes of a stair or slab. */
+function stepBoxes(b: number, at: (dx: number, dy: number, dz: number) => number): ShapeBox[] {
+  const flip = stepUpsideDown(b);
+  if (isSlabBlock(b)) return [flip ? [0, 0.5, 0, 1, 1, 1] : [0, 0, 0, 1, 0.5, 1]];
+  const f = stairFacing(b), shape = stairShape(b, at);
+  const [y0, y1] = flip ? [0, 0.5] : [0.5, 1];            // the raised part
+  const out: ShapeBox[] = [flip ? [0, 0.5, 0, 1, 1, 1] : [0, 0, 0, 1, 0.5, 1]]; // the base slab
+  // the raised part as four quarters: [x half, z half] = 0 for west/north, 1 for east/south
+  const quarter = (qx: number, qz: number): ShapeBox => [qx * 0.5, y0, qz * 0.5, qx * 0.5 + 0.5, y1, qz * 0.5 + 0.5];
+  const side = (d: number): Array<[number, number]> => { // the two quarters on one side of the cell
+    const [dx, dz] = SIDES[d];
+    return dx !== 0 ? [[dx > 0 ? 1 : 0, 0], [dx > 0 ? 1 : 0, 1]] : [[0, dz > 0 ? 1 : 0], [1, dz > 0 ? 1 : 0]];
+  };
+  const high = side(f), left = side((f + 3) % 4), right = side((f + 1) % 4);
+  const has = (a: Array<[number, number]>, q: [number, number]) => a.some((x) => x[0] === q[0] && x[1] === q[1]);
+  const all: Array<[number, number]> = [[0, 0], [1, 0], [0, 1], [1, 1]];
+  let used: Array<[number, number]>;
+  if (shape === 'straight') used = high;
+  else if (shape === 'outer_left') used = high.filter((q) => has(left, q));
+  else if (shape === 'outer_right') used = high.filter((q) => has(right, q));
+  else { const extra = shape === 'inner_left' ? left : right; used = all.filter((q) => has(high, q) || has(extra, q)); }
+  // merge the quarters into as few boxes as possible
+  if (used.length === 2) {
+    const [a, c] = used, x0 = Math.min(a[0], c[0]) * 0.5, z0 = Math.min(a[1], c[1]) * 0.5;
+    out.push([x0, y0, z0, x0 + (a[0] === c[0] ? 0.5 : 1), y1, z0 + (a[1] === c[1] ? 0.5 : 1)]);
+  } else if (used.length === 3) {
+    // an L shape: the straight half plus the single quarter that sticks out
+    const half = high, extra = used.filter((q) => !has(half, q))[0];
+    out.push(...merge2(half, y0, y1), quarter(extra[0], extra[1]));
+  } else for (const q of used) out.push(quarter(q[0], q[1]));
+  return out;
+}
+function merge2(q: Array<[number, number]>, y0: number, y1: number): ShapeBox[] {
+  const [a, c] = q, x0 = Math.min(a[0], c[0]) * 0.5, z0 = Math.min(a[1], c[1]) * 0.5;
+  return [[x0, y0, z0, x0 + (a[0] === c[0] ? 0.5 : 1), y1, z0 + (a[1] === c[1] ? 0.5 : 1)]];
+}
+
 /** How strong a pickaxe a block needs (0 = anything, even bare hands). */
 export function requiredTier(b: number): number {
+  if (b >= STAIR_FIRST && b < STAIR_END) { const base = stepBase(b); return base === null ? 0 : requiredTier(base); }
   if (b === BLOCK_OBSIDIAN || b === BLOCK_INFERNIUM_ORE) return 4; // diamond, like Minecraft
   if (b === BLOCK_DIAMOND_ORE || b === BLOCK_EMERALD_ORE) return 3; // iron
   if (b === BLOCK_IRON_ORE || b === BLOCK_GOLD_ORE) return 2; // stone
@@ -3741,6 +3842,7 @@ function newBlockKind(b: number): 'cube' | 'see' | 'pass' | null {
   return null;
 }
 for (let b = 0; b < MAX_BLOCK_ID; b++) {
+  if (b >= STAIR_FIRST) { BLOCK_FLAGS[b] = isStepBlock(b) ? 1 : 0; continue; } // see-through (not a whole cube), but solid
   const nk = newBlockKind(b);
   if (nk) { BLOCK_FLAGS[b] = nk === 'cube' ? 3 : nk === 'see' ? 1 : 0; continue; }
   const known = b < 100 || (b >= 1000 && b <= 1062) || (b >= 1070 && b <= 1074) || (b >= 1080 && b <= 1093);
@@ -4613,6 +4715,17 @@ for (const [dye, id] of [[ITEM_COAL, 34], [BLOCK_STONE, 35], [BLOCK_GOLD_ORE, 36
   });
 }
 
+// ---- Stairs and slabs: names, crafting ----
+STEP_MATERIALS.forEach((m, mi) => {
+  for (let k = 0; k < 10; k++) {
+    const id = STAIR_FIRST + mi * STAIR_STRIDE + k;
+    const shown = k === 0 || k === 8; // the same block placed other ways is one item
+    ITEM_INFO[id] = { name: `${m.name} ${k < 8 ? 'Stairs' : 'Slab'}`, color: m.color, hidden: !shown, ...(shown ? { lore: [k === 0 ? 'Place it facing the way you walk up. Next to other stairs it turns corners.' : 'Click the top or bottom half. Two slabs make a whole block.'] } : {}) };
+  }
+  RECIPES.push({ id: `${m.key}_stairs`, name: `${m.name} Stairs`, pattern: [m.base, null, null, m.base, m.base, null, m.base, m.base, m.base], width: 3, height: 3, output: { id: stairId(mi, 0, false), count: 4 }, needsTable: true });
+  RECIPES.push({ id: `${m.key}_slab`, name: `${m.name} Slab`, pattern: [m.base, m.base, m.base], width: 3, height: 1, output: { id: slabId(mi, false), count: 6 }, needsTable: true });
+});
+
 /**
  * Match a crafting grid against the recipe list. `grid` is row-major with
  * `size`x`size` cells (2 for the inventory grid, 3 for the table); null =
@@ -5146,6 +5259,7 @@ CROSS_MAT[BLOCK_SUGAR_CANE] = NF('sugarCane');
 const dustTex = (b: number) => NF(`rs${wirePower(b) === 0 ? 0 : wirePower(b) <= 5 ? 1 : wirePower(b) <= 10 ? 2 : 3}`);
 
 function matIndexFor(block: number, f: number): number {
+  if (block >= STAIR_FIRST && block < STAIR_END) { const base = stepBase(block); return matIndexFor(base ?? BLOCK_STONE, f); }
   const top = f === 2, bottom = f === 3;
   if (block >= 1094 && block <= LAST_BUILTIN_BLOCK) {
     if (block <= 1097) return NF(`concrete${block}`);
@@ -7310,6 +7424,8 @@ export type MinigameView = {
   size: MinigameSize; kind: ArenaKind; phase: 'waiting' | 'countdown' | 'playing' | 'over'; countdown: number; difficulty: BotDifficulty; winScore: number;
   /** An online match with real players (no bots): the host's room keeps the score */
   online?: boolean;
+  /** An automatic online match: it starts by itself (starts = seconds left on the lobby timer, 0: waiting for players, min = players needed) */
+  auto?: { starts: number; min: number; players: number; max: number };
   teams: Array<{ name: string; color: string; score: number; eggAlive: boolean; alive: number; out: boolean; you: boolean }>;
   you: { team: number; out: boolean; kills: number; deaths: number; respawnIn: number };
   result: { win: boolean; place: number; text: string } | null;
@@ -7320,9 +7436,10 @@ export type OnlineMatch = {
   phase: 'waiting' | 'countdown' | 'playing' | 'over'; left: number; round: number; winner: number | null;
   teams: Array<{ score: number; egg: boolean; out: boolean; players: number; alive: number }>;
   myTeam: number; out: boolean; kills: number; deaths: number;
+  auto?: { starts: number; min: number };
 };
 /** Something happened to you in an online match that the room must hear about. */
-export type MatchEvent = { type: 'died'; by: number | null } | { type: 'egg'; team: number } | { type: 'goal'; team: number };
+export type MatchEvent = { type: 'died'; by: number | null } | { type: 'out' } | { type: 'egg'; team: number } | { type: 'goal'; team: number };
 /** What a minigame bot is doing right now (bridging toward a target, fighting, breaking an egg...). */
 /** What a bot likes to do. Fighters hunt players; builders wall in their egg then cross to the middle; upgraders farm
  *  their generator and buy better gear; defenders guard their egg; rushers (Bridge Duels) go for the goal. */
@@ -7370,7 +7487,7 @@ export type GameHandle = {
   locateStructure: (kind?: StructureKind) => { kind: StructureKind; x: number; z: number; distance: number } | null;
   /** A villager wants to trade (null when the window should close). */
   onTrade: (cb: (t: { id: number; profession: string; trades: Trade[] } | null) => void) => void;
-  trade: (villagerId: number, index: number) => 'ok' | 'missing' | 'gone';
+  trade: (villagerId: number, index: number) => 'ok' | 'missing' | 'gone' | 'worn';
   endTrade: (villagerId: number) => void;
   /** Your skin and cape (seen in third person, and by other players). */
   setPlayerLook: (look: PlayerLook) => void;
@@ -7425,6 +7542,8 @@ export type GameHandle = {
   addItem: (id: number, count: number) => number;
   removeItem: (id: number, count: number) => number;
   setSelectedSlot: (i: number) => void;
+  /** The game moved your selected hotbar slot itself (a minigame kit): the HUD follows. */
+  onSelectedSlotChange: (cb: (i: number) => void) => void;
   setSlots: (slots: Slots) => void;
   getChest: (key: string) => Slots;
   /** A furnace's 3 slots (input, fuel, output) plus cooking and fuel progress (0..1). */
@@ -7541,7 +7660,7 @@ export type GameHandle = {
   onMatchEvent: (cb: ((e: MatchEvent) => void) | null) => void;
   /** Player vs player: who you may hit (null: nobody), what happens when you do, getting hit, and someone else getting hit. */
   setPvp: (enemy: ((id: number) => boolean) | null) => void;
-  onPvpHit: (cb: ((id: number, dmg: number, kx: number, kz: number) => void) | null) => void;
+  onPvpHit: (cb: ((id: number, dmg: number, kx: number, kz: number, bow?: boolean) => void) | null) => void;
   hurtByPlayer: (dmg: number, kx: number, kz: number, name: string, by: number) => void;
   remoteHurtFx: (id: number) => void;
   getMinigame: () => MinigameView | null;
@@ -8374,6 +8493,8 @@ export function createVoxelGame(
     ...Object.fromEntries([54, 55, 56, 57, 58, 59].map((d) => [d, 1.0])), // doors
     ...Object.fromEntries(CONCRETE.map((cc) => [cc.id, 1.8])),
   };
+  // stairs and slabs are as hard as the block they are made of
+  for (let sb = STAIR_FIRST; sb < STAIR_END; sb++) if (isStepBlock(sb)) BLOCK_HARDNESS[sb] = BLOCK_HARDNESS[stepBase(sb)!] ?? BREAK_TIME;
 
   // Pickaxes speed up stone/ores, axes speed up wood. Wood tools 2x, stone 4x.
   function heldTool(): ToolInfo | null {
@@ -8392,6 +8513,7 @@ export function createVoxelGame(
     return eff && base > 1 ? base + eff * eff + 1 : base; // Efficiency only helps on blocks the tool is for
   }
   function baseToolSpeed(block: number): number {
+    block = stepBase(block) ?? block; // a stair or slab is dug like the block it is made of
     if (heldItem === ITEM_SHEARS) return isLeaves(block) || block === BLOCK_TALL_GRASS || block === BLOCK_DEAD_BUSH ? 8 : isWool(block) ? 5 : 1;
     const t = heldTool();
     if (!t) return 1;
@@ -8404,6 +8526,7 @@ export function createVoxelGame(
   // What a broken block drops. Ores need the right pickaxe tier, like Minecraft.
   function dropFor(block: number): number | null {
     if (block === BLOCK_AIR || block === BLOCK_BEDROCK || block === BLOCK_TALL_GRASS || block === BLOCK_NETHER_PORTAL || isFluid(block)) return null;
+    if (isStepBlock(block)) return stepItem(block);
     const custom = CUSTOM_BLOCKS.get(block);
     if (custom) return custom.drops;
     // (Blocks your pickaxe is too weak for can't be broken at all, so no tier check needed here)
@@ -8590,6 +8713,7 @@ export function createVoxelGame(
     chests.set(key, next.map((st) => (st ? { ...st } : null)));
   }
 
+  let selectedSlotCallback: ((i: number) => void) | null = null;
   function setSelectedSlot(i: number) {
     const was = selectedSlot;
     selectedSlot = Math.max(0, Math.min(8, i));
@@ -8888,6 +9012,7 @@ export function createVoxelGame(
   }
 
   function playBlockSound(block: number, pos: THREE.Vector3 | null, action: 'break' | 'place' | 'step' | 'dig') {
+    block = stepBase(block) ?? block;
     const kind = block === BLOCK_STONE || block === BLOCK_BEDROCK || block === BLOCK_OBSIDIAN || isConcrete(block) || block === BLOCK_SPAWNER || (block >= BLOCK_COAL_ORE && block <= BLOCK_EMERALD_ORE) ? 'stone'
       : block === BLOCK_WOOD || block === BLOCK_CRAFTING_TABLE || block === ITEM_PLANKS || (block >= BLOCK_TRAPDOOR && block <= BLOCK_CAMPFIRE) ? 'wood'
       : block === BLOCK_SAND || block === BLOCK_RED_SAND ? 'sand'
@@ -9118,14 +9243,6 @@ export function createVoxelGame(
     for (const [a0, y0, c0, a1, y1, c1] of boxes) if (x1 > bx + a0 && x0 < bx + a1 && z1 > bz + c0 && z0 < bz + c1) out.push([row + y0, row + y1]);
     return out;
   }
-  /** Can you stand on this row here? Thin blocks (fences, panes, doors) only hold you up where they actually are. */
-  function groundAt(x: number, row: number, z: number): boolean {
-    const r = 0.29;
-    for (let bx = Math.floor(x - r); bx <= Math.floor(x + r); bx++) for (let bz = Math.floor(z - r); bz <= Math.floor(z + r); bz++) {
-      if (boxesUnder(bx, row, bz, x - r, x + r, z - r, z + r).length) return true;
-    }
-    return false;
-  }
   /** The lowest underside of anything solid above you in this row (Infinity if nothing). */
   function ceilingAt(x: number, row: number, z: number): number {
     const r = 0.29;
@@ -9134,6 +9251,45 @@ export function createVoxelGame(
       for (const [y0] of boxesUnder(bx, row, bz, x - r, x + r, z - r, z + r)) low = Math.min(low, y0);
     }
     return low;
+  }
+  /** How high you can step up without jumping (stairs and slabs). */
+  const STEP_HEIGHT = 0.6;
+  /** The highest floor under a footprint in one row: a stair or slab's top, or the top of the cell for anything else (null: none).
+   *  Stair parts taller than a step above `feet` are walls, not floor. */
+  function groundTopAt(x: number, row: number, z: number, feet: number): number | null {
+    const r = 0.29;
+    let best: number | null = null;
+    for (let bx = Math.floor(x - r); bx <= Math.floor(x + r); bx++) for (let bz = Math.floor(z - r); bz <= Math.floor(z + r); bz++) {
+      const b = world.getWorldBlock(bx, row, bz);
+      if (!isSolid(b)) continue;
+      if (isStepBlock(b)) {
+        const boxes = shapeBoxes(b, (dx, dy, dz) => world.getWorldBlock(bx + dx, row + dy, bz + dz)) ?? [];
+        for (const [a0, , c0, a1, y1, c1] of boxes) {
+          if (!(x + r > bx + a0 && x - r < bx + a1 && z + r > bz + c0 && z - r < bz + c1)) continue;
+          const top = row + y1;
+          if (top <= feet + STEP_HEIGHT + 0.001 && (best === null || top > best)) best = top;
+        }
+      } else if (boxesUnder(bx, row, bz, x - r, x + r, z - r, z + r).length) best = Math.max(best ?? -Infinity, row + 1);
+    }
+    return best;
+  }
+  /** A stair or slab just ahead of your feet that is low enough to step onto: the height you step up to (null: none). */
+  function stepUpTop(x: number, z: number, feet: number): number | null {
+    const r = 0.29;
+    let best: number | null = null;
+    for (let row = Math.floor(feet); row <= Math.floor(feet + STEP_HEIGHT); row++) {
+      for (let bx = Math.floor(x - r); bx <= Math.floor(x + r); bx++) for (let bz = Math.floor(z - r); bz <= Math.floor(z + r); bz++) {
+        const b = world.getWorldBlock(bx, row, bz);
+        if (!isStepBlock(b)) continue;
+        const boxes = shapeBoxes(b, (dx, dy, dz) => world.getWorldBlock(bx + dx, row + dy, bz + dz)) ?? [];
+        for (const [a0, , c0, a1, y1, c1] of boxes) {
+          if (!(x + r > bx + a0 && x - r < bx + a1 && z + r > bz + c0 && z - r < bz + c1)) continue;
+          const top = row + y1;
+          if (top > feet + 0.001 && top <= feet + STEP_HEIGHT + 0.001 && (best === null || top > best)) best = top;
+        }
+      }
+    }
+    return best;
   }
   function footprintSolid(x: number, row: number, z: number): boolean {
     const r = 0.29; // just inside the 0.3 wall-collision radius
@@ -9502,18 +9658,23 @@ export function createVoxelGame(
     const prof = PROFESSIONS[v.variant % PROFESSIONS.length];
     tradeCallback?.({ id: v.id, profession: v.shop ? 'Shop' : prof.name, trades: v.shop ?? prof.trades });
   }
-  function trade(villagerId: number, index: number): 'ok' | 'missing' | 'gone' {
+  function trade(villagerId: number, index: number): 'ok' | 'missing' | 'gone' | 'worn' {
     const v = mobs.find((m) => m.id === villagerId && m.kind === 'villager' && m.deathTime < 0);
     if (!v || v.pos.distanceTo(playerFeet()) > 8) return 'gone';
     const t = (v.shop ?? PROFESSIONS[v.variant % PROFESSIONS.length].trades)[index];
     if (!t) return 'gone';
     if (!t.give.every(([id, n]) => countInSlots(slots, id) >= n)) return 'missing';
+    const piece = ARMOR[t.get[0]];
+    const wearing = piece ? armor[piece.slot] : null;
+    if (piece && wearing && wearing.id === t.get[0]) return 'worn'; // already wearing exactly this: don't take the payment
     for (const [id, n] of t.give) removeFromSlots(slots, id, n);
-    if (t.ench) { // an enchanted book keeps its enchantments
+    if (piece) { // armor puts itself on, replacing whatever is worn in that slot
+      armor[piece.slot] = { id: t.get[0], count: 1 };
+    } else if (t.ench) { // an enchanted book keeps its enchantments
       const book: ItemStack = { id: t.get[0], count: 1, ench: { ...t.ench } };
       if (addStackToSlots(slots, book) > 0) spawnDroppedItem(book.id, 1, playerFeet().add(new THREE.Vector3(0, 1, 0)), new THREE.Vector3(0, 2, 0), 0.5, book);
     } else {
-      const left = addItem(t.get[0], t.get[1]);
+      const left = t.get[1] - addItem(t.get[0], t.get[1]); // addItem returns how many fit; only what didn't fit is dropped (this used to drop everything: you got 2)
       if (left > 0) spawnDroppedItem(t.get[0], left, playerFeet().add(new THREE.Vector3(0, 1, 0)), new THREE.Vector3(0, 2, 0), 0.5);
     }
     v.tradeTime = Math.max(v.tradeTime, 8);
@@ -9814,7 +9975,7 @@ export function createVoxelGame(
   };
   type MgState = {
     kind: ArenaKind; size: MinigameSize; phase: 'waiting' | 'countdown' | 'playing' | 'over'; timer: number; difficulty: BotDifficulty;
-    online?: boolean; goalSentAt?: number;
+    online?: boolean; goalSentAt?: number; auto?: { starts: number; min: number };
     teams: MgTeam[]; you: { team: number; out: boolean; kills: number; deaths: number; respawn: number };
     placed: Set<string>; gens: Array<{ x: number; y: number; z: number; item: number; every: number; t: number; cap: number }>;
     result: { win: boolean; place: number; text: string } | null;
@@ -9844,18 +10005,10 @@ export function createVoxelGame(
       t('Weapons', [I, 10], [ITEM_STONE_SWORD, 1], true),
       t('Weapons', [G, 7], [ITEM_IRON_SWORD, 1], true),
       t('Weapons', [D, 4], [ITEM_DIAMOND_SWORD, 1]),
-      t('Armor', [I, 3], [armorId('leather', 0), 1]),
+      // armor is just a chestplate: buying one puts it on (replacing what you wear) with no item to carry
       t('Armor', [I, 6], [armorId('leather', 1), 1], true),
-      t('Armor', [I, 5], [armorId('leather', 2), 1]),
-      t('Armor', [I, 3], [armorId('leather', 3), 1], true),
-      t('Armor', [G, 4], [armorId('iron', 0), 1]),
-      t('Armor', [G, 8], [armorId('iron', 1), 1]),
-      t('Armor', [G, 6], [armorId('iron', 2), 1]),
-      t('Armor', [G, 4], [armorId('iron', 3), 1]),
-      t('Armor', [D, 4], [armorId('diamond', 0), 1]),
+      t('Armor', [G, 8], [armorId('iron', 1), 1], true),
       t('Armor', [D, 6], [armorId('diamond', 1), 1]),
-      t('Armor', [D, 5], [armorId('diamond', 2), 1]),
-      t('Armor', [D, 3], [armorId('diamond', 3), 1]),
       t('Tools', [I, 10], [ITEM_STONE_PICKAXE, 1], true),
       t('Tools', [G, 8], [ITEM_IRON_PICKAXE, 1]),
       t('Tools', [D, 6], [ITEM_DIAMOND_PICKAXE, 1]),
@@ -9890,6 +10043,7 @@ export function createVoxelGame(
     return {
       size: m.size, kind: m.kind, phase: m.phase, countdown: m.phase === 'countdown' ? Math.ceil(m.timer) : 0, difficulty: m.difficulty,
       winScore: arena!.winScore, online: !!m.online,
+      auto: m.online && m.auto ? { starts: m.auto.starts, min: m.auto.min, players: m.teams.reduce((n, t) => n + (t.online?.players ?? 0), 0), max: m.teams.length } : undefined,
       teams: m.teams.map((t) => ({
         name: t.name, color: t.color, score: t.score, eggAlive: t.eggAlive, out: !!t.outAt, you: m.online ? t.idx === m.you.team : t.human,
         alive: m.online ? (t.online?.alive ?? 0) : (t.human && !m.you.out ? 1 : 0) + t.bots.filter((b) => b.id !== null).length,
@@ -9924,7 +10078,8 @@ export function createVoxelGame(
       slots[0] = { id: ITEM_WOOD_SWORD, count: 1 };
       slots[1] = { id: t.wool, count: 16 };
     }
-    selectedSlot = 0;
+    selectedSlot = 0; // the sword is in slot 1
+    selectedSlotCallback?.(0); // tell the hotbar too, or it keeps highlighting the slot you had before you died
     syncHeld();
     notifyInventory();
   }
@@ -10115,11 +10270,8 @@ export function createVoxelGame(
       return;
     }
     spillInventory();
-    if (t.eggAlive) {
-      placeYouAtSpawn();
-      giveArenaKit();
-      mgSay('You died. Your egg brought you back.', 2.5);
-    } else {
+    if (t.eggAlive) beginRespawn();
+    else {
       mg.you.out = true;
       setGameMode('spectator');
       teleport(0.5, ARENA_Y + 14, 0.5);
@@ -10127,6 +10279,39 @@ export function createVoxelGame(
       mgSay('You were eliminated!', 4);
       mgCheckEnd();
     }
+  }
+  /** EggWars: you watch from above your island for 5 seconds, then your egg brings you back (if it still stands). */
+  const RESPAWN_SECONDS = 5;
+  function beginRespawn() {
+    if (!mg) return;
+    mg.you.respawn = RESPAWN_SECONDS;
+    const t = mg.teams[mg.you.team];
+    setGameMode('spectator');
+    if (t) teleport(t.spawn.x, t.spawn.y + 9, t.spawn.z); else teleport(0.5, ARENA_Y + 14, 0.5);
+    setStats(20, 20);
+    mgSay('You died. Respawning in 5…', 2);
+    mgEmit(true);
+  }
+  function tickRespawn(dt: number) {
+    if (!mg || mg.you.respawn <= 0) return;
+    const before = Math.ceil(mg.you.respawn);
+    mg.you.respawn -= dt;
+    if (mg.you.respawn > 0) { if (Math.ceil(mg.you.respawn) !== before) mgEmit(true); return; }
+    mg.you.respawn = 0;
+    const t = mg.teams[mg.you.team];
+    if (t && t.eggAlive) {
+      setGameMode('survival');
+      placeYouAtSpawn();
+      giveArenaKit();
+      mgSay('Back in the game!', 1.5);
+    } else {
+      mg.you.out = true;
+      teleport(0.5, ARENA_Y + 14, 0.5);
+      mgSay('You were eliminated!', 4);
+      if (mg.online) matchEventCb?.({ type: 'out' });
+      mgCheckEnd();
+    }
+    mgEmit(true);
   }
   // ---------------- Online matches (real players, the host's room keeps the score) ----------------
   let matchEventCb: ((e: MatchEvent) => void) | null = null;
@@ -10181,6 +10366,7 @@ export function createVoxelGame(
     });
     mg.phase = v.phase;
     mg.timer = v.left;
+    mg.auto = v.auto;
     if (v.phase === 'over') {
       const mine = v.winner !== null && v.winner === v.myTeam;
       mg.result = mine ? { win: true, place: 1, text: mg.kind === 'bridge' ? `You won ${mg.teams.map((t) => t.score).filter((_, i) => mg!.teams[i].online?.players).join(' - ')}!` : 'Victory! Your team is the last one standing.' }
@@ -10191,8 +10377,8 @@ export function createVoxelGame(
     if (v.phase === 'countdown' && prevPhase === 'countdown' && Math.ceil(v.left) !== Math.ceil(mg.timer)) playSfx('click', null);
     // a team for the first time (waiting in the lobby): stand on your island
     if (prevTeam !== v.myTeam && v.myTeam >= 0 && (v.phase === 'waiting' || v.phase === 'over' || !v.out)) { setGameMode('survival'); placeYouAtSpawn(); giveArenaKit(); }
-    if (!prevOut && v.out && v.phase !== 'waiting') { setGameMode('spectator'); teleport(0.5, ARENA_Y + 14, 0.5); }
-    if (prevOut && !v.out && mode === 'spectator') { setGameMode('survival'); placeYouAtSpawn(); giveArenaKit(); }
+    if (!prevOut && v.out && v.phase !== 'waiting') { setGameMode('spectator'); mg.you.respawn = 0; teleport(0.5, ARENA_Y + 14, 0.5); }
+    if (prevOut && !v.out && mode === 'spectator' && mg.you.respawn <= 0) { setGameMode('survival'); placeYouAtSpawn(); giveArenaKit(); }
     mgEmit(true);
   }
   /** A new game or a new point: placed blocks go, eggs come back, everyone back to their island with a fresh kit. */
@@ -10203,6 +10389,7 @@ export function createVoxelGame(
     for (const t of mg.teams) t.eggAlive = !!t.egg;
     mg.goalSentAt = 0;
     mg.elapsed = 0;
+    mg.you.respawn = 0;
     lastAttacker = null;
     if (mg.you.team >= 0) { setGameMode('survival'); placeYouAtSpawn(); giveArenaKit(); }
     if (dead) dead = false;
@@ -10214,6 +10401,7 @@ export function createVoxelGame(
     if (mg.phase === 'playing' && mg.you.team >= 0 && !mg.you.out) { mg.you.deaths++; matchEventCb?.({ type: 'died', by }); }
     const t = mg.teams[mg.you.team];
     if (mg.kind === 'eggwars' && mg.phase === 'playing') spillInventory();
+    if (mg.phase === 'playing' && mg.kind === 'eggwars' && t && t.eggAlive) { beginRespawn(); return; }
     if (mg.phase !== 'playing' || mg.kind === 'bridge' || (t && t.eggAlive)) {
       placeYouAtSpawn();
       giveArenaKit();
@@ -10230,7 +10418,7 @@ export function createVoxelGame(
 
   // ---------------- Player vs player ----------------
   let pvpEnemy: ((id: number) => boolean) | null = null;
-  let pvpCallback: ((id: number, dmg: number, kx: number, kz: number) => void) | null = null;
+  let pvpCallback: ((id: number, dmg: number, kx: number, kz: number, bow?: boolean) => void) | null = null;
   let lastAttacker: { id: number; name: string; at: number } | null = null;
   const pvpDir = new THREE.Vector3();
   /** Ray (origin + t * dir) against a box: the distance to it, or null if it misses. */
@@ -10323,6 +10511,7 @@ export function createVoxelGame(
   function updateMinigame(dt: number) {
     if (!mg || !arena) return;
     mgEmitTimer -= dt;
+    tickRespawn(dt);
     if (mg.phase === 'countdown') {
       const before = Math.ceil(mg.timer);
       mg.timer -= dt;
@@ -11400,6 +11589,16 @@ export function createVoxelGame(
   const arrowShaftMat = new THREE.MeshLambertMaterial({ color: 0x8a6a3c });
   const arrowTipMat = new THREE.MeshLambertMaterial({ color: 0x9a9a9a });
   const arrowFlameMat = new THREE.MeshLambertMaterial({ color: 0xff8a1a, emissive: 0xc04a00 });
+  // The arrow nocked on the bow while you draw it (first person): it slides back with the string, then flies off
+  const nockMesh = new THREE.Group();
+  {
+    const shaft = new THREE.Mesh(arrowShaftGeo, arrowShaftMat); shaft.renderOrder = 999; shaft.frustumCulled = false;
+    const tip = new THREE.Mesh(arrowTipGeo, arrowTipMat); tip.position.z = -0.32; tip.renderOrder = 999; tip.frustumCulled = false; // the point faces away from you
+    nockMesh.add(shaft, tip);
+    nockMesh.visible = false;
+    nockMesh.frustumCulled = false;
+    camera.add(nockMesh);
+  }
   const arrows: Array<{ mesh: THREE.Group; pos: THREE.Vector3; vel: THREE.Vector3; life: number; stuck: boolean; owner: 'mob' | 'player'; damage: number; flame?: boolean; punch?: number; cause?: string; blight?: number; free?: boolean }> = [];
 
   function shootArrow(m: Mob, o: { damage?: number; cause?: string; blight?: number; flame?: boolean } = {}) {
@@ -11454,6 +11653,24 @@ export function createVoxelGame(
       let removed = false;
       for (let s = 0; s < steps; s++) {
         const next = a.pos.clone().addScaledVector(a.vel, dt / steps);
+        if (a.owner === 'player' && pvpEnemy && !(mg && mg.online && mg.phase !== 'playing') && mode !== 'spectator' && !dead) {
+          // an arrow that reaches a player on another team hurts them (the room passes it on, like a sword hit)
+          let victimId = -1;
+          for (const [id, rp] of remotePlayers) {
+            if (rp.mode === 'spectator' || !pvpEnemy(id)) continue;
+            if (Math.abs(next.x - rp.pos.x) < 0.42 && Math.abs(next.z - rp.pos.z) < 0.42 && next.y > rp.pos.y && next.y < rp.pos.y + 1.9) { victimId = id; rp.hurtFlash = 0.35; break; }
+          }
+          if (victimId >= 0) {
+            const flat = Math.hypot(a.vel.x, a.vel.z) || 1;
+            pvpCallback?.(victimId, a.damage, a.vel.x / flat, a.vel.z / flat, true);
+            spawnParticles(next.clone(), ['#b01818', '#7a0e0e'], 5, 2, 0.08, 0.4);
+            playSfx('arrowHit', next);
+            scene.remove(a.mesh);
+            arrows.splice(i, 1);
+            removed = true;
+            break;
+          }
+        }
         if (a.owner === 'player') {
           const victim = mobs.find((mm) => {
             if (mm.deathTime >= 0) return false;
@@ -11481,7 +11698,8 @@ export function createVoxelGame(
             break;
           }
         }
-        if (isSolid(world.getWorldBlock(Math.floor(next.x), Math.floor(next.y), Math.floor(next.z)))) {
+        const hitCell = world.getWorldBlock(Math.floor(next.x), Math.floor(next.y), Math.floor(next.z));
+        if (isSolid(hitCell) && (!isStepBlock(hitCell) || insideStep(hitCell, Math.floor(next.x), Math.floor(next.y), Math.floor(next.z), next.x, next.y, next.z))) {
           a.stuck = true;
           a.life = 0;
           playSfx('arrowHit', a.pos);
@@ -12106,10 +12324,22 @@ export function createVoxelGame(
   let playerWalkPhase = 0;
   const lastModelPos = new THREE.Vector3();
 
+  let ghostOn = false;
+  const GHOST_OPACITY = 0.4;
+  function setSpectatorGhost(on: boolean) {
+    if (on === ghostOn) return;
+    ghostOn = on;
+    playerModel.body.visible = !on;
+    for (const part of [...playerModel.arms, ...playerModel.legs]) part.visible = !on;
+    for (const m of playerModel.materials) { m.transparent = on; m.opacity = on ? GHOST_OPACITY : 1; m.needsUpdate = true; }
+  }
   function updateViewCamera(dt: number): THREE.PerspectiveCamera {
-    fistMesh.visible = perspective === 0 && mode !== 'spectator' && !dead;
+    // (only ever hides here: the per-frame update decides whether a held tool or gun hides the bare hand)
+    if (perspective !== 0 || mode === 'spectator' || dead) fistMesh.visible = false;
     const third = perspective !== 0;
-    playerModel.root.visible = third && mode !== 'spectator';
+    // a spectator in third person (F5) is a see-through floating head: nobody else sees them at all
+    setSpectatorGhost(third && mode === 'spectator');
+    playerModel.root.visible = third;
     if (!third) return camera;
 
     const feet = playerFeet();
@@ -12124,8 +12354,8 @@ export function createVoxelGame(
     playerModel.head.rotation.x = sleeping ? 0 : pitch;
     playerModel.legs[0].rotation.x = sleeping ? 0 : swing;
     playerModel.legs[1].rotation.x = sleeping ? 0 : -swing;
-    holdOnModel(playerModel, heldItem);
-    holdOffhandOnModel(playerModel, offhand?.id ?? null);
+    holdOnModel(playerModel, ghostOn ? null : heldItem);
+    holdOffhandOnModel(playerModel, ghostOn ? null : offhand?.id ?? null);
     poseArms(playerModel, {
       swing, pitch, aiming: gunAiming, drawing: bowDrawing, kick: viewKick, blocking: swordBlocking,
       punch: punchPhase > 0 ? Math.sin((punchPhase / PUNCH_DURATION) * Math.PI) : 0,
@@ -13584,10 +13814,14 @@ export function createVoxelGame(
   }
   // How hard a block is to blow up (Minecraft-like blast resistance)
   function blastResistance(b: number): number {
+    if (isStepBlock(b)) return blastResistance(stepBase(b)!);
     if (b === BLOCK_OBSIDIAN || b === BLOCK_BEDROCK || b === BLOCK_INFERNIUM_ORE) return 1200;
     if (isIronDoor(b)) return 25;
     if (b === BLOCK_DIRT || b === BLOCK_GRASS || b === BLOCK_SAND || b === BLOCK_RED_SAND || b === BLOCK_GRAVEL || b === BLOCK_FARMLAND || b === BLOCK_SNOW || b === BLOCK_NETHERRACK || b === BLOCK_SOUL_SAND) return 0.5;
     if (isLeaves(b) || b === BLOCK_GLASS || b === BLOCK_GLASS_PANE || b === BLOCK_GLOWSTONE || b === BLOCK_CACTUS) return 0.3;
+    // small things a blast should always take with it: buttons, levers, plates, dust, repeaters, comparators and trapdoors
+    if ((b >= BLOCK_REDSTONE_WIRE && b <= BLOCK_REPEATER + 31) || isComparator(b) || isButton(b)) return 0.2;
+    if (isTrapdoor(b)) return 0.8;
     if (isLog(b) || isPlanks(b) || isDoor(b) || isBed(b) || b === BLOCK_CRAFTING_TABLE || b === BLOCK_CHEST || b === BLOCK_FURNACE || (b >= BLOCK_TRAPDOOR && b <= BLOCK_CAMPFIRE)) return 3;
     if (CROSS_MAT[b] >= 0 || isTorch(b) || b === BLOCK_TNT) return 0;
     if (b === BLOCK_BLUE_ICE) return 2.8;
@@ -15792,6 +16026,31 @@ export function createVoxelGame(
   // samples world blocks directly — no need to raycast against the merged
   // chunk meshes, so it works regardless of how chunk geometry is batched).
   // Hits solid blocks and plants; fluids only when asked (buckets), so you can mine and build through water
+  /** Where inside its cell the last raycast hit landed (0..1): tells which half of a slab you clicked. */
+  const lastHitFrac = { x: 0.5, y: 0.5, z: 0.5 };
+  /** Is a point inside one of the boxes of a stair or slab? (Arrows fly over the empty half.) */
+  function insideStep(b: number, bx: number, by: number, bz: number, x: number, y: number, z: number): boolean {
+    const boxes = shapeBoxes(b, (dx, dy, dz) => world.getWorldBlock(bx + dx, by + dy, bz + dz));
+    if (!boxes) return true;
+    const fx = x - bx, fy = y - by, fz = z - bz;
+    return boxes.some(([x0, y0, z0, x1, y1, z1]) => fx >= x0 && fx <= x1 && fy >= y0 && fy <= y1 && fz >= z0 && fz <= z1);
+  }
+  /** Does a point inside a stair or slab's cell touch one of its boxes? If so, which way the face it came through points (rays pass through the empty part). */
+  function stepHit(b: number, bx: number, by: number, bz: number, x: number, y: number, z: number): [number, number, number] | null {
+    const boxes = shapeBoxes(b, (dx, dy, dz) => world.getWorldBlock(bx + dx, by + dy, bz + dz));
+    if (!boxes) return [0, 0, 0];
+    const fx = x - bx, fy = y - by, fz = z - bz;
+    const px = fx - rayDir.x * RAY_STEP, py = fy - rayDir.y * RAY_STEP, pz = fz - rayDir.z * RAY_STEP; // where the ray was a moment ago
+    for (const [x0, y0, z0, x1, y1, z1] of boxes) {
+      if (!(fx >= x0 - 0.001 && fx <= x1 + 0.001 && fy >= y0 - 0.001 && fy <= y1 + 0.001 && fz >= z0 - 0.001 && fz <= z1 + 0.001)) continue;
+      const ox = Math.max(x0 - px, px - x1, 0), oy = Math.max(y0 - py, py - y1, 0), oz = Math.max(z0 - pz, pz - z1, 0);
+      if (ox >= oy && ox >= oz && ox > 0) return [px < x0 ? -1 : 1, 0, 0];
+      if (oy >= oz && oy > 0) return [0, py < y0 ? -1 : 1, 0];
+      if (oz > 0) return [0, 0, pz < z0 ? -1 : 1];
+      return [0, 0, 0]; // the ray started inside it
+    }
+    return null;
+  }
   function raycastBlock(includeFluids = false): { x: number; y: number; z: number; placeX: number; placeY: number; placeZ: number } | null {
     camera.getWorldDirection(rayDir);
     let x = camera.position.x;
@@ -15805,7 +16064,15 @@ export function createVoxelGame(
       z += rayDir.z * RAY_STEP;
       const bx = Math.floor(x), by = Math.floor(y), bz = Math.floor(z);
       const rb = world.getWorldBlock(bx, by, bz);
-      if (isSolid(rb) || CROSS_MAT[rb] >= 0 || isTorch(rb) || (rb >= BLOCK_TRAPDOOR && rb <= LAST_BUILTIN_BLOCK && ITEM_INFO[rb] !== undefined) || (includeFluids && isFluid(rb))) {
+      if (isStepBlock(rb)) {
+        const nrm = stepHit(rb, bx, by, bz, x, y, z);
+        if (nrm) {
+          lastHitFrac.x = x - bx; lastHitFrac.y = y - by; lastHitFrac.z = z - bz;
+          const none = nrm[0] === 0 && nrm[1] === 0 && nrm[2] === 0;
+          return { x: bx, y: by, z: bz, placeX: none ? prevBx : bx + nrm[0], placeY: none ? prevBy : by + nrm[1], placeZ: none ? prevBz : bz + nrm[2] };
+        }
+      } else if (isSolid(rb) || CROSS_MAT[rb] >= 0 || isTorch(rb) || (rb >= BLOCK_TRAPDOOR && rb <= LAST_BUILTIN_BLOCK && ITEM_INFO[rb] !== undefined) || (includeFluids && isFluid(rb))) {
+        lastHitFrac.x = x - bx; lastHitFrac.y = y - by; lastHitFrac.z = z - bz;
         return { x: bx, y: by, z: bz, placeX: prevBx, placeY: prevBy, placeZ: prevBz };
       }
       if (bx !== prevBx || by !== prevBy || bz !== prevBz) {
@@ -16288,6 +16555,19 @@ export function createVoxelGame(
       return;
     }
     if (heldItem === null || !isBlockId(heldItem)) return; // ids 100-999 are items, not placeable blocks
+    // Two slabs of one material make the whole block: click the open side of a slab with another of the same
+    if (isSlabBlock(heldItem) && isSlabBlock(target) && stepMaterial(target) === stepMaterial(heldItem) && hit.placeX === hit.x && hit.placeZ === hit.z
+      && ((hit.placeY === hit.y + 1 && !stepUpsideDown(target)) || (hit.placeY === hit.y - 1 && stepUpsideDown(target)))) {
+      const whole = stepBase(target)!;
+      if (playerOverlapsBlock(hit.x, hit.y, hit.z)) return;
+      setBlockAndNotify(hit.x, hit.y, hit.z, whole);
+      rebuildAround(hit.x, hit.z);
+      playBlockSound(whole, new THREE.Vector3(hit.x + 0.5, hit.y + 0.5, hit.z + 0.5), 'place');
+      blockEventCallback?.('place', hit.x, hit.y, hit.z, whole);
+      consumeHeld(1);
+      punchPhase = PUNCH_DURATION;
+      return;
+    }
     // Placing onto tall grass replaces it, like Minecraft
     const [px, py, pz] = target === BLOCK_TALL_GRASS ? [hit.x, hit.y, hit.z] : [hit.placeX, hit.placeY, hit.placeZ];
     const existing = world.getWorldBlock(px, py, pz);
@@ -16299,6 +16579,13 @@ export function createVoxelGame(
       const alongZ = Math.abs(fz) >= Math.abs(fx);
       if (heldItem === BLOCK_TRAPDOOR) placeId = BLOCK_TRAPDOOR + (alongZ ? (fz < 0 ? 2 : 0) : (fx < 0 ? 1 : 3));
       if (heldItem === BLOCK_FENCE_GATE) placeId = BLOCK_FENCE_GATE + (alongZ ? 0 : 1);
+      if (isStepBlock(heldItem)) {
+        // upside-down when you click the underside of a block, or the upper half of a wall; stairs have their tall back away from you
+        const dy = hit.y - py;
+        const top = dy === 1 ? true : dy === -1 ? false : lastHitFrac.y >= 0.5;
+        const m = stepMaterial(heldItem);
+        placeId = isSlabBlock(heldItem) ? slabId(m, top) : stairId(m, alongZ ? (fz < 0 ? 0 : 2) : (fx > 0 ? 1 : 3), top);
+      }
       if (heldItem === BLOCK_CAMPFIRE && !isSolid(world.getWorldBlock(px, py - 1, pz))) { showHint('A campfire needs solid ground under it'); return; }
       if (isHead(heldItem)) placeId = headItem(headKind(heldItem)) + (alongZ ? (fz < 0 ? 2 : 0) : (fx > 0 ? 3 : 1)); // it looks back at you
     }
@@ -16439,10 +16726,11 @@ export function createVoxelGame(
         b = below; by -= 1; tall = true;
       }
       if (isTallBarrier(b)) tall = true;
-      const boxes = b === BLOCK_GLASS_PANE || isDoor(b) || isTrapdoor(b) || b === BLOCK_FENCE || isFenceGate(b) ? shapeBoxes(b, (dx, dy, dz) => world.getWorldBlock(bx + dx, by + dy, bz + dz)) : null;
+      const boxes = b === BLOCK_GLASS_PANE || isDoor(b) || isTrapdoor(b) || b === BLOCK_FENCE || isFenceGate(b) || isStepBlock(b) ? shapeBoxes(b, (dx, dy, dz) => world.getWorldBlock(bx + dx, by + dy, bz + dz)) : null;
       if (!boxes) return true;
+      const stepB = isStepBlock(b) ? STEP_HEIGHT : 0; // you walk up stairs and slabs without jumping
       return boxes.some(([a0, y0, c0, a1, y1, c1]) => x1 > bx + a0 && x0 < bx + a1 && z1 > bz + c0 && z0 < bz + c1
-        && (tall || (by + y0 < bodyHi - 0.001 && by + y1 > bodyLo + 0.001)));
+        && (tall || (by + y0 < bodyHi - 0.001 && by + y1 > bodyLo + stepB + 0.001)));
     }
     function footprintBlocked(x: number, z: number, rows: number[], feet: number): boolean {
       const r = PLAYER_RADIUS;
@@ -16563,6 +16851,11 @@ export function createVoxelGame(
       if (slowFall) { velocityY = Math.max(velocityY, -2.5); fallPeakY = camera.position.y; }
     }
     if (velocityY < -45) velocityY = -45; // terminal velocity
+    // Stairs and slabs: walking into one lifts you onto it (no jumping needed)
+    if (!inFluidNow && velocityY <= 2) {
+      const up = stepUpTop(camera.position.x, camera.position.z, camera.position.y - PLAYER_EYE);
+      if (up !== null && !bodyBlockedAt(camera.position.x, up + PLAYER_EYE, camera.position.z)) { camera.position.y = up + PLAYER_EYE; if (velocityY < 0) velocityY = 0; }
+    }
     let nextY = camera.position.y + velocityY * delta;
     // Ceiling: stop rising when the head would enter a block (jumping into a
     // low gap used to wedge the player inside blocks)
@@ -16582,14 +16875,15 @@ export function createVoxelGame(
     // their center. Checking only the center made you fall into the gap when
     // standing on an edge. Every row passed this frame is checked so a fast
     // fall can't skip through a 1-block floor.
-    let landRow = -1;
+    let landTop: number | null = null;
     if (velocityY <= 0) {
-      const curFeet = camera.position.y - PLAYER_EYE;
-      for (let r = Math.floor(curFeet - 0.001); r >= Math.floor(nextY - PLAYER_EYE); r--) {
-        if (groundAt(camera.position.x, r, camera.position.z)) { landRow = r; break; }
+      const curFeet = camera.position.y - PLAYER_EYE, nextFeet = nextY - PLAYER_EYE;
+      for (let r = Math.floor(curFeet - 0.001); r >= Math.floor(nextFeet); r--) {
+        const top = groundTopAt(camera.position.x, r, camera.position.z, curFeet);
+        if (top !== null && top >= nextFeet - 0.001) { landTop = top; break; }
       }
     }
-    const isGrounded = landRow >= 0;
+    const isGrounded = landTop !== null;
 
     // Fall damage: track the highest point reached during the current
     // airborne phase, and on landing, apply damage for how far below that
@@ -16609,7 +16903,7 @@ export function createVoxelGame(
     wasGrounded = isGrounded;
 
     if (isGrounded) {
-      camera.position.y = landRow + 1 + PLAYER_EYE;
+      camera.position.y = (landTop as number) + PLAYER_EYE;
       velocityY = 0;
       if (down('jump') && !arenaFrozen()) velocityY = JUMP_FORCE + effectLevel('jump_boost') * 1.8;
     } else {
@@ -16761,6 +17055,16 @@ export function createVoxelGame(
         heldMesh.position.set(heldBase.x - 0.12 * sw - 0.12 * draw + hbx + idleX + 0.05 * eq, heldBase.y + 0.05 * sw + hby + idleY + spY - 0.6 * eq, heldBase.z - 0.25 * sw + 0.12 * draw + 0.03 * sprintLerp);
         const rest = heldItem === ITEM_BOW ? [0, -0.35, Math.PI / 4] : blockFaces(heldItem!) ? [0.1, Math.PI / 4, 0] : [-0.25, -0.6, 1.0];
         heldMesh.rotation.set(rest[0] - 0.35 * sw - 0.5 * spR + 0.9 * eq, rest[1] + 0.15 * sw, rest[2] + idleR);
+      }
+    }
+    // the nocked arrow follows the bow while it is drawn
+    {
+      const drawn = bowDrawing && heldItem === ITEM_BOW && heldMesh !== null && perspective === 0;
+      nockMesh.visible = drawn;
+      if (drawn && heldMesh) {
+        const dr = bowCharge();
+        nockMesh.position.set(heldMesh.position.x - 0.07, heldMesh.position.y + 0.04, heldMesh.position.z - 0.12 + 0.3 * dr);
+        nockMesh.rotation.set(0.04, 0.12, 0);
       }
     }
     if (hold === 'item') {
@@ -17104,7 +17408,7 @@ export function createVoxelGame(
 
     // Dispose arm model
     scene.remove(camera);
-    camera.remove(fistMesh);
+    camera.remove(fistMesh); camera.remove(nockMesh);
     armGeo.dispose();
     for (const m of armMaterials) m.dispose();
     armSideTex.dispose();
@@ -17425,6 +17729,7 @@ export function createVoxelGame(
     addItem,
     removeItem,
     setSelectedSlot,
+    onSelectedSlotChange: (cb) => { selectedSlotCallback = cb; },
     getArmor: () => armor.map((st) => (st ? { ...st } : null)),
     setArmor,
     onEngineEvent: (cb: (name: string, data: Record<string, unknown>) => void) => { engineEventCallback = cb; },

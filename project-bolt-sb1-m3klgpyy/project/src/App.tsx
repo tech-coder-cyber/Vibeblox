@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef, useMemo, useSyncExternalStore, createContext, useContext, type FormEvent, type ChangeEvent, type MouseEvent as ReactMouseEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback, useSyncExternalStore, createContext, useContext, type FormEvent, type ChangeEvent, type MouseEvent as ReactMouseEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
 import { ADVANCEMENT_TABS, advancementsFor, checkItems, checkEvent, loadAdvancements, saveAdvancements, clearAdvancements, type Advancement, type AdvancementTab } from './advancements';
 import { SKINS, CAPES, CUSTOM_SKIN_ID, isCustomSkinData, type PlayerLook } from '@/cosmetics';
 import { CAN_LINK_OUT, CAN_SELL_RANKS, ADS_POSSIBLE, PLATFORM, initAds, triggerRewardedAd, setGameplayActive, reportLoadingFinished, setAdsBlocked, maybeInterstitial, lastAdResult } from '@/adEconomy';
 import {
   getProgress, subscribeProgress, onLevelUp, setCustomSkin, addActiveSeconds, rewardAdCoins, rewardAdBooster, claimCoins, claimBooster, claimStatus, COIN_CLAIMS_PER_HOUR, buyCosmetic, equipCosmetic, currentLook, reloadProgress, progressForAccount, mergeAccountProgress,
+  dailyStatus, claimDaily, openLootbox, buyShopItem, FREEZE_PRICE, BOOSTER_PRICE, MAX_FREEZES, DAILY_COINS, DAILY_LOOTBOX_DAYS, WEEKLY_FALLBACK_COINS, type DailyGrant, type LootResult,
   xpForLevel, DISCORD_INVITE_URL, TEBEX_STORE_URL, AD_COINS, LEVEL_UP_COINS, XP_PER_PERIOD, SECONDS_PER_PERIOD, BOOSTER_SECONDS, IDLE_AFTER_SECONDS,
 } from '@/progression';
 import { ModBuilder } from '@/ModBuilder';
@@ -47,6 +48,8 @@ import AdminPanel, { type PanelPlayer } from './AdminPanel';
 import { useAccount } from './useAccount';
 import TouchControls, { RotateHint, touchEnabled, loadTouchPref, saveTouchPref, lockViewportForTouch, type TouchPref } from './TouchControls';
 import Tutorial, { tutorialDone } from './Tutorial';
+import { LOYALTY_RANKS, isYearMilestone, loyaltyLabel, pendingMilestones, nextMilestone, type LoyaltyRank } from './loyalty';
+import { fetchLoyalty, claimLoyalty, type LoyaltyInfo } from './social';
 import { saveProgressToAccount, loadProgressFromAccount, fetchLevelLeaderboard, reportCheat, cleanWorldImage, type LevelRow, addFriend, unfriendByName, loadFriends, sendDM, startPolling, isGuestName, reportActivity, fetchPlayingCounts, fetchLeaderboard, fetchStanding, recordPlay, setServerPresence, isOwnerName, listHostedWorlds, publishHostedWorld, unpublishHostedWorld, verifyToken, isFriendOf, isBannedName, isAdminToken, type DM, type Activity, type Friend, type LeaderRow, type Standing, type HostedWorld } from './social';
 
 // Multiplayer is optional: Vite only includes src/multiplayer.ts if the file
@@ -81,11 +84,12 @@ type NetMatch = {
   teams: Array<{ score: number; egg: boolean; out: boolean }>;
   members: Array<[number, number, boolean, number, number]>;
   kind: ArenaKind; winScore: number;
+  starts?: number; auto?: boolean; min?: number;
 };
 type NetGame = { kind: ArenaKind; variant: number; teams: number; teamSize: number; winScore: number };
 const TEAM_KEYS = ['red', 'blue', 'green', 'yellow'];
 /** How the minigame was started: against bots, hosting a match for real players, or joining one. */
-type MinigameOnline = { host: true } | { join: string; hostName: string };
+type MinigameOnline = { host: true; auto?: boolean } | { join: string; hostName: string } | { find: true };
 type HostingMod = {
   HostRoom: new (o: Record<string, unknown>) => HostRoomLike;
   PeerHost: new (id: string, signaling: unknown, room: HostRoomLike) => { start(): Promise<void>; stop(): void };
@@ -159,11 +163,12 @@ type MpEvents = {
   onClose?: (reason: string) => void;
 };
 type MpClient = {
-  sendHit(id: number, dmg: number, kx: number, kz: number): void;
+  sendHit(id: number, dmg: number, kx: number, kz: number, bow?: boolean): void;
   sendMatchStart(): void;
   sendMatchDied(by: number | null): void;
   sendMatchEgg(team: number): void;
   sendMatchGoal(team: number): void;
+  sendMatchOut(): void;
   events: MpEvents;
   connected: boolean;
   connect(url: string, name: string, token?: string | null): void;
@@ -234,6 +239,8 @@ import {
   Star,
   Search,
   Newspaper,
+  Gift,
+  Snowflake,
 } from 'lucide-react';
 
 type View = 'home' | 'shop' | 'settings' | 'create-world' | 'servers' | 'planets' | 'social' | 'news' | 'leaderboard';
@@ -788,7 +795,7 @@ function PlanetsView({ savedWorlds, limit, onPlayWorld, onCreate, onDelete }: { 
 }
 
 /** EggWars / Bridge Duels: play against bots now; real players are coming. */
-function MinigamePicker({ kind, onPlay, onClose, onHost, onJoin }: { kind: ArenaKind; onPlay: (d: BotDifficulty, size: MinigameSize) => void; onClose: () => void; onHost?: (size: MinigameSize) => void; onJoin?: (w: HostedWorld) => void }) {
+function MinigamePicker({ kind, onPlay, onClose, onHost, onJoin, onFind }: { kind: ArenaKind; onPlay: (d: BotDifficulty, size: MinigameSize) => void; onClose: () => void; onHost?: (size: MinigameSize) => void; onJoin?: (w: HostedWorld) => void; onFind?: () => void }) {
   const [diff, setDiff] = useState<BotDifficulty>('normal');
   const [size, setSize] = useState<MinigameSize>('solo');
   const [onlineSize, setOnlineSize] = useState<MinigameSize>('solo');
@@ -832,6 +839,16 @@ function MinigamePicker({ kind, onPlay, onClose, onHost, onJoin }: { kind: Arena
           </div>
           <button onClick={() => onPlay(diff, size)} data-testid="play-vs-ai" className="w-full py-3 rounded-xl bg-[#00e676] text-[#0a0e14] font-bold text-sm hover:brightness-110 active:scale-95 transition-all">Play vs AI</button>
         </div>
+        {kind === 'eggwars' ? (
+        <div className="rounded-xl border border-[#7c4dff]/40 bg-[#7c4dff]/5 p-4" data-testid="play-online">
+          <div className="flex items-center gap-2 mb-1"><Users className="w-4 h-4 text-[#b39dff]" /><span className="text-white font-bold text-sm">Play against players</span></div>
+          <p className="text-[#5a6b80] text-xs mb-3">Solo EggWars with real players. You are matched into a game automatically: it starts 30 seconds after 2 players are in, or in 5 seconds when the lobby is full.</p>
+          <button onClick={() => onFind?.()} disabled={!onFind} data-testid="find-game"
+            className="w-full py-3 rounded-xl bg-[#7c4dff] text-white font-bold text-sm hover:brightness-110 active:scale-95 transition-all disabled:opacity-40">
+            {summary.signedIn ? 'Find a game' : 'Sign in to find a game'}
+          </button>
+        </div>
+        ) : (
         <div className="rounded-xl border border-[#7c4dff]/40 bg-[#7c4dff]/5 p-4" data-testid="play-online">
           <div className="flex items-center gap-2 mb-1"><Users className="w-4 h-4 text-[#b39dff]" /><span className="text-white font-bold text-sm">Play against players</span></div>
           <p className="text-[#5a6b80] text-xs mb-3">Real players, real teams. Join an open match, or host your own and start it when everyone is in.</p>
@@ -857,6 +874,7 @@ function MinigamePicker({ kind, onPlay, onClose, onHost, onJoin }: { kind: Arena
             {summary.signedIn ? 'Host a match' : 'Sign in to host a match'}
           </button>
         </div>
+        )}
       </div>
     </div>
   );
@@ -913,6 +931,7 @@ function HomeView({ username, onPlaySurvival, savedWorlds, onPlayWorld, onCreate
       </section>
       {picker && <MinigamePicker kind={picker} onClose={() => setPicker(null)} onPlay={(d, z) => { const k = picker; setPicker(null); onMinigame(k, d, z); }}
         onHost={(z) => { const k = picker; setPicker(null); onMinigame(k, 'normal', z, { host: true }); }}
+        onFind={() => { const k = picker; setPicker(null); onMinigame(k, 'normal', 'solo', { find: true }); }}
         onJoin={(w) => { setPicker(null); onMinigame(picker, 'normal', 'solo', { join: w.id, hostName: w.host }); }} />}
 
     </div>
@@ -1992,6 +2011,20 @@ function ShopView({ compact = false }: { compact?: boolean }) {
           {adsFree && <p className="-mt-3 mb-5 text-[#5a6b80] text-xs" data-testid="no-ads-note">You have a rank, so you never see ads. Claim coins up to {COIN_CLAIMS_PER_HOUR} times an hour and a booster every 15 minutes instead.</p>}
           {!adsOk && !adsFree && <p className="-mt-3 mb-5 text-[#5a6b80] text-xs">{ADS_POSSIBLE ? 'No ads are available right now. Try again in a moment.' : 'Ads are available when you play VibeBlox on CrazyGames or Poki. Here you earn coins by levelling up.'}</p>}
 
+          {/* Streak freeze and XP booster */}
+          <div className="grid sm:grid-cols-2 gap-3 mb-5" data-testid="shop-items">
+            <button data-testid="buy-freeze" onClick={() => { const r = buyShopItem('freeze'); setNote(r === 'ok' ? 'Streak Freeze added! It saves your daily streak if you miss a day.' : r === 'full' ? `You can hold up to ${MAX_FREEZES} Streak Freezes.` : 'Not enough coins yet.'); }}
+              className="flex items-center justify-between gap-2 rounded-xl px-4 py-3 bg-[#121822] border border-[#243044] hover:border-[#7fdfff] text-left transition-all active:scale-95">
+              <span><span className="block text-white text-sm font-bold"><Snowflake className="inline w-4 h-4 text-[#7fdfff] mr-1" />Streak Freeze <span className="text-[#8ea0b8] font-normal">(you have {p.freezes ?? 0})</span></span><span className="block text-[#8ea0b8] text-xs">Keeps your daily streak alive for one missed day.</span></span>
+              <span className={`inline-flex items-center gap-1 text-sm font-bold ${p.coins >= FREEZE_PRICE ? 'text-[#ffd23a]' : 'text-[#5a6b80]'}`}><Coins className="w-4 h-4" />{FREEZE_PRICE}</span>
+            </button>
+            <button data-testid="buy-booster" onClick={() => { const r = buyShopItem('booster'); setNote(r === 'ok' ? `2x XP for ${BOOSTER_SECONDS / 60} more minutes of play!` : 'Not enough coins yet.'); }}
+              className="flex items-center justify-between gap-2 rounded-xl px-4 py-3 bg-[#121822] border border-[#243044] hover:border-[#00e5ff] text-left transition-all active:scale-95">
+              <span><span className="block text-white text-sm font-bold"><Sparkles className="inline w-4 h-4 text-[#00e5ff] mr-1" />XP Booster</span><span className="block text-[#8ea0b8] text-xs">{BOOSTER_SECONDS / 60} minutes of play count double.</span></span>
+              <span className={`inline-flex items-center gap-1 text-sm font-bold ${p.coins >= BOOSTER_PRICE ? 'text-[#ffd23a]' : 'text-[#5a6b80]'}`}><Coins className="w-4 h-4" />{BOOSTER_PRICE}</span>
+            </button>
+          </div>
+
           <div className="flex gap-2 mb-4">
             <button className={tabBtn(sub === 'skins')} onClick={() => setSub('skins')}>Skins / Characters</button>
             <button className={tabBtn(sub === 'capes')} onClick={() => setSub('capes')}>Capes</button>
@@ -2138,6 +2171,7 @@ function MainContent({
     <main className="flex-1 min-h-0 overflow-y-auto vb-scroll bg-[#0a0e14]">
       <div className={compact ? 'px-3 py-3' : 'px-8 py-6'}>
         {view === 'home' && compact && <MobileProfileBar username={username} onPlayNow={() => onPlaySurvival()} />}
+        {view === 'home' && <DailyBanner />}
         {view === 'home' && !compact && <DiscordBanner />}
         {view === 'home' && <HomeView username={username} onPlaySurvival={onPlaySurvival} savedWorlds={savedWorlds} onPlayWorld={onPlayWorld} onCreatePreset={onCreatePreset} onMinigame={onMinigame} counts={playingCounts} />}
         {view === 'shop' && <ShopView />}
@@ -2199,6 +2233,184 @@ function TouchSetting() {
 
 /** Your rank, whether you are a Rising Creator, and your plays: provided by App, read by the shop and the panels. */
 const StandingContext = createContext<{ rank: RankId; rising: boolean; tier: CreatorTier; isOwner: boolean; standing: Standing | null; signedIn: boolean }>({ rank: 'none', rising: false, tier: 'none', isOwner: false, standing: null, signedIn: false });
+
+// ---------------- Daily reward, lootboxes and loyalty rewards ----------------
+function lootText(r: LootResult): string {
+  if (r.kind === 'coins') return `${r.amount} coins`;
+  if (r.kind === 'freeze') return 'a Streak Freeze';
+  if (r.kind === 'booster') return `a ${r.seconds / 60} minute 2x XP Booster`;
+  if (r.kind === 'skin') return `the ${SKINS[r.id]?.name ?? r.id} skin${r.rare ? ' (RARE!)' : ''}`;
+  return `the ${CAPES[r.id]?.name ?? r.id} cape${r.rare ? ' (RARE!)' : ''}`;
+}
+
+/** The "your rank gift" panel: pick a free rank every 2 months, and a bigger one on your 1 year mark. */
+function LoyaltyPanel() {
+  const { signedIn } = useContext(StandingContext);
+  const [info, setInfo] = useState<LoyaltyInfo | null | 'none'>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [confirmSkip, setConfirmSkip] = useState(false);
+  const load = useCallback(() => { void fetchLoyalty().then((i) => setInfo(i ?? 'none')); }, []);
+  useEffect(() => { if (signedIn) load(); }, [signedIn, load]);
+  if (!signedIn) return <div className="rounded-xl border border-[#243044] bg-[#121822] p-3 text-xs text-[#8ea0b8]" data-testid="loyalty-signin">Sign in to your account to get free rank rewards: pick one after 1 month, then every 2 months, and a big one after 1 year.</div>;
+  if (info === null) return <div className="text-xs text-[#5a6b80]">Loading your loyalty rewards…</div>;
+  if (info === 'none') return null; // not set up on the server yet (vibeblox_round18.sql)
+  const due = pendingMilestones(info.createdAt, info.now, info.claimed);
+  const next = nextMilestone(info.createdAt, info.now, info.claimed);
+  async function take(month: number, choice: LoyaltyRank | 'skip') {
+    setBusy(true); setMsg(null);
+    const r = await claimLoyalty(month, choice);
+    setBusy(false); setConfirmSkip(false);
+    if (!r.ok) { setMsg(r.error); return; }
+    setMsg(r.outcome === 'skipped' ? 'Skipped.' : r.outcome === 'kept' ? 'You already have a better rank, so nothing changed.' : 'Your rank is on! It can take a moment to show.');
+    window.dispatchEvent(new CustomEvent('vb-standing-refresh'));
+    load();
+  }
+  if (!due.length) {
+    return <div className="rounded-xl border border-[#243044] bg-[#121822] p-3 text-xs text-[#8ea0b8]" data-testid="loyalty-next">Next free rank gift: {isYearMilestone(next.month) ? 'your 1 year gift' : `month ${next.month}`} in {next.inDays} day{next.inDays === 1 ? '' : 's'}.{msg && <span className="block mt-1 text-[#00e676]">{msg}</span>}</div>;
+  }
+  const m = due[0];
+  const year = isYearMilestone(m);
+  return (
+    <div className="rounded-xl border border-[#ffd23a]/50 bg-[#ffd23a]/5 p-3" data-testid="loyalty-due">
+      <div className="text-[#ffd23a] font-bold text-sm mb-1"><Crown className="inline w-4 h-4 mr-1" />{year ? 'Your 1 year gift!' : `Month ${m} gift!`}</div>
+      <p className="text-[#b8c4d4] text-xs mb-2">Pick a free rank. {year ? 'You have to pick one.' : 'You can say no thanks.'}{due.length > 1 ? ` (${due.length - 1} more waiting after this one)` : ''}</p>
+      <div className="grid gap-2 sm:grid-cols-3">
+        {LOYALTY_RANKS.map((r) => (
+          <button key={r} disabled={busy} data-testid={`loyalty-${r}`} onClick={() => void take(m, r)} className="rounded-lg py-2 px-2 text-xs font-bold bg-[#ffd23a] text-[#0a0e14] hover:scale-[1.03] active:scale-95 transition-all disabled:opacity-40">{loyaltyLabel(m, r)}</button>
+        ))}
+      </div>
+      {!year && (confirmSkip
+        ? <div className="mt-2 flex items-center gap-2 text-xs text-[#b8c4d4]">Really skip this gift? You won't get it back.
+            <button data-testid="loyalty-skip-yes" disabled={busy} onClick={() => void take(m, 'skip')} className="rounded-lg px-2 py-1 bg-[#ff5252] text-white font-bold">Yes, skip</button>
+            <button onClick={() => setConfirmSkip(false)} className="rounded-lg px-2 py-1 bg-[#1a2230] text-white">Keep choosing</button></div>
+        : <button data-testid="loyalty-skip" onClick={() => setConfirmSkip(true)} className="mt-2 text-xs text-[#8ea0b8] underline hover:text-white">No thanks</button>)}
+      {msg && <div className="mt-2 text-xs text-[#ff8a80]" data-testid="loyalty-msg">{msg}</div>}
+    </div>
+  );
+}
+
+function DailyRewardModal({ onClose }: { onClose: () => void }) {
+  const p = useProgress();
+  void p;
+  const { rank, isOwner } = useContext(StandingContext);
+  const adsFree = !adsAllowedFor(rank, isOwner); // a rank never sees an ad, so it just gets the 2x
+  const [adsOk, setAdsOk] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [grant, setGrant] = useState<DailyGrant | null>(null);
+  const [opened, setOpened] = useState<LootResult | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  useEffect(() => { if (ADS_POSSIBLE && !adsFree) void initAds().then(setAdsOk); }, [adsFree]);
+  const st = dailyStatus();
+  const done = st.canClaim ? st.cycleDay - 1 : st.streak > 0 ? ((st.streak - 1) % 7) + 1 : 0;
+  function take(double: boolean) {
+    const r = claimDaily(double);
+    if (!r.ok) { setNote('You already took today\'s reward.'); return; }
+    setGrant(r.grant);
+  }
+  async function takeWithAd() {
+    setBusy(true);
+    const ok = await triggerRewardedAd({
+      onStart: () => window.dispatchEvent(new CustomEvent('vb-ad', { detail: true })),
+      onEnd: () => window.dispatchEvent(new CustomEvent('vb-ad', { detail: false })),
+    });
+    setBusy(false);
+    if (!ok) { setNote("The ad didn't finish, so no 2x this time. You can still take the normal reward."); return; }
+    take(true);
+  }
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-3" data-testid="daily-modal" onClick={onClose}>
+      <div className="w-full max-w-lg max-h-[92vh] overflow-y-auto vb-scroll rounded-2xl bg-[#0f151e] border border-[#243044] p-5 vb-fade-in" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-[var(--font-retro)] text-white text-lg"><Gift className="inline w-5 h-5 text-[#ffd23a] mr-2" />DAILY REWARD</h2>
+          <button onClick={onClose} data-testid="daily-close" className="text-[#8ea0b8] hover:text-white text-sm px-2">Close</button>
+        </div>
+        <div className="flex flex-wrap gap-2 mb-3 text-xs">
+          <span className="rounded-lg bg-[#1a2230] px-2 py-1 text-white" data-testid="daily-streak">Streak: <b>{st.streak}</b> day{st.streak === 1 ? '' : 's'}</span>
+          <span className="rounded-lg bg-[#1a2230] px-2 py-1 text-[#8ea0b8]">Best: {st.best}</span>
+          <span className="rounded-lg bg-[#1a2230] px-2 py-1 text-[#7fdfff]" data-testid="daily-freezes"><Snowflake className="inline w-3.5 h-3.5 mr-1" />{st.freezes} freeze{st.freezes === 1 ? '' : 's'}</span>
+          <span className="rounded-lg bg-[#1a2230] px-2 py-1 text-[#ffd23a]" data-testid="daily-boxes"><Package className="inline w-3.5 h-3.5 mr-1" />{st.lootboxes} lootbox{st.lootboxes === 1 ? '' : 'es'}</span>
+        </div>
+        <div className="grid grid-cols-7 gap-1.5 mb-3" data-testid="daily-strip">
+          {DAILY_COINS.map((c, i) => {
+            const day = i + 1, isDone = day <= done, isToday = st.canClaim && day === st.cycleDay;
+            return (
+              <div key={day} data-testid={`daily-day-${day}`} className={`rounded-lg border p-1.5 text-center text-[10px] leading-tight ${isToday ? 'border-[#ffd23a] bg-[#ffd23a]/10 text-white' : isDone ? 'border-[#00e676]/50 bg-[#00e676]/10 text-[#00e676]' : 'border-[#243044] bg-[#121822] text-[#8ea0b8]'}`}>
+                <div className="font-bold">Day {day}</div>
+                <div className="mt-1">{day === 7 ? <Shirt className="inline w-4 h-4" /> : <Coins className="inline w-4 h-4" />}</div>
+                <div>{day === 7 ? 'Skin' : c}</div>
+                {DAILY_LOOTBOX_DAYS.includes(day) && <div className="text-[#ffd23a]">+box</div>}
+              </div>
+            );
+          })}
+        </div>
+        <p className="text-[#8ea0b8] text-[11px] mb-3">Come back every day to keep your streak. Day 7 gives a random skin you don't own yet ({WEEKLY_FALLBACK_COINS} coins if you own them all). Streak Freezes cover missed days automatically.</p>
+
+        {grant ? (
+          <div className="rounded-xl bg-[#00e676]/10 border border-[#00e676]/40 p-3 mb-3 text-sm text-white" data-testid="daily-result">
+            <div className="font-bold text-[#00e676] mb-1">Day {grant.cycleDay} reward{grant.doubled ? ' (2x!)' : ''} claimed!</div>
+            {grant.coins > 0 && <div>+{grant.coins} coins</div>}
+            {grant.skin && <div>New skin: <b>{SKINS[grant.skin]?.name ?? grant.skin}</b></div>}
+            {grant.lootboxes > 0 && <div>+{grant.lootboxes} lootbox{grant.lootboxes === 1 ? '' : 'es'}</div>}
+            {grant.freezesUsed > 0 && <div className="text-[#7fdfff]">{grant.freezesUsed} Streak Freeze{grant.freezesUsed === 1 ? '' : 's'} saved your streak.</div>}
+            {grant.streakLost && <div className="text-[#ff8a80]">You missed some days, so your streak started over.</div>}
+          </div>
+        ) : st.clockOff ? (
+          <div className="rounded-xl bg-[#ff5252]/10 border border-[#ff5252]/40 p-3 mb-3 text-xs text-[#ff8a80]">Your clock looks wrong (it is earlier than your last claim). Fix it to claim.</div>
+        ) : st.canClaim ? (
+          <div className="mb-3" data-testid="daily-claim-area">
+            {st.streakLost && <div className="mb-2 text-xs text-[#ff8a80]">You missed too many days, so your streak starts over today.</div>}
+            {st.freezesNeeded > 0 && <div className="mb-2 text-xs text-[#7fdfff]">Claiming uses {st.freezesNeeded} Streak Freeze{st.freezesNeeded === 1 ? '' : 's'} to keep your streak.</div>}
+            <div className="text-white text-sm mb-2">Today (day {st.cycleDay}): {st.preview.skin ? 'a random new skin' : `${st.preview.coins} coins`}{st.preview.lootboxes ? ` + ${st.preview.lootboxes} lootbox` : ''}</div>
+            {adsFree ? (
+              <button data-testid="daily-claim" onClick={() => take(true)} className="w-full rounded-xl py-3 font-bold text-sm bg-gradient-to-r from-[#ffd23a] to-[#ff9a1a] text-[#0a0e14] active:scale-95 transition-all">Claim 2x (rank bonus)</button>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                <button data-testid="daily-claim" onClick={() => take(false)} disabled={busy} className="rounded-xl py-3 font-bold text-sm bg-[#1a2230] text-white hover:bg-[#243044] active:scale-95 transition-all disabled:opacity-40">Claim</button>
+                <button data-testid="daily-claim-ad" onClick={() => void takeWithAd()} disabled={!adsOk || busy} className="rounded-xl py-3 font-bold text-sm bg-gradient-to-r from-[#ffd23a] to-[#ff9a1a] text-[#0a0e14] active:scale-95 transition-all disabled:opacity-40"><Tv className="inline w-4 h-4 mr-1" />{busy ? 'Playing ad…' : 'Watch ad for 2x'}</button>
+              </div>
+            )}
+            {!adsFree && !adsOk && <p className="mt-1 text-[11px] text-[#5a6b80]">2x needs an ad, and none is available right now. Ranks get 2x without ads.</p>}
+          </div>
+        ) : (
+          <div className="rounded-xl bg-[#121822] border border-[#243044] p-3 mb-3 text-sm text-[#b8c4d4]" data-testid="daily-done">You took today's reward. Come back tomorrow to keep your streak!</div>
+        )}
+        {note && <div className="mb-3 text-xs text-[#ff8a80]">{note}</div>}
+
+        <div className="rounded-xl bg-[#121822] border border-[#243044] p-3 mb-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-white text-sm font-bold"><Package className="inline w-4 h-4 text-[#ffd23a] mr-1" />Lootboxes: <span data-testid="box-count">{st.lootboxes}</span></div>
+            <button data-testid="open-box" disabled={st.lootboxes <= 0} onClick={() => setOpened(openLootbox())} className="rounded-lg px-3 py-1.5 text-xs font-bold bg-[#ffd23a] text-[#0a0e14] active:scale-95 transition-all disabled:opacity-40">Open one</button>
+          </div>
+          <p className="text-[#5a6b80] text-[11px] mt-1">You get 1-2 lootboxes for every level up. Inside: coins, Streak Freezes, XP Boosters, skins, and rarely a top skin.</p>
+          {opened && <div className="mt-2 rounded-lg bg-[#ffd23a]/10 border border-[#ffd23a]/40 px-3 py-2 text-sm text-white vb-fade-in" data-testid="box-result">You got {lootText(opened)}!</div>}
+        </div>
+        <LoyaltyPanel />
+      </div>
+    </div>
+  );
+}
+
+/** A banner on the Home screen: your streak, and whether today's reward is ready. Never opens by itself. */
+function DailyBanner() {
+  const p = useProgress();
+  void p;
+  const [open, setOpen] = useState(false);
+  const st = dailyStatus();
+  return (
+    <>
+      <button onClick={() => setOpen(true)} data-testid="daily-banner" className={`mb-4 w-full flex items-center gap-3 rounded-2xl px-4 py-3 text-left transition-all active:scale-[0.99] ${st.canClaim ? 'bg-gradient-to-r from-[#ffd23a]/25 to-[#ff9a1a]/15 border border-[#ffd23a]/60 hover:border-[#ffd23a]' : 'bg-[#121822] border border-[#243044] hover:border-[#3a4a63]'}`}>
+        <Gift className={`w-6 h-6 shrink-0 ${st.canClaim ? 'text-[#ffd23a]' : 'text-[#8ea0b8]'}`} />
+        <span className="flex-1 min-w-0">
+          <span className="block text-white text-sm font-bold">{st.canClaim ? 'Your daily reward is ready!' : 'Daily reward claimed'}</span>
+          <span className="block text-[#8ea0b8] text-xs">Streak {st.streak} day{st.streak === 1 ? '' : 's'}{st.lootboxes > 0 ? ` · ${st.lootboxes} lootbox${st.lootboxes === 1 ? '' : 'es'} to open` : ''}</span>
+        </span>
+        <span className={`rounded-lg px-3 py-1.5 text-xs font-bold ${st.canClaim ? 'bg-[#ffd23a] text-[#0a0e14]' : 'bg-[#1a2230] text-white'}`}>{st.canClaim ? 'Claim' : 'Open'}</span>
+      </button>
+      {open && <DailyRewardModal onClose={() => setOpen(false)} />}
+    </>
+  );
+}
 
 /** The creators with the most plays; refreshes once a minute while it is on screen. */
 function useLeaderboard(limit: number): LeaderRow[] | null {
@@ -4399,7 +4611,7 @@ function MinigameHud({ view, onPlayAgain, onExit, isHost = false, onStartMatch, 
   useEffect(() => { if (view.phase === 'countdown') setWatching(false); }, [view.phase]);
   // Online: the host starts the match (G, or the button)
   const teamsWithPlayers = view.teams.filter((t) => t.alive > 0 || t.you).length;
-  const canStart = !!view.online && isHost && (view.phase === 'waiting' || view.phase === 'over') && teamsWithPlayers >= 2;
+  const canStart = !!view.online && !view.auto && isHost && (view.phase === 'waiting' || view.phase === 'over') && teamsWithPlayers >= 2;
   useEffect(() => {
     if (!canStart || !onStartMatch) return;
     const k = (e: KeyboardEvent) => { if (e.code === 'KeyG' && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLTextAreaElement)) onStartMatch(); };
@@ -4433,7 +4645,30 @@ function MinigameHud({ view, onPlayAgain, onExit, isHost = false, onStartMatch, 
         )}
         {view.message && <div className="bg-black/60 text-white text-sm font-bold px-3 py-1 rounded-md vb-fade-in" data-testid="minigame-message">{view.message}</div>}
       </div>
-      {view.online && view.phase === 'waiting' && (
+      {view.online && view.auto && view.phase === 'waiting' && (
+        <div className="absolute top-28 left-1/2 -translate-x-1/2 z-[24] w-[340px] max-w-[92vw] rounded-2xl bg-black/65 border border-white/15 p-4 text-center vb-fade-in pointer-events-none" data-testid="match-auto-wait">
+          {view.auto.starts > 0 ? (
+            <>
+              <div className="text-white/70 text-xs mb-1">Game starting in</div>
+              <div className="font-[var(--font-retro)] text-[#ffe066] text-5xl" data-testid="match-auto-timer">{view.auto.starts}</div>
+              <div className="text-white/50 text-[11px] mt-1">{view.auto.players}/{view.auto.max} players{view.auto.players < view.auto.max ? ' · it starts in 5 seconds once the lobby is full' : ''}</div>
+            </>
+          ) : (
+            <>
+              <div className="text-white font-bold mb-1">Waiting for players…</div>
+              <div className="text-white/60 text-xs" data-testid="match-auto-need">{view.auto.players}/{view.auto.min} players needed to start</div>
+            </>
+          )}
+        </div>
+      )}
+      {view.you.respawnIn > 0 && !view.you.out && (
+        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center pointer-events-none" data-testid="respawn-overlay">
+          <div className="text-white/80 text-sm font-bold tracking-wide drop-shadow">YOU DIED</div>
+          <div key={view.you.respawnIn} className="font-[var(--font-retro)] text-white text-6xl drop-shadow-[0_4px_0_rgba(0,0,0,0.7)] vb-fade-in" data-testid="respawn-count">{view.you.respawnIn}</div>
+          <div className="text-white/70 text-xs mt-1">Respawning…</div>
+        </div>
+      )}
+      {view.online && !view.auto && view.phase === 'waiting' && (
         <div className="absolute top-28 left-1/2 -translate-x-1/2 z-[24] w-[340px] max-w-[92vw] rounded-2xl bg-black/65 border border-white/15 p-4 text-center vb-fade-in" data-testid="match-waiting">
           <div className="text-white font-bold mb-1">Waiting for players</div>
           <p className="text-white/60 text-xs mb-3">{view.teams.filter((t) => t.alive > 0 || t.you).length < 2 ? 'At least two teams need players. Others join from the Servers page.' : isHost ? 'Everyone ready? Start the game.' : 'The host starts the game when everyone is in.'}{typeof waitingFor === 'number' ? ` (${waitingFor} here)` : ''}</p>
@@ -4455,7 +4690,7 @@ function MinigameHud({ view, onPlayAgain, onExit, isHost = false, onStartMatch, 
             <p className="text-white text-sm mb-1">{view.result.text}</p>
             <p className="text-[#5a6b80] text-xs mb-5">Kills {view.you.kills} · Deaths {view.you.deaths} · {mins}:{String(secs).padStart(2, '0')}</p>
             {view.online ? (
-              <p className="text-[#8ea0b8] text-xs mb-4" data-testid="match-next">{isHost ? 'Start the next game when everyone is ready.' : 'The host can start another game in a moment.'}</p>
+              <p className="text-[#8ea0b8] text-xs mb-4" data-testid="match-next">{view.auto ? 'A new game starts by itself when enough players are in.' : isHost ? 'Start the next game when everyone is ready.' : 'The host can start another game in a moment.'}</p>
             ) : <>
             <p className="text-[#8ea0b8] text-xs mb-2">Bots for the next game</p>
             <div className="grid grid-cols-3 gap-2 mb-4">
@@ -4465,7 +4700,7 @@ function MinigameHud({ view, onPlayAgain, onExit, isHost = false, onStartMatch, 
             </div>
             </>}
             <div className="flex gap-2">
-              {(!view.online || isHost) && <button onClick={() => (view.online ? onStartMatch?.() : onPlayAgain(diff))} disabled={!!view.online && !canStart} data-testid="play-again" className="flex-1 py-3 rounded-xl bg-[#00e676] text-[#0a0e14] font-bold text-sm hover:brightness-110 active:scale-95 disabled:opacity-40">Play again</button>}
+              {(!view.online || (isHost && !view.auto)) && <button onClick={() => (view.online ? onStartMatch?.() : onPlayAgain(diff))} disabled={!!view.online && !canStart} data-testid="play-again" className="flex-1 py-3 rounded-xl bg-[#00e676] text-[#0a0e14] font-bold text-sm hover:brightness-110 active:scale-95 disabled:opacity-40">Play again</button>}
               <button onClick={onExit} className="flex-1 py-3 rounded-xl bg-[#121822] border border-[#243044] text-white font-bold text-sm hover:border-[#3a4a60] active:scale-95">Back to menu</button>
             </div>
             {view.phase !== 'over' && <button onClick={() => setWatching(true)} className="mt-3 text-[#8ea0b8] text-xs hover:text-white underline">Keep watching</button>}
@@ -5333,7 +5568,8 @@ export default function App() {
     const load = () => { void fetchStanding(account.username).then((st) => { if (alive) setStanding(st); }); };
     load();
     const timer = window.setInterval(load, 5 * 60_000);
-    return () => { alive = false; window.clearInterval(timer); };
+    window.addEventListener('vb-standing-refresh', load);
+    return () => { alive = false; window.clearInterval(timer); window.removeEventListener('vb-standing-refresh', load); };
   }, [account?.username]);
   const [authWaitOver, setAuthWaitOver] = useState(false);
   const [unread, setUnread] = useState<Record<string, number>>({});
@@ -5364,7 +5600,7 @@ export default function App() {
   const minigameSizeRef = useRef<MinigameSize>('solo');
   // Online EggWars / Bridge Duels: which arena map, whether you host or joined, and how the match stands
   const arenaVariantRef = useRef<number | undefined>(undefined);
-  const onlineMgRef = useRef<{ host: boolean; kind: ArenaKind; size: MinigameSize } | null>(null);
+  const onlineMgRef = useRef<{ host: boolean; kind: ArenaKind; size: MinigameSize; auto?: boolean } | null>(null);
   const [match, setMatch] = useState<NetMatch | null>(null);
   const matchRef = useRef<NetMatch | null>(null);
   const memberTeamsRef = useRef<Record<number, number>>({});
@@ -5601,7 +5837,7 @@ export default function App() {
   // ---- Progression: XP for active play, level-ups, ads, cosmetics ----
   const progress = useProgress();
   const lastInputRef = useRef(Date.now());
-  const [levelToast, setLevelToast] = useState<{ level: number; coins: number } | null>(null);
+  const [levelToast, setLevelToast] = useState<{ level: number; coins: number; lootboxes: number } | null>(null);
   useEffect(() => {
     // "Active" means you've touched the keyboard, mouse or screen in the last 2 minutes
     const poke = () => { lastInputRef.current = Date.now(); };
@@ -5609,9 +5845,9 @@ export default function App() {
     for (const e of evs) window.addEventListener(e, poke, { passive: true });
     return () => { for (const e of evs) window.removeEventListener(e, poke); };
   }, []);
-  useEffect(() => onLevelUp((level, coins) => {
+  useEffect(() => onLevelUp((level, coins, lootboxes) => {
     gameHandleRef.current?.script.playSound('ding');
-    setLevelToast({ level, coins });
+    setLevelToast({ level, coins, lootboxes });
   }), []);
   useEffect(() => {
     if (!levelToast) return;
@@ -5975,10 +6211,11 @@ export default function App() {
         const mp = mpRef.current;
         if (!mp) return;
         if (e.type === 'died') mp.sendMatchDied(e.by);
+        else if (e.type === 'out') mp.sendMatchOut();
         else if (e.type === 'egg') mp.sendMatchEgg(e.team);
         else mp.sendMatchGoal(e.team);
       });
-      handle.onPvpHit((id, dmg, kx, kz) => mpRef.current?.sendHit(id, dmg, kx, kz));
+      handle.onPvpHit((id, dmg, kx, kz, bow) => mpRef.current?.sendHit(id, dmg, kx, kz, bow));
       if (onlineMgRef.current?.host) window.setTimeout(() => { if (gameHandleRef.current === handle) void startMatchHostingRef.current(); }, 600);
       // Advancements belong to this planet; whatever you already hold on load is granted quietly
       advRef.current = loadAdvancements(activeWorldIdRef.current);
@@ -5996,6 +6233,7 @@ export default function App() {
       applyRules(handle);
       setWeather(handle.getWeather());
       handle.onWeatherChange((k) => setWeather(k));
+      handle.onSelectedSlotChange((i) => setSelectedSlot(i));
       handle.onTrade((t) => {
         if (!t) { if (tradingRef.current) closeTrade(); return; } // the inventory key closed the shop
         tradingRef.current = true;
@@ -6619,6 +6857,7 @@ export default function App() {
       phase: m.phase, left: m.left, round: m.round, winner: m.winner,
       teams: m.teams.map((t, i) => ({ score: t.score, egg: t.egg, out: t.out, players: m.members.filter(([, team]) => team === i).length, alive: m.members.filter(([, team, out]) => team === i && !out).length })),
       myTeam: mine ? mine[1] : -1, out: mine ? mine[2] : true, kills: mine ? mine[3] : 0, deaths: mine ? mine[4] : 0,
+      auto: m.auto ? { starts: m.starts ?? 0, min: m.min ?? 2 } : undefined,
     });
     // you may hit players of the other teams
     const myTeam = mine ? mine[1] : -1;
@@ -6643,27 +6882,28 @@ export default function App() {
     if (!mpMod || !hMod) { pushMessage("Online games aren't installed in this copy of the game.", '#ff9a3c'); return; }
     if (gameHandleRef.current !== h || hostingRef.current || mpRef.current) return;
     const kind = online.kind;
-    const teamSize = MINIGAME_SIZES[online.size] ?? 1;
+    const auto = !!online.auto;
+    const teamSize = auto ? 1 : MINIGAME_SIZES[online.size] ?? 1;
     const teams = kind === 'bridge' ? 2 : 4;
     const id = hMod.randomId(16);
-    const name = `${me.username}'s ${kind === 'bridge' ? 'Bridge Duel' : 'EggWars'}`;
+    const name = auto ? `EggWars (${me.username})` : `${me.username}'s ${kind === 'bridge' ? 'Bridge Duel' : 'EggWars'}`;
     const room = new hMod.HostRoom({
       seed: activeSeedRef.current, worldType: kind, mode: 'survival', changes: [], time: 0.3, weather: 'clear',
       settings: { ...DEFAULT_SERVER, difficulty: 'normal', keepInventory: false, scripts: false, mods: false, commands: false, pvp: true },
       ranks: fakeRanksRef.current, experimental: false, privacy: 'public', hostName: me.username, maxPlayers: teams * teamSize, bans: [],
-      game: { kind, variant: arenaVariantRef.current ?? 0, teams, teamSize, winScore: kind === 'bridge' ? 5 : 1 },
+      game: { kind, variant: arenaVariantRef.current ?? 0, teams, teamSize, winScore: kind === 'bridge' ? 5 : 1, ...(auto ? { auto: true, minPlayers: 2 } : {}) },
       services: roomServices(me),
       ...anticheatOptions(name),
       onCount: (n: number) => { setHostingInfo((x) => (x ? { ...x, players: n } : x)); publishHosting(); },
     });
     const peer = new hMod.PeerHost(id, signalingFor(hMod), room);
     hostingRef.current = { id, room, peer, worldId: '', privacy: 'public', name, mode: 'survival', worldType: kind, max: teams * teamSize, timer: 0,
-      description: kind === 'bridge' ? `Bridge Duels, ${online.size}. First to 5 goals.` : `EggWars, ${online.size}. Protect your egg!`, image: kind === 'bridge' ? '/images/bridgeduels-bg.jpg' : '/images/eggwars-bg.jpg' };
+      description: auto ? 'Auto EggWars: starts by itself when players join.' : kind === 'bridge' ? `Bridge Duels, ${online.size}. First to 5 goals.` : `EggWars, ${online.size}. Protect your egg!`, image: kind === 'bridge' ? '/images/bridgeduels-bg.jpg' : '/images/eggwars-bg.jpg' };
     joinedAddressRef.current = 'p2p:' + id;
     connectWith((mpMod as { MultiplayerClient: new () => MpClient }).MultiplayerClient, undefined, { hostSocket: hMod.loopback(room) });
     setHostingInfo({ privacy: 'public', players: 1 });
     peer.start().then(() => {
-      if (hostingRef.current?.id === id) pushMessage('Your match is open! Players can join from the Servers page. Press Start when everyone is in.', '#7cfc7c');
+      if (hostingRef.current?.id === id) pushMessage(auto ? 'Looking for players… the game starts by itself when enough players join.' : 'Your match is open! Players can join from the Servers page. Press Start when everyone is in.', '#7cfc7c');
     }).catch(() => {
       if (hostingRef.current?.id === id) pushMessage("Couldn't open your match to other players right now (the matchmaking service didn't answer).", '#ff9a3c');
     });
@@ -8081,8 +8321,17 @@ export default function App() {
   function handlePlayMinigame(kind: ArenaKind, difficulty: BotDifficulty, size: MinigameSize = 'solo', online?: MinigameOnline) {
     if (online && 'join' in online) { friendJoinErrorRef.current = false; joinServer('p2p:' + online.join, online.hostName); return; }
     if (online && (!account || isGuestName(account.username))) { setShowModal(true); return; } // hosting needs an account (others check who you are)
+    if (online && 'find' in online) {
+      // EggWars matchmaking: join the fullest open automatic match, or open one yourself (it starts by itself when players arrive)
+      void listHostedWorlds().then((r) => {
+        const open = r.ok ? r.worlds.filter((w) => w.worldType === kind && w.players < w.max && (w.description ?? '').startsWith('Auto ')).sort((a, b) => b.players - a.players) : [];
+        if (open.length) { friendJoinErrorRef.current = false; joinServer('p2p:' + open[0].id, open[0].host); }
+        else handlePlayMinigame(kind, 'normal', 'solo', { host: true, auto: true });
+      });
+      return;
+    }
     if (!startGuard()) return;
-    onlineMgRef.current = online ? { host: true, kind, size } : null;
+    onlineMgRef.current = online ? { host: true, kind, size, auto: !!(online as { auto?: boolean }).auto } : null;
     arenaVariantRef.current = online ? Math.floor(Math.random() * 1000) : undefined;
     matchRef.current = null;
     setMatch(null);
@@ -8361,14 +8610,14 @@ export default function App() {
         )}
         {!showMenu && trading && (
           <TradeOverlay trade={trading} inventory={inventory} note={tradeNote} onClose={closeTrade}
-            onTrade={(i) => { const r = gameHandleRef.current?.trade(trading.id, i); setTradeNote(r === 'missing' ? "You don't have what this trade needs." : r === 'gone' ? 'The villager walked away.' : null); if (r === 'gone') closeTrade(); }} />
+            onTrade={(i) => { const r = gameHandleRef.current?.trade(trading.id, i); setTradeNote(r === 'missing' ? "You don't have what this trade needs." : r === 'worn' ? 'You are already wearing that.' : r === 'gone' ? 'The villager walked away.' : null); if (r === 'gone') closeTrade(); }} />
         )}
         {!showMenu && cmdBlock && <CommandBlockPanel key={cmdBlock.key} info={cmdBlock} onDone={(cfg) => closeCommandBlock(cfg)} onCancel={() => closeCommandBlock()} />}
         {!showMenu && levelToast && (
           <div className="absolute top-24 left-1/2 -translate-x-1/2 z-30 pointer-events-none vb-fade-in text-center">
             <div className="font-[var(--font-retro)] text-[#ffd23a] text-2xl drop-shadow-[0_3px_0_rgba(0,0,0,0.7)]">LEVEL UP!</div>
             <div className="mt-1 inline-flex items-center gap-2 rounded-full bg-black/60 px-4 py-1.5 text-white text-sm font-bold">
-              Level {levelToast.level} <Coins className="w-4 h-4 text-[#ffd23a]" /> +{levelToast.coins} coins
+              Level {levelToast.level} <Coins className="w-4 h-4 text-[#ffd23a]" /> +{levelToast.coins} coins{levelToast.lootboxes > 0 && <><Package className="w-4 h-4 text-[#ffd23a]" /> +{levelToast.lootboxes} lootbox{levelToast.lootboxes === 1 ? '' : 'es'}</>}
             </div>
           </div>
         )}
