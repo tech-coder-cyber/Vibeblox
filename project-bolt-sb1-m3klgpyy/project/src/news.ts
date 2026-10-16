@@ -1,10 +1,31 @@
-// What's new. Add a new entry at the TOP of NEWS (and bump GAME_VERSION) with every update;
-// the News page in the sidebar shows this list, and a dot appears on it until the newest one has been read.
-export const GAME_VERSION = 26;
+// What's new. Versions are called "Indev N" (the game isn't finished yet). Add a new entry at the TOP of NEWS (and bump GAME_VERSION) with every update;
+// a small update to the current one is a point release (Indev 26.1, 26.2...), a big one is the next number.
+//
+// The News page in the sidebar shows this list, and a dot appears on it until the newest one has been read.
+export const GAME_VERSION = 26.1;
 
 export type NewsEntry = { version: number; date: string; title: string; changes: string[] };
 
 export const NEWS: NewsEntry[] = [
+  {
+    version: 26.1,
+    date: 'October 15, 2026',
+    title: 'Indev versions, Bridge Duels matchmaking, skyblock and fixes',
+    changes: [
+      'All versions now start with "Indev" because the game isn\'t finished: this is Indev 26.1, a small update on top of Indev 26.',
+      'Bridge Duels has "Find a match" like EggWars: press it and you are put in a 1v1 with another player, no hosting needed.',
+      'Players, bots and mobs can no longer hit you through walls, and you can\'t hit them through walls either.',
+      'New sword poses: the sword is held at a new angle in first person, blocking holds it across your chest, and other players see a proper holding pose in third person.',
+      'Hold F3 and press F4 to open the gamemode switcher. Keep pressing F4 to cycle spectator, adventure, survival and creative, then let go of F3 to switch (same rules as /gamemode).',
+      'Creative flight: Shift now flies fast, Alt flies down (Alt is crouch).',
+      'World types now depend on the gamemode. Adventure and Creative: default, superflat or void. Survival: oneblock, default or skyblock. Skyblock has floating islands, a starter island with a tree and a chest with the basics for a cobblestone generator.',
+      'Scripts can be renamed (double-click the name or press the pencil).',
+      'Usernames can\'t have spaces anymore (letters, numbers and _ only).',
+      'Guest accounts can play but can\'t make worlds, level up, use the Shop or Social. Those are greyed out until you sign in.',
+      'Owners and admins can unban players: /pardon <name> or the new Banned players list in Manage Server.',
+      'Daily reward opens by itself when you open VibeBlox (only if you haven\'t claimed it today). The banner at the top is gone and lootboxes are opened from the profile panel on the right.',
+    ],
+  },
   {
     version: 26,
     date: 'October 15, 2026',

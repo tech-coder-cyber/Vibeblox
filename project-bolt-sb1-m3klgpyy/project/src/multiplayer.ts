@@ -251,7 +251,7 @@ export class MultiplayerClient {
   /** You ran out of respawns (your egg broke while you were waiting to come back) */
   sendMatchOut() { this.send({ t: 'mgOut' }); }
   /** Admin panel actions. The server checks the token with Supabase before doing anything. */
-  sendAdmin(token: string, action: 'check' | 'players' | 'kick' | 'ban' | 'gamemode', extra: { name?: string; mode?: string } = {}) {
+  sendAdmin(token: string, action: 'check' | 'players' | 'kick' | 'ban' | 'unban' | 'bans' | 'gamemode', extra: { name?: string; mode?: string } = {}) {
     this.send({ t: 'admin', token, action, ...extra });
   }
 

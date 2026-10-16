@@ -186,7 +186,7 @@ type MpClient = {
   sendWhisper(to: string, text: string): void;
   sendTitle(to: string, text: string, sub?: string): void;
   sendRanks(ranks: unknown): void;
-  sendAdmin(token: string, action: 'check' | 'players' | 'kick' | 'ban' | 'gamemode', extra?: { name?: string; mode?: string }): void;
+  sendAdmin(token: string, action: 'check' | 'players' | 'kick' | 'ban' | 'unban' | 'bans' | 'gamemode', extra?: { name?: string; mode?: string }): void;
   disconnect(): void;
 };
 
@@ -412,9 +412,13 @@ function DiscordBanner() {
 }
 
 const NEWS_SEEN_KEY = 'vibeblox-news-seen';
-function readNewsSeen(): number { try { return parseInt(localStorage.getItem(NEWS_SEEN_KEY) ?? '0', 10) || 0; } catch { return 0; } }
+function readNewsSeen(): number { try { return parseFloat(localStorage.getItem(NEWS_SEEN_KEY) ?? '0') || 0; } catch { return 0; } }
+/** Guests can play, but there are no saved worlds, no levels or shop and no social for them: sign in to unlock them. */
+const GUEST_LOCKED: View[] = ['social', 'shop', 'planets', 'create-world'];
 function Sidebar({ username, view, onNavClick, socialBadge = 0, compact = false }: { username: string; view: View; onNavClick: (v: View) => void; socialBadge?: number; compact?: boolean }) {
   useLanguage();
+  const { guest } = useContext(StandingContext);
+  const locked = (v: View | undefined) => !!guest && !!v && GUEST_LOCKED.includes(v);
   const initial = username ? username.charAt(0).toUpperCase() : 'P';
   const [seen, setSeen] = useState(readNewsSeen);
   useEffect(() => { if (view === 'news') { try { localStorage.setItem(NEWS_SEEN_KEY, String(GAME_VERSION)); } catch { /* private window */ } setSeen(GAME_VERSION); } }, [view]);
@@ -422,8 +426,8 @@ function Sidebar({ username, view, onNavClick, socialBadge = 0, compact = false 
   if (compact) {
     // Phones: a row of tabs along the bottom of the screen
     const tab = (key: string, active: boolean, onClick: () => void, Icon: typeof Home, label: string, badge?: ReactNode) => (
-      <button key={key} onClick={onClick} data-testid={`mnav-${key}`}
-        className={`relative shrink-0 min-w-[52px] h-12 px-1 rounded-xl flex flex-col items-center justify-center text-[9px] transition-colors ${active ? 'bg-[#00e676]/15 text-[#00e676]' : 'text-[#8ea0b8] active:bg-[#1a2230]'}`}>
+      <button key={key} onClick={onClick} data-testid={`mnav-${key}`} disabled={locked(key as View)} title={locked(key as View) ? 'Sign in to use this' : undefined}
+        className={`relative shrink-0 min-w-[52px] h-12 px-1 rounded-xl flex flex-col items-center justify-center text-[9px] transition-colors ${locked(key as View) ? 'opacity-30 cursor-not-allowed' : active ? 'bg-[#00e676]/15 text-[#00e676]' : 'text-[#8ea0b8] active:bg-[#1a2230]'}`}>
         <Icon className="w-5 h-5 mb-0.5" />{label}{badge}
       </button>
     );
@@ -432,7 +436,7 @@ function Sidebar({ username, view, onNavClick, socialBadge = 0, compact = false 
         {navItems.filter((it) => it.view).map((item) => tab(item.view!, item.view === view, () => onNavClick(item.view!), item.icon, t('nav.' + item.view),
           item.view === 'social' && socialBadge > 0 ? <span data-testid="social-badge" className="absolute top-0 right-1 min-w-[16px] h-[16px] px-1 rounded-full bg-[#ff5252] text-white text-[9px] font-bold flex items-center justify-center">{socialBadge > 9 ? '9+' : socialBadge}</span> : undefined))}
         {tab('news', view === 'news', () => onNavClick('news'), Newspaper, t('nav.news'), newsUnread && view !== 'news' ? <span data-testid="news-dot" className="absolute top-1 right-2 w-2 h-2 rounded-full bg-[#ff5252]" /> : undefined)}
-        <span data-testid="game-version" className="sr-only">v{GAME_VERSION}</span>
+        <span data-testid="game-version" className="sr-only">Indev {GAME_VERSION}</span>
       </nav>
     );
   }
@@ -446,8 +450,11 @@ function Sidebar({ username, view, onNavClick, socialBadge = 0, compact = false 
           return (
             <button
               key={item.label}
+              data-testid={item.view ? `nav-${item.view}` : undefined}
+              disabled={locked(item.view)}
+              title={locked(item.view) ? 'Sign in to use this' : undefined}
               onClick={() => { if (item.href === 'discord') window.open(DISCORD_INVITE_URL, '_blank', 'noopener,noreferrer'); else if (item.view) onNavClick(item.view); }}
-              className={`relative w-12 h-12 rounded-xl flex flex-col items-center justify-center text-[8px] transition-all duration-200 ease-out hover:scale-110 active:scale-95 ${
+              className={`relative w-12 h-12 rounded-xl flex flex-col items-center justify-center text-[8px] transition-all duration-200 ease-out ${locked(item.view) ? 'opacity-30 cursor-not-allowed' : 'hover:scale-110 active:scale-95'} ${
                 isActive
                   ? 'bg-[#00e676]/15 text-[#00e676]'
                   : 'text-[#5a6b80] hover:text-white hover:bg-[#1a2230]'
@@ -483,7 +490,7 @@ function Sidebar({ username, view, onNavClick, socialBadge = 0, compact = false 
         <Newspaper className="w-5 h-5 mb-0.5" />{t('nav.news')}
         {newsUnread && view !== 'news' && <span data-testid="news-dot" className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-[#ff5252]" />}
       </button>
-      <div data-testid="game-version" className="text-[9px] text-[#5a6b80] mt-1">v{GAME_VERSION}</div>
+      <div data-testid="game-version" className="text-[9px] text-[#5a6b80] mt-1">Indev {GAME_VERSION}</div>
     </nav>
   );
 }
@@ -757,7 +764,7 @@ function PlanetsView({ savedWorlds, limit, onPlayWorld, onCreate, onDelete }: { 
             return (
               <div key={key} className="group rounded-2xl border border-[#243044] bg-[#121822] overflow-hidden hover:border-[#00e676]/60 transition-all" data-testid="planet-card">
                 <div className="h-28 bg-cover bg-center relative" style={{ backgroundImage: `url(${world.image || '/images/survival-bg.jpg'}), linear-gradient(135deg, #0e4f6e, #121822)` }}>
-                  <span className="absolute top-2 left-2 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-black/60 text-white">{world.mode}{world.worldType === 'superflat' ? ' · flat' : world.worldType === 'oneblock' ? ' · oneblock' : ''}</span>
+                  <span className="absolute top-2 left-2 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-black/60 text-white">{world.mode}{world.worldType === 'superflat' ? ' · flat' : world.worldType === 'oneblock' ? ' · oneblock' : world.worldType === 'skyblock' ? ' · skyblock' : world.worldType === 'void' ? ' · void' : ''}</span>
                   {world.experimental && <span className="absolute top-2 right-2 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-[#ffb347] text-[#0a0e14]" data-testid="experimental-badge">Experimental</span>}
                 </div>
                 <div className="p-4">
@@ -851,7 +858,11 @@ function MinigamePicker({ kind, onPlay, onClose, onHost, onJoin, onFind }: { kin
         ) : (
         <div className="rounded-xl border border-[#7c4dff]/40 bg-[#7c4dff]/5 p-4" data-testid="play-online">
           <div className="flex items-center gap-2 mb-1"><Users className="w-4 h-4 text-[#b39dff]" /><span className="text-white font-bold text-sm">Play against players</span></div>
-          <p className="text-[#5a6b80] text-xs mb-3">Real players, real teams. Join an open match, or host your own and start it when everyone is in.</p>
+          <p className="text-[#5a6b80] text-xs mb-3">Find a 1v1 right away (it starts 5 seconds after someone joins), join an open match, or host your own and start it when everyone is in.</p>
+          <button onClick={() => onFind?.()} disabled={!onFind} data-testid="find-game"
+            className="w-full py-3 mb-3 rounded-xl bg-[#00e5ff] text-[#0a0e14] font-bold text-sm hover:brightness-110 active:scale-95 transition-all disabled:opacity-40">
+            {summary.signedIn ? 'Find a match' : 'Sign in to find a match'}
+          </button>
           <div className="flex flex-col gap-1.5 mb-3 max-h-40 overflow-y-auto vb-scroll" data-testid="open-matches">
             {open === null && <p className="text-[#5a6b80] text-xs">Looking for matches…</p>}
             {open !== null && !open.length && <p className="text-[#5a6b80] text-xs" data-testid="no-matches">No open matches right now. Host one!</p>}
@@ -1016,6 +1027,12 @@ const modeLabels: Record<WorldMode, string> = {
   adventure: 'Adventure',
   hardcore: 'Hardcore',
 };
+/** Like Minecraft: what you can make depends on the game mode. */
+const WORLD_TYPES_FOR_MODE: Record<WorldMode, WorldType[]> = {
+  survival: ['oneblock', 'default', 'skyblock'], hardcore: ['oneblock', 'default', 'skyblock'],
+  creative: ['default', 'superflat', 'void'], adventure: ['default', 'superflat', 'void'],
+};
+function fixWorldType(mode: WorldMode, type: WorldType): WorldType { return WORLD_TYPES_FOR_MODE[mode].includes(type) ? type : 'default'; }
 function CreateWorldView({ onSave, onBack, used, limit, initialMode = 'survival', initialType = 'default' }: {
   onSave: (config: WorldConfig) => void;
   onBack: () => void;
@@ -1026,7 +1043,7 @@ function CreateWorldView({ onSave, onBack, used, limit, initialMode = 'survival'
 }) {
   const [worldName, setWorldName] = useState('');
   const [selectedMode, setSelectedMode] = useState<WorldMode>(initialMode);
-  const [selectedType, setSelectedType] = useState<WorldType>(initialType);
+  const [selectedType, setSelectedType] = useState<WorldType>(() => fixWorldType(initialMode, initialType));
   const [seedText, setSeedText] = useState('');
   const [customImage, setCustomImage] = useState<string | null>(null);
   const [difficulty, setDifficulty] = useState<Difficulty>('normal');
@@ -1148,7 +1165,7 @@ function CreateWorldView({ onSave, onBack, used, limit, initialMode = 'survival'
                 return (
                   <button
                     key={mode}
-                    onClick={() => setSelectedMode(mode)}
+                    onClick={() => { setSelectedMode(mode); setSelectedType((ty) => fixWorldType(mode, ty)); }}
                     className={`vb-mode-card group relative rounded-xl overflow-hidden border-2 text-left ${
                       isSelected
                         ? 'border-[#00e676] ring-2 ring-[#00e676]/30 scale-[1.02]'
@@ -1187,11 +1204,13 @@ function CreateWorldView({ onSave, onBack, used, limit, initialMode = 'survival'
               <h2 className="font-[var(--font-display)] text-white text-sm tracking-wide">WORLD TYPE</h2>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {([
-                ['default', 'Default', 'Hills, biomes, caves, ores and trees'],
-                ['superflat', 'Superflat', 'Completely flat grass, perfect for building'],
-                ['oneblock', t('create.oneblock'), t('create.oneblockDesc')],
-              ] as const).map(([value, label, desc]) => {
+              {WORLD_TYPES_FOR_MODE[selectedMode].map((ty): [WorldType, string, string] => (
+                ty === 'default' ? ['default', 'Default', 'Hills, biomes, caves, ores and trees']
+                : ty === 'superflat' ? ['superflat', 'Superflat', 'Completely flat grass, perfect for building']
+                : ty === 'void' ? ['void', 'Void', 'Nothing at all but a small platform to stand on']
+                : ty === 'skyblock' ? ['skyblock', 'Skyblock', 'Floating islands in the sky. You start on a small island with a tree and a chest of basics']
+                : ['oneblock', t('create.oneblock'), t('create.oneblockDesc')]
+              )).map(([value, label, desc]) => {
                 const isSelected = selectedType === value;
                 return (
                   <button
@@ -1316,7 +1335,7 @@ function CreateWorldView({ onSave, onBack, used, limit, initialMode = 'survival'
                 </h3>
                 <p className="text-[#5a6b80] text-xs mt-1 flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-[#00e676] animate-pulse" />
-                  {modeLabels[selectedMode]}{selectedType === 'superflat' ? ' · Superflat' : ''} · Just created
+                  {modeLabels[selectedMode]}{selectedType === 'superflat' ? ' · Superflat' : selectedType === 'void' ? ' · Void' : selectedType === 'skyblock' ? ' · Skyblock' : ''} · Just created
                 </p>
               </div>
             </div>
@@ -1835,13 +1854,13 @@ function NewsView() {
       <div className="max-w-3xl mx-auto">
         <div className="flex items-end justify-between mb-6">
           <h1 className="font-[var(--font-retro)] text-white text-3xl">{t('news.title')}</h1>
-          <span className="text-[#5a6b80] text-sm">You are on version {GAME_VERSION}</span>
+          <span className="text-[#5a6b80] text-sm">You are on Indev {GAME_VERSION}</span>
         </div>
         <div className="flex flex-col gap-4">
           {NEWS.map((n, i) => (
             <article key={n.version} className="bg-[#111923] border border-[#243044] rounded-xl p-5" data-testid={`news-${n.version}`}>
               <div className="flex items-center gap-3 mb-1">
-                <span className="px-2 py-0.5 rounded-md bg-[#00e676] text-[#0a0e14] text-xs font-bold">v{n.version}</span>
+                <span className="px-2 py-0.5 rounded-md bg-[#00e676] text-[#0a0e14] text-xs font-bold">Indev {n.version}</span>
                 {i === 0 && <span className="px-2 py-0.5 rounded-md bg-[#ffb300] text-[#0a0e14] text-[10px] font-bold">LATEST</span>}
                 <span className="text-[#5a6b80] text-xs">{n.date}</span>
               </div>
@@ -2171,7 +2190,6 @@ function MainContent({
     <main className="flex-1 min-h-0 overflow-y-auto vb-scroll bg-[#0a0e14]">
       <div className={compact ? 'px-3 py-3' : 'px-8 py-6'}>
         {view === 'home' && compact && <MobileProfileBar username={username} onPlayNow={() => onPlaySurvival()} />}
-        {view === 'home' && <DailyBanner />}
         {view === 'home' && !compact && <DiscordBanner />}
         {view === 'home' && <HomeView username={username} onPlaySurvival={onPlaySurvival} savedWorlds={savedWorlds} onPlayWorld={onPlayWorld} onCreatePreset={onCreatePreset} onMinigame={onMinigame} counts={playingCounts} />}
         {view === 'shop' && <ShopView />}
@@ -2231,8 +2249,54 @@ function TouchSetting() {
   );
 }
 
+/** Your lootboxes, with a button to open one. It sits on the right side of Home with your name and coins. */
+function LootboxRow() {
+  const p = useProgress();
+  const [opened, setOpened] = useState<LootResult | null>(null);
+  const n = p.lootboxes ?? 0;
+  useEffect(() => { if (!opened) return; const t = setTimeout(() => setOpened(null), 7000); return () => clearTimeout(t); }, [opened]);
+  return (
+    <div data-testid="lootbox-row">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-white text-xs font-bold"><Package className="inline w-4 h-4 text-[#ffd23a] mr-1" />Lootboxes: <span data-testid="box-count">{n}</span></span>
+        <button data-testid="open-box" disabled={n <= 0} onClick={() => setOpened(openLootbox())} className="rounded-lg px-3 py-1.5 text-xs font-bold bg-[#ffd23a] text-[#0a0e14] active:scale-95 transition-all disabled:opacity-40">Open one</button>
+      </div>
+      {opened && <div className="mt-2 rounded-lg bg-[#ffd23a]/10 border border-[#ffd23a]/40 px-3 py-2 text-xs text-white vb-fade-in" data-testid="box-result">You got {lootText(opened)}!</div>}
+      {!opened && n === 0 && <p className="mt-1 text-[#5a6b80] text-[11px]">You get 1-2 lootboxes for every level up and some from the daily reward.</p>}
+    </div>
+  );
+}
+
+/** Today's reward and your lootboxes, on the profile panel. Guests see it switched off. */
+function DailyCard() {
+  const p = useProgress();
+  void p;
+  const { guest } = useContext(StandingContext);
+  const { openDaily } = useContext(DailyUiContext);
+  const st = dailyStatus();
+  if (guest) {
+    return (
+      <div className="bg-[#121822] rounded-2xl border border-[#243044] p-4 opacity-50 select-none" data-testid="daily-card-guest" aria-disabled="true">
+        <h3 className="font-[var(--font-display)] text-[#8ea0b8] text-sm tracking-wide mb-2 flex items-center gap-2"><Gift className="w-4 h-4" /> DAILY REWARD</h3>
+        <p className="text-[#5a6b80] text-xs">Sign in to collect daily rewards and open lootboxes.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="bg-[#121822] rounded-2xl border border-[#243044] p-4" data-testid="daily-card">
+      <h3 className="font-[var(--font-display)] text-white text-sm tracking-wide mb-3 flex items-center gap-2"><Gift className="w-4 h-4 text-[#ffd23a]" /> DAILY REWARD</h3>
+      <button onClick={openDaily} data-testid="daily-open" className={`w-full mb-3 rounded-xl py-2.5 text-xs font-bold transition-all active:scale-95 ${st.canClaim ? 'bg-gradient-to-r from-[#ffd23a] to-[#ff9a1a] text-[#0a0e14]' : 'bg-[#1a2230] text-white hover:bg-[#243044]'}`}>
+        {st.canClaim ? 'Claim your daily reward!' : `Claimed · streak ${st.streak} day${st.streak === 1 ? '' : 's'}`}
+      </button>
+      <LootboxRow />
+    </div>
+  );
+}
+
 /** Your rank, whether you are a Rising Creator, and your plays: provided by App, read by the shop and the panels. */
-const StandingContext = createContext<{ rank: RankId; rising: boolean; tier: CreatorTier; isOwner: boolean; standing: Standing | null; signedIn: boolean }>({ rank: 'none', rising: false, tier: 'none', isOwner: false, standing: null, signedIn: false });
+const StandingContext = createContext<{ rank: RankId; rising: boolean; tier: CreatorTier; isOwner: boolean; standing: Standing | null; signedIn: boolean; /** known not to be signed in: worlds, levels, the shop and social are switched off */ guest: boolean }>({ rank: 'none', rising: false, tier: 'none', isOwner: false, standing: null, signedIn: false, guest: false });
+/** Lets the profile panel (right side of Home) open the daily reward window. */
+const DailyUiContext = createContext<{ openDaily: () => void }>({ openDaily: () => {} });
 
 // ---------------- Daily reward, lootboxes and loyalty rewards ----------------
 function lootText(r: LootResult): string {
@@ -2298,9 +2362,9 @@ function DailyRewardModal({ onClose }: { onClose: () => void }) {
   const [adsOk, setAdsOk] = useState(false);
   const [busy, setBusy] = useState(false);
   const [grant, setGrant] = useState<DailyGrant | null>(null);
-  const [opened, setOpened] = useState<LootResult | null>(null);
   const [note, setNote] = useState<string | null>(null);
   useEffect(() => { if (ADS_POSSIBLE && !adsFree) void initAds().then(setAdsOk); }, [adsFree]);
+  useEffect(() => { const k = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); }; window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k); }, [onClose]);
   const st = dailyStatus();
   const done = st.canClaim ? st.cycleDay - 1 : st.streak > 0 ? ((st.streak - 1) % 7) + 1 : 0;
   function take(double: boolean) {
@@ -2377,40 +2441,12 @@ function DailyRewardModal({ onClose }: { onClose: () => void }) {
         )}
         {note && <div className="mb-3 text-xs text-[#ff8a80]">{note}</div>}
 
-        <div className="rounded-xl bg-[#121822] border border-[#243044] p-3 mb-3">
-          <div className="flex items-center justify-between gap-2">
-            <div className="text-white text-sm font-bold"><Package className="inline w-4 h-4 text-[#ffd23a] mr-1" />Lootboxes: <span data-testid="box-count">{st.lootboxes}</span></div>
-            <button data-testid="open-box" disabled={st.lootboxes <= 0} onClick={() => setOpened(openLootbox())} className="rounded-lg px-3 py-1.5 text-xs font-bold bg-[#ffd23a] text-[#0a0e14] active:scale-95 transition-all disabled:opacity-40">Open one</button>
-          </div>
-          <p className="text-[#5a6b80] text-[11px] mt-1">You get 1-2 lootboxes for every level up. Inside: coins, Streak Freezes, XP Boosters, skins, and rarely a top skin.</p>
-          {opened && <div className="mt-2 rounded-lg bg-[#ffd23a]/10 border border-[#ffd23a]/40 px-3 py-2 text-sm text-white vb-fade-in" data-testid="box-result">You got {lootText(opened)}!</div>}
-        </div>
         <LoyaltyPanel />
       </div>
     </div>
   );
 }
 
-/** A banner on the Home screen: your streak, and whether today's reward is ready. Never opens by itself. */
-function DailyBanner() {
-  const p = useProgress();
-  void p;
-  const [open, setOpen] = useState(false);
-  const st = dailyStatus();
-  return (
-    <>
-      <button onClick={() => setOpen(true)} data-testid="daily-banner" className={`mb-4 w-full flex items-center gap-3 rounded-2xl px-4 py-3 text-left transition-all active:scale-[0.99] ${st.canClaim ? 'bg-gradient-to-r from-[#ffd23a]/25 to-[#ff9a1a]/15 border border-[#ffd23a]/60 hover:border-[#ffd23a]' : 'bg-[#121822] border border-[#243044] hover:border-[#3a4a63]'}`}>
-        <Gift className={`w-6 h-6 shrink-0 ${st.canClaim ? 'text-[#ffd23a]' : 'text-[#8ea0b8]'}`} />
-        <span className="flex-1 min-w-0">
-          <span className="block text-white text-sm font-bold">{st.canClaim ? 'Your daily reward is ready!' : 'Daily reward claimed'}</span>
-          <span className="block text-[#8ea0b8] text-xs">Streak {st.streak} day{st.streak === 1 ? '' : 's'}{st.lootboxes > 0 ? ` · ${st.lootboxes} lootbox${st.lootboxes === 1 ? '' : 'es'} to open` : ''}</span>
-        </span>
-        <span className={`rounded-lg px-3 py-1.5 text-xs font-bold ${st.canClaim ? 'bg-[#ffd23a] text-[#0a0e14]' : 'bg-[#1a2230] text-white'}`}>{st.canClaim ? 'Claim' : 'Open'}</span>
-      </button>
-      {open && <DailyRewardModal onClose={() => setOpen(false)} />}
-    </>
-  );
-}
 
 /** The creators with the most plays; refreshes once a minute while it is on screen. */
 function useLeaderboard(limit: number): LeaderRow[] | null {
@@ -2541,15 +2577,17 @@ function LeaderboardView({ username }: { username: string }) {
 function MobileProfileBar({ username, onPlayNow }: { username: string; onPlayNow: () => void }) {
   useLanguage();
   const p = useProgress();
+  const { guest } = useContext(StandingContext);
   const curXp = xpForLevel(p.level), nextXp = xpForLevel(p.level + 1);
   const pct = Math.max(0, Math.min(100, ((p.xp - curXp) / (nextXp - curXp)) * 100));
   return (
-    <div className="mb-4 flex items-center gap-3 rounded-2xl bg-[#121822] border border-[#243044] p-3" data-testid="mobile-profile">
+    <>
+    <div className="mb-3 flex items-center gap-3 rounded-2xl bg-[#121822] border border-[#243044] p-3" data-testid="mobile-profile">
       <div className="w-11 h-11 shrink-0 rounded-xl bg-gradient-to-br from-[#3b5998] to-[#00e676] flex items-center justify-center text-white font-[var(--font-display)]">{(username || 'P').charAt(0).toUpperCase()}</div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-2">
           <span className="text-white text-sm font-bold truncate">{username || 'PlayerOne'}</span>
-          <span className="text-[#8ea0b8] text-[11px] shrink-0" data-testid="panel-level">{t('profile.level', { n: p.level })} · {p.coins} coins</span>
+          <span className={`text-[#8ea0b8] text-[11px] shrink-0 ${guest ? 'opacity-40' : ''}`} data-testid="panel-level">{t('profile.level', { n: p.level })} · {p.coins} coins</span>
         </div>
         <div className="h-1.5 mt-1.5 bg-[#0a0e14] rounded-full overflow-hidden"><div className="h-full bg-gradient-to-r from-[#00e676] to-[#00b248]" style={{ width: `${pct}%` }} /></div>
       </div>
@@ -2557,13 +2595,15 @@ function MobileProfileBar({ username, onPlayNow }: { username: string; onPlayNow
         <Play className="w-3.5 h-3.5 fill-current" /> PLAY NOW
       </button>
     </div>
+    <div className="mb-4"><DailyCard /></div>
+    </>
   );
 }
 
 function ProfilePanel({ username, onPlayNow, onOpenLeaderboard }: { username: string; onPlayNow: () => void; onOpenLeaderboard: () => void }) {
   useLanguage();
   const p = useProgress();
-  const { rising, tier, signedIn } = useContext(StandingContext);
+  const { rising, tier, signedIn, guest } = useContext(StandingContext);
   const top = useLeaderboard(5);
   const displayName = username || 'PlayerOne';
   const initial = username ? username.charAt(0).toUpperCase() : 'P';
@@ -2582,7 +2622,7 @@ function ProfilePanel({ username, onPlayNow, onOpenLeaderboard }: { username: st
             {rising && <div className="mt-1"><TierBadge tier={tier} small /></div>}
           </div>
         </div>
-        <div>
+        <div className={guest ? 'opacity-40 select-none' : ''} aria-disabled={guest || undefined} data-testid="level-block">
           <div className="flex items-center justify-between mb-1.5">
             <span className="text-[#8ea0b8] text-xs font-medium" data-testid="panel-level">{t('profile.level', { n: p.level })}</span>
             <span className="text-[#5a6b80] text-xs">{(p.xp - curXp).toLocaleString()} / {(nextXp - curXp).toLocaleString()} XP</span>
@@ -2590,6 +2630,7 @@ function ProfilePanel({ username, onPlayNow, onOpenLeaderboard }: { username: st
           <div className="h-2 bg-[#0a0e14] rounded-full overflow-hidden">
             <div className="h-full bg-gradient-to-r from-[#00e676] to-[#00b248] rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
           </div>
+          {guest && <p className="mt-1.5 text-[#8ea0b8] text-[11px]" data-testid="level-guest-note">Sign in to level up</p>}
         </div>
       </div>
 
@@ -2602,7 +2643,7 @@ function ProfilePanel({ username, onPlayNow, onOpenLeaderboard }: { username: st
         </button>
       </div>
 
-      <div className="bg-[#121822] rounded-2xl border border-[#243044] p-4">
+      <div className={`bg-[#121822] rounded-2xl border border-[#243044] p-4 ${guest ? 'opacity-40 select-none' : ''}`} aria-disabled={guest || undefined} data-testid="currency-card">
         <div className="flex items-center gap-2 mb-3">
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#ffd700] to-[#ff8c00] flex items-center justify-center">
             <Coins className="w-4 h-4 text-[#0a0e14]" />
@@ -2614,6 +2655,8 @@ function ProfilePanel({ username, onPlayNow, onOpenLeaderboard }: { username: st
           <span data-testid="panel-coins" className="font-[var(--font-display)] text-[#ffd700] text-lg tabular-nums">{p.coins.toLocaleString()}</span>
         </div>
       </div>
+
+      <DailyCard />
 
       <div className="bg-[#121822] rounded-2xl border border-[#243044] p-4" data-testid="lb-card">
         <h3 className="font-[var(--font-display)] text-white text-sm tracking-wide mb-3 flex items-center gap-2">
@@ -2964,7 +3007,7 @@ function AntiCheatPanel({ settings, onChange, alerts, onKick, onBan, hosting }: 
   );
 }
 
-function ManageServerView({ settings, hardcore, online, isHost, players, myId, hostId, weather, onChange, onKick, onBan, onTime, onWeather, tagOf, privacy, schematics, anticheat }: {
+function ManageServerView({ settings, hardcore, online, isHost, players, myId, hostId, weather, onChange, onKick, onBan, bans, onUnban, onTime, onWeather, tagOf, privacy, schematics, anticheat }: {
   tagOf?: (name: string) => string;
   /** The schematic maker (select, save, paste and share builds), shown in the Schematics tab */
   schematics?: ReactNode;
@@ -2975,6 +3018,8 @@ function ManageServerView({ settings, hardcore, online, isHost, players, myId, h
   settings: ServerSettings; hardcore: boolean; online: boolean; isHost: boolean;
   players: Array<{ id: number; name: string }>; myId: number | null; hostId: number | null; weather: WeatherKind;
   onChange: (s: Partial<ServerSettings>) => void; onKick: (id: number) => void; onBan: (id: number) => void;
+  /** Names banned from this world, and a way to let one back in (the owner only) */
+  bans?: string[]; onUnban?: (name: string) => void;
   onTime: (t: number) => void; onWeather: (k: WeatherKind) => void;
 }) {
   const [confirmBan, setConfirmBan] = useState<number | null>(null);
@@ -3091,6 +3136,22 @@ function ManageServerView({ settings, hardcore, online, isHost, players, myId, h
                 ))}
               </div>
             ))}
+          </div>
+        )}
+        {isHost && onUnban && (
+          <div className="mt-4" data-testid="ban-list">
+            <p className="text-[#8ea0b8] text-xs mb-1.5">Banned players</p>
+            {(bans ?? []).length === 0
+              ? <p className="text-[#5a6b80] text-xs rounded-xl bg-[#121822] border border-[#243044] px-4 py-3" data-testid="no-bans">Nobody is banned from this world.</p>
+              : <div className="flex flex-col gap-1.5">
+                  {(bans ?? []).map((n) => (
+                    <div key={n} className="flex items-center gap-2 rounded-xl bg-[#121822] border border-[#243044] px-4 py-2" data-testid="banned-player">
+                      <span className="text-white text-sm flex-1 truncate">{n}</span>
+                      <button onClick={() => onUnban(n)} data-testid="unban" className="px-3 py-1 rounded-lg bg-[#1a2230] text-[#00e676] text-xs font-bold hover:bg-[#00e676]/10">Unban</button>
+                    </div>
+                  ))}
+                </div>}
+            <p className="text-[#5a6b80] text-[11px] mt-1.5">You can also type <b>/pardon name</b> in chat.</p>
           </div>
         )}
       </div>}
@@ -4076,10 +4137,32 @@ const COMMANDS: Array<{ names: string[]; usage: string; desc: string }> = [
   { names: ['fill'], usage: '/fill <block>  or  /fill x1 y1 z1 x2 y2 z2 <block>', desc: 'Fill the selection (or a box) with a block, up to 32,768 blocks. /fill air clears it.' },
   { names: ['desel'], usage: '/desel', desc: 'Clear the selection.' },
   { names: ['difficulty'], usage: '/difficulty peaceful|easy|normal|hard', desc: 'Change the difficulty (not in Hardcore).' },
+  { names: ['pardon', 'unban'], usage: '/pardon <player>', desc: 'Let a banned player join this world again (the world\'s owner, or an admin in someone else\'s world).' },
   { names: ['gamerule'], usage: '/gamerule keepInventory true|false', desc: 'Keep your items when you die.' },
   { names: ['locate'], usage: '/locate village | temple | fortress | dungeon | portal | treasure', desc: 'Find the closest village, desert temple, dungeon, ruined portal, buried treasure, or (in the Nether) fortress.' },
 ];
 
+/** F3 + F4 goes through the game modes in this order. */
+const GM_CYCLE: PlayMode[] = ['spectator', 'adventure', 'survival', 'creative'];
+const GM_COLORS: Record<PlayMode, string> = { spectator: '#8ea0b8', adventure: '#ffb300', survival: '#ff5252', creative: '#00e676' };
+/** The game mode picker that shows while F3 is held and F4 is tapped. */
+function GameModeSwitcher({ selected }: { selected: PlayMode }) {
+  return (
+    <div className="absolute top-16 left-1/2 -translate-x-1/2 z-40 pointer-events-none vb-fade-in" data-testid="gm-switcher">
+      <div className="rounded-2xl bg-black/75 border border-[#243044] px-4 py-3 text-center">
+        <div className="flex gap-2">
+          {GM_CYCLE.map((m) => (
+            <div key={m} data-testid={`gm-${m}`} data-selected={m === selected ? '1' : '0'} className={`w-24 rounded-xl px-2 py-3 text-xs font-bold border-2 ${m === selected ? 'bg-white/10 text-white' : 'border-transparent text-[#8ea0b8]'}`} style={m === selected ? { borderColor: GM_COLORS[m] } : undefined}>
+              <div className="mx-auto mb-1.5 w-6 h-6 rounded-md" style={{ background: GM_COLORS[m], opacity: m === selected ? 1 : 0.45 }} />
+              {capitalize(m)}
+            </div>
+          ))}
+        </div>
+        <div className="mt-2 text-[11px] text-[#8ea0b8]">Press <b className="text-white">F4</b> to switch, let go of <b className="text-white">F3</b> to pick</div>
+      </div>
+    </div>
+  );
+}
 const MODE_ALIASES: Record<string, PlayMode> = {
   s: 'survival', survival: 'survival', '0': 'survival',
   c: 'creative', creative: 'creative', '1': 'creative',
@@ -5130,8 +5213,19 @@ function ScriptsWorkspace({ scripts, activeId, onSelect, onChange, onRename, onN
   names: { blocks: string[]; items: string[] };
 }) {
   const [showHelp, setShowHelp] = useState(false);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [draftName, setDraftName] = useState('');
   const active = scripts.find((x) => x.id === activeId) ?? scripts[0];
   const isRunning = running.includes(active.id);
+  /** Rename from the list (double-click or the pencil): Enter or clicking away saves, Esc cancels; an empty name keeps the old one. */
+  function startRename(sc: ScriptDoc) { onSelect(sc.id); setRenamingId(sc.id); setDraftName(sc.name); }
+  function finishRename(save: boolean) {
+    const id = renamingId;
+    setRenamingId(null);
+    if (!id || !save) return;
+    const name = draftName.trim().slice(0, 40);
+    if (name) onRename(id, name);
+  }
   const codeRef = useRef(active.code);
   codeRef.current = active.code;
   if (tab === 'builder' && builder) {
@@ -5155,11 +5249,19 @@ function ScriptsWorkspace({ scripts, activeId, onSelect, onChange, onRename, onN
           {SCRIPT_EXAMPLES.map((ex) => <option key={ex.name} value={ex.name}>{ex.name}</option>)}
         </select>
         <div className="flex-1 min-h-0 overflow-y-auto vb-scroll flex flex-col gap-1 mt-1">
-          {scripts.map((sc) => (
-            <button key={sc.id} onClick={() => onSelect(sc.id)}
-              className={`text-left px-2.5 py-2 rounded-lg text-xs truncate transition-colors ${sc.id === active.id ? 'bg-[#1c2634] text-white' : 'text-[#8ea0b8] hover:bg-[#121822]'}`}>
-              <span className={running.includes(sc.id) ? 'text-[#00e676]' : 'text-[#364860]'}>●</span> {sc.name}
-            </button>
+          {scripts.map((sc) => renamingId === sc.id ? (
+            <input key={sc.id} autoFocus value={draftName} maxLength={40} data-testid="script-rename-input"
+              onChange={(e) => setDraftName(e.target.value)} onBlur={() => finishRename(true)}
+              onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') finishRename(true); else if (e.key === 'Escape') finishRename(false); }}
+              className="px-2 py-1.5 rounded-lg text-xs bg-[#05080c] border border-[#00e676] text-white focus:outline-none" />
+          ) : (
+            <div key={sc.id} className={`group flex items-center rounded-lg transition-colors ${sc.id === active.id ? 'bg-[#1c2634] text-white' : 'text-[#8ea0b8] hover:bg-[#121822]'}`}>
+              <button data-testid="script-item" onClick={() => onSelect(sc.id)} onDoubleClick={() => startRename(sc)} title="Double-click to rename"
+                className="flex-1 min-w-0 text-left px-2.5 py-2 text-xs truncate">
+                <span className={running.includes(sc.id) ? 'text-[#00e676]' : 'text-[#364860]'}>●</span> {sc.name}
+              </button>
+              <button data-testid="script-rename" onClick={() => startRename(sc)} title="Rename this script" className="px-1.5 py-1 text-[11px] text-[#5a6b80] hover:text-white">✎</button>
+            </div>
           ))}
         </div>
         <p className="text-[#364860] text-[10px]">Any number of scripts can run at once.</p>
@@ -5167,7 +5269,8 @@ function ScriptsWorkspace({ scripts, activeId, onSelect, onChange, onRename, onN
 
       <div className="flex flex-col gap-2 min-h-0">
         <div className="flex items-center gap-2">
-          <input value={active.name} onChange={(e) => onRename(active.id, e.target.value.slice(0, 40))}
+          <input value={active.name} onChange={(e) => onRename(active.id, e.target.value.slice(0, 40))} onBlur={(e) => { if (!e.target.value.trim()) onRename(active.id, 'Untitled script'); }} aria-label="Script name" placeholder="Script name" data-testid="script-name" title="Rename this script"
+            
             className="flex-1 min-w-0 bg-[#121822] border border-[#243044] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#00e676]" />
           <button onClick={() => setShowHelp((v) => !v)} className="px-3 py-2 rounded-lg bg-[#121822] border border-[#243044] text-[#8ea0b8] text-xs hover:text-white">API</button>
           {isRunning && <button onClick={() => onStop(active.id)} className="px-3 py-2 rounded-lg bg-red-500/15 border border-red-500/40 text-red-300 text-xs font-medium active:scale-95">Stop</button>}
@@ -5803,6 +5906,9 @@ export default function App() {
   const hintTimerRef = useRef<number | undefined>(undefined);
   const [craftMode, setCraftMode] = useState<'grid' | 'quick'>(savedSettings.craftMode ?? 'grid');
   const [playMode, setPlayMode] = useState<PlayMode>('survival');
+  const playModeRef = useRef<PlayMode>('survival');
+  playModeRef.current = playMode;
+  const runCommandRef2 = useRef<((raw: string) => void) | null>(null);
   const [hudPrefs, setHudPrefs] = useState<HudPrefs>({ ...DEFAULT_HUD, ...(savedSettings.hudPrefs ?? {}), coords: false, facing: false, clock: false, speed: false, minimap: false });
   const [chatOpen, setChatOpen] = useState(false);
   const [chatSession, setChatSession] = useState(0);
@@ -5811,6 +5917,10 @@ export default function App() {
   const [chatHistory, setChatHistory] = useState<string[]>([]);
   const [helpOpen, setHelpOpen] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
+  /** F3 + F4: the game mode switcher (hold F3, tap F4 to cycle, let go of F3 to switch). */
+  const [gmSwitch, setGmSwitch] = useState<PlayMode | null>(null);
+  const gmSwitchRef = useRef<PlayMode | null>(null);
+  const f3Ref = useRef({ held: false, used: false });
   // Refs mirror UI state for the window key listeners (they'd see stale state otherwise)
   const chatOpenRef = useRef(false);
   const helpOpenRef = useRef(false);
@@ -5838,6 +5948,9 @@ export default function App() {
   const progress = useProgress();
   const lastInputRef = useRef(Date.now());
   const [levelToast, setLevelToast] = useState<{ level: number; coins: number; lootboxes: number } | null>(null);
+  /** The daily reward window: opens by itself once when you open VibeBlox, if today's reward is waiting. */
+  const [showDaily, setShowDaily] = useState(false);
+  const dailyAutoRef = useRef(false);
   useEffect(() => {
     // "Active" means you've touched the keyboard, mouse or screen in the last 2 minutes
     const poke = () => { lastInputRef.current = Date.now(); };
@@ -6039,6 +6152,15 @@ export default function App() {
     }
   }, [ready, account, accountChecked, authWaitOver, username]);
 
+  // Open the daily reward by itself, once, when you open VibeBlox with a reward waiting (not for guests, not if you already took today's)
+  useEffect(() => {
+    if (dailyAutoRef.current || !ready || gameMode !== 'menu' || showModal) return;
+    if (!(accountChecked || authWaitOver)) return;
+    if (!account || isGuestName(account.username)) return; // guests have no daily reward (it would run again if they sign in)
+    dailyAutoRef.current = true;
+    if (dailyStatus().canClaim && !dailyStatus().clockOff) setShowDaily(true);
+  }, [ready, gameMode, showModal, accountChecked, authWaitOver, account, username]);
+
   function showToast(text: string, kind: 'dm' | 'announce' | 'info' = 'info') {
     const key = Date.now() + Math.random();
     setToasts((t) => [...t.slice(-3), { key, text, kind }]);
@@ -6105,6 +6227,7 @@ export default function App() {
   useEffect(() => {
     const handleEscKey = (e: KeyboardEvent) => {
       if (isCapturingKey()) return; // the Controls screen is waiting for a key
+      if (e.key === 'Escape' && (e.target as HTMLElement | null)?.dataset?.testid === 'script-rename-input') return; // Esc cancels a script rename, nothing else
       if (chatOpenRef.current || helpOpenRef.current) {
         if (e.key === 'Escape') {
           e.preventDefault();
@@ -6425,7 +6548,18 @@ export default function App() {
       if (chatOpenRef.current || helpOpenRef.current || inventoryOpenRef.current || menuOpenRef.current || tradingRef.current || cmdBlockRef.current || deadRef.current || disconnectedRef.current || panelOpenRef.current) return;
       if (e.code === 'F3') {
         e.preventDefault(); // F3 is "find" in some browsers
-        setShowDebug((v) => !v);
+        if (!e.repeat) f3Ref.current = { held: true, used: false }; // the debug screen toggles when F3 is let go, unless F4 was used with it
+        return;
+      }
+      if (e.code === 'F4') {
+        e.preventDefault();
+        if (!f3Ref.current.held) return;
+        f3Ref.current.used = true;
+        if (!ownsWorldRef.current) { setHint(isMinigameRef.current ? t('restricted.minigame') : t('restricted.world')); window.clearTimeout(hintTimerRef.current); hintTimerRef.current = window.setTimeout(() => setHint(null), 2200); return; }
+        const cur = gmSwitchRef.current ?? playModeRef.current;
+        const next = GM_CYCLE[(GM_CYCLE.indexOf(cur) + 1) % GM_CYCLE.length];
+        gmSwitchRef.current = next;
+        setGmSwitch(next);
         return;
       }
       if (e.code === 'F2') {
@@ -6445,15 +6579,28 @@ export default function App() {
         openChat(e.key === '/' ? '/' : '');
       }
     };
+    const onUp = (e: KeyboardEvent) => {
+      if (e.code !== 'F3') return;
+      const f = f3Ref.current;
+      f3Ref.current = { held: false, used: false };
+      const pick = gmSwitchRef.current;
+      if (pick) {
+        gmSwitchRef.current = null; setGmSwitch(null);
+        if (pick !== playModeRef.current) runCommandRef2.current?.('/gamemode ' + pick);
+      } else if (f.held && !f.used) setShowDebug((v) => !v);
+    };
+    const onBlur = () => { f3Ref.current = { held: false, used: false }; gmSwitchRef.current = null; setGmSwitch(null); };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keyup', onUp);
+    window.addEventListener('blur', onBlur);
+    return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('keyup', onUp); window.removeEventListener('blur', onBlur); };
   }, [gameMode]);
 
   // Keep F1 / F3 / F5 / Tab away from the browser while playing (F5 would reload the page)
   useEffect(() => {
     if (gameMode !== 'playing') return;
     const block = (e: KeyboardEvent) => {
-      if (e.code === 'F1' || e.code === 'F2' || e.code === 'F3' || e.code === 'F5' || (e.code === 'Tab' && !chatOpenRef.current)) e.preventDefault();
+      if (e.code === 'F1' || e.code === 'F2' || e.code === 'F3' || e.code === 'F4' || e.code === 'F5' || (e.code === 'Tab' && !chatOpenRef.current)) e.preventDefault();
     };
     window.addEventListener('keydown', block, true);
     return () => window.removeEventListener('keydown', block, true);
@@ -6886,7 +7033,7 @@ export default function App() {
     const teamSize = auto ? 1 : MINIGAME_SIZES[online.size] ?? 1;
     const teams = kind === 'bridge' ? 2 : 4;
     const id = hMod.randomId(16);
-    const name = auto ? `EggWars (${me.username})` : `${me.username}'s ${kind === 'bridge' ? 'Bridge Duel' : 'EggWars'}`;
+    const name = auto ? `${kind === 'bridge' ? 'Bridge Duels' : 'EggWars'} (${me.username})` : `${me.username}'s ${kind === 'bridge' ? 'Bridge Duel' : 'EggWars'}`;
     const room = new hMod.HostRoom({
       seed: activeSeedRef.current, worldType: kind, mode: 'survival', changes: [], time: 0.3, weather: 'clear',
       settings: { ...DEFAULT_SERVER, difficulty: 'normal', keepInventory: false, scripts: false, mods: false, commands: false, pvp: true },
@@ -6898,7 +7045,7 @@ export default function App() {
     });
     const peer = new hMod.PeerHost(id, signalingFor(hMod), room);
     hostingRef.current = { id, room, peer, worldId: '', privacy: 'public', name, mode: 'survival', worldType: kind, max: teams * teamSize, timer: 0,
-      description: auto ? 'Auto EggWars: starts by itself when players join.' : kind === 'bridge' ? `Bridge Duels, ${online.size}. First to 5 goals.` : `EggWars, ${online.size}. Protect your egg!`, image: kind === 'bridge' ? '/images/bridgeduels-bg.jpg' : '/images/eggwars-bg.jpg' };
+      description: auto ? `Auto ${kind === 'bridge' ? 'Bridge Duels' : 'EggWars'}: starts by itself when players join.` : kind === 'bridge' ? `Bridge Duels, ${online.size}. First to 5 goals.` : `EggWars, ${online.size}. Protect your egg!`, image: kind === 'bridge' ? '/images/bridgeduels-bg.jpg' : '/images/eggwars-bg.jpg' };
     joinedAddressRef.current = 'p2p:' + id;
     connectWith((mpMod as { MultiplayerClient: new () => MpClient }).MultiplayerClient, undefined, { hostSocket: hMod.loopback(room) });
     setHostingInfo({ privacy: 'public', players: 1 });
@@ -7535,7 +7682,7 @@ export default function App() {
     if (gameMode !== 'playing') return;
     const t = setInterval(() => {
       playtimeRef.current += 0.25;
-      if (document.visibilityState === 'visible' && !menuOpenRef.current && !deadRef.current && Date.now() - lastInputRef.current < IDLE_AFTER_SECONDS * 1000) addActiveSeconds(0.25);
+      if (document.visibilityState === 'visible' && !menuOpenRef.current && !deadRef.current && Date.now() - lastInputRef.current < IDLE_AFTER_SECONDS * 1000 && accountRef.current && !isGuestName(accountRef.current.username)) addActiveSeconds(0.25); // guests don't level up
       if (Math.round(playtimeRef.current * 4) % 40 === 0) { try { localStorage.setItem('vb-playtime', String(Math.floor(playtimeRef.current))); } catch { /* storage blocked */ } }
       runnerRef.current?.pushSnapshot();
       runnerRef.current?.emit('tick');
@@ -7581,6 +7728,7 @@ export default function App() {
     gameHandleRef.current?.relock();
   }
 
+  runCommandRef2.current = (raw) => { runCommand(raw); };
   function submitChat(raw: string) {
     const text = raw.trim();
     if (text) setChatHistory((h) => [...h.slice(-49), text]);
@@ -7664,6 +7812,21 @@ export default function App() {
     const mp = mpRef.current;
     if (mp?.connected) mp.sendAdmin(a.token, 'gamemode', name ? { name, mode } : { mode }); // the server checks you are an admin, then tells the player
     else if (!name) applyAdminMode(mode, 'You');
+  }
+  /** Takes a name off this world's ban list: in the running room if you are hosting it, and in the saved world. */
+  function unbanName(name: string): boolean {
+    const n = name.trim().toLowerCase();
+    if (!n) return false;
+    let found = false;
+    const room = hostingRef.current?.room as { unban?: (n: string) => boolean } | undefined;
+    if (room?.unban) found = room.unban(n);
+    const wid = activeWorldIdRef.current;
+    if (wid) setSavedWorlds((prev) => prev.map((w) => {
+      if (w.id !== wid || !(w.bans ?? []).some((b) => b.toLowerCase() === n)) return w;
+      found = true;
+      return { ...w, bans: (w.bans ?? []).filter((b) => b.toLowerCase() !== n) };
+    }));
+    return found;
   }
   function adminAct(action: 'kick' | 'ban', name: string) {
     const a = accountRef.current;
@@ -7802,6 +7965,16 @@ export default function App() {
     if (SOCIAL.includes(cmd)) {
       if (ctx) { err('That command only works in chat'); return; }
       return runSocialCommand(cmd, args);
+    }
+    if (cmd === 'pardon' || cmd === 'unban') {
+      if (ctx) { err('That command only works in chat'); return; }
+      const who = args[0];
+      if (!who) { err('Usage: /pardon <player>'); return; }
+      if (ownsWorldRef.current) {
+        if (unbanName(who)) info(`${who} can join this world again`); else err(`${who} isn't banned from this world`);
+      } else if (adminRef.current && accountRef.current && mpRef.current?.connected) mpRef.current.sendAdmin(accountRef.current.token, 'unban', { name: who }); // the server answers in chat
+      else err(isMinigameRef.current ? t('restricted.minigame') : t('restricted.world'));
+      return;
     }
     if (!ownsWorldRef.current && cmd !== 'help' && cmd !== '?') { err(isMinigameRef.current ? t('restricted.minigame') : t('restricted.world')); return; } // no cheats in minigames or other people's worlds
     if (!serverSettingsRef.current.commands && cmd !== 'help' && cmd !== '?') { err('Commands are turned off on this server (Manage Server).'); return; }
@@ -8238,7 +8411,11 @@ export default function App() {
     if (world.id) clearAdvancements(world.id);
   }
 
+  const guestNow = (accountChecked || authWaitOver) && (!account || isGuestName(account.username));
+  // A guest who lands on a locked page (e.g. after signing out) goes back home.
+  useEffect(() => { if (guestNow && GUEST_LOCKED.includes(view)) setView('home'); }, [guestNow, view]);
   function handleNavClick(v: View) {
+    if (guestNow && GUEST_LOCKED.includes(v)) { setShowModal(true); return; } // no saved worlds, shop, levels or social without an account
     if (v === 'create-world') setCreatePreset({ mode: 'survival', worldType: 'default', nonce: Date.now() });
     setView(v);
   }
@@ -8289,6 +8466,7 @@ export default function App() {
 
   // Home cards open Create World with the mode / world type already picked
   function handleCreatePreset(mode: WorldMode, worldType: WorldType) {
+    if (guestNow) { setShowModal(true); return; } // guests can't make worlds
     setCreatePreset({ mode, worldType, nonce: Date.now() });
     setView('create-world');
   }
@@ -8393,7 +8571,8 @@ export default function App() {
 
   return (
     <AccountSummaryContext.Provider value={{ username: account?.username ?? '', signedIn: !!account && !isGuestName(account.username), isOwner: isOwnerAccount, isAdmin: !!admin, openAdmin: () => openPanel() }}>
-    <StandingContext.Provider value={{ rank: myRank, rising, tier: myTier, isOwner: isOwnerAccount, standing, signedIn: !!account && !isGuestName(account.username) }}>
+    <StandingContext.Provider value={{ rank: myRank, rising, tier: myTier, isOwner: isOwnerAccount, standing, signedIn: !!account && !isGuestName(account.username), guest: (accountChecked || authWaitOver) && (!account || isGuestName(account.username)) }}>
+      <DailyUiContext.Provider value={{ openDaily: () => setShowDaily(true) }}>
       {/* Persistent soundtrack element — lives at the App level (not inside
           any view) so it keeps playing across sidebar navigation and while
           the game itself is running. */}
@@ -8561,6 +8740,7 @@ export default function App() {
         {!showMenu && (
           <HudOverlays prefs={hudPrefs} getFps={() => gameHandleRef.current?.getFps() ?? 0} paused={chatOpen || helpOpen} getInfo={() => gameHandleRef.current?.getDebugInfo() ?? null} ping={ping} online={netStatus === 'online'} />
         )}
+        {!showMenu && gmSwitch && <GameModeSwitcher selected={gmSwitch} />}
         {!showMenu && showDebug && <DebugOverlay getInfo={() => gameHandleRef.current?.getDebugInfo() ?? null} />}
         {!showMenu && sleeping && (
           <SleepOverlay online={netStatus === 'online'} onLeave={() => gameHandleRef.current?.leaveBed()} onChat={() => openChat('')} />
@@ -8696,6 +8876,8 @@ export default function App() {
                 onChange={changeServerSettings}
                 onKick={(id) => mpRef.current?.kick(id)}
                 onBan={(id) => mpRef.current?.ban(id)}
+                bans={savedWorlds.find((w) => w.id === activeWorldIdRef.current)?.bans ?? []}
+                onUnban={(n) => { if (unbanName(n)) pushMessage(`${n} can join this world again`, '#aaaaaa'); }}
                 onTime={(t) => { changeTime(t); }}
                 onWeather={(k) => { changeWeather(k); }}
                 anticheat={
@@ -8802,6 +8984,8 @@ export default function App() {
           </div>
         ))}
       </div>
+      {showDaily && showMenu && <DailyRewardModal onClose={() => setShowDaily(false)} />}
+      </DailyUiContext.Provider>
     </StandingContext.Provider>
     </AccountSummaryContext.Provider>
   );

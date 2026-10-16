@@ -41,6 +41,10 @@ export default function LoginOverlay({ onGuest, onClose, onSignedIn }: LoginOver
       setError('All fields are required.');
       return;
     }
+    if (!/^[A-Za-z0-9_]{3,16}$/.test(username)) {
+      setError('Usernames are 3-16 letters, numbers or underscores, with no spaces.');
+      return;
+    }
     setLoading(true);
     const { error: err } = await registerWithEmail(email.trim(), password, username.trim());
     setLoading(false);
@@ -167,8 +171,9 @@ export default function LoginOverlay({ onGuest, onClose, onSignedIn }: LoginOver
                 <input
                   type="text"
                   value={username}
-                  onChange={(e) => setUsername(e.target.value)}
+                  onChange={(e) => setUsername(e.target.value.replace(/[^A-Za-z0-9_]/g, '').slice(0, 16))} // no spaces or odd characters in a username
                   placeholder="Username (3-16 letters, numbers, _)"
+                  autoCapitalize="off" autoCorrect="off" spellCheck={false} data-testid="register-username"
                   maxLength={16}
                   className="w-full bg-[#0a0e14] border border-[#243044] rounded-xl pl-10 pr-3 py-3 text-white text-sm placeholder:text-[#5a6b80] focus:border-[#00e676]/50 focus:outline-none transition-colors"
                 />

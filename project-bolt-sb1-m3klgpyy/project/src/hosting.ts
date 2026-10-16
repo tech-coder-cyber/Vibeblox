@@ -354,6 +354,17 @@ export class HostRoom {
     if (list.length) this.broadcast({ t: 'moves', list });
   }
 
+  /** Takes a player off this world's ban list (the host or an admin). Returns false if they weren't banned. */
+  unban(name: string): boolean {
+    const n = name.trim().toLowerCase();
+    const i = this.bans.indexOf(n);
+    if (i < 0) return false;
+    this.bans.splice(i, 1);
+    this.opts.onBans?.(this.bans.slice());
+    return true;
+  }
+  getBans(): string[] { return this.bans.slice(); }
+
   private kickById(by: Player, id: number, ban: boolean) {
     const target = this.players.get(id);
     if (!target || !target.joined || target.id === by.id || target.conn.local) return;
@@ -382,6 +393,12 @@ export class HostRoom {
         this.system(`${target.name} was ${msg.action === 'ban' ? 'banned' : 'kicked'} by an admin`);
         target.conn.close(msg.action === 'ban' ? 4005 : 4004, msg.action === 'ban' ? 'You were banned by an admin' : 'You were kicked by an admin');
         return;
+      case 'unban': {
+        if (!name) { reply('Usage: /pardon <player>'); return; }
+        reply(this.unban(name) ? `${String(msg.name).slice(0, 16)} can join this world again` : `${String(msg.name || '').slice(0, 16)} isn't banned from this world`);
+        return;
+      }
+      case 'bans': reply(this.bans.length ? `Banned here: ${this.bans.join(', ')}` : 'Nobody is banned from this world'); return;
       case 'gamemode': {
         if (!VALID_MODES.concat('spectator').includes(String(msg.mode))) { reply('Unknown game mode'); return; }
         const who = target || (name ? null : p);

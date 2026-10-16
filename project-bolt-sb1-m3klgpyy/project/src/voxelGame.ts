@@ -5175,8 +5175,9 @@ function poseArms(model: MobModel, o: { swing: number; punch: number; slash?: nu
   } else if (style === 'item') {
     R.rotation.set(0.5 + s * 0.15 + o.punch * 0.9, 0, 0);
   } else if (style === 'sword') {
-    if (o.blocking) R.rotation.set(1.15, 0, -0.75); // sword held across the body
-    else R.rotation.set(0.4 + s * 0.15 + wind, 0, 0);
+    // Blocking: the arm comes up and across the chest with the blade upright in front of you. Holding: the arm is a little raised, the sword ready.
+    if (o.blocking) R.rotation.set(1.1, 0, -0.95);
+    else R.rotation.set(0.6 + s * 0.15 + wind, 0, -0.12);
   } else if (style === 'block') {
     R.rotation.set(0.4 + s * 0.2 + o.punch * 1.0, 0, -0.1);
   } else if (style === 'gun1') {
@@ -5634,6 +5635,72 @@ class World {
   arenaVariant = 0;
   /** OneBlock: nothing but the one block (set before any chunk is made). */
   oneblock = false;
+  /** Skyblock: islands floating in the void, with a starter island at the spawn. */
+  skyblock = false;
+  /** Void: nothing but a small platform at the spawn. */
+  voidWorld = false;
+  get airWorld(): boolean { return this.skyblock || this.voidWorld; }
+  /** Skyblock and Void worlds: an island (or a plain platform) over nothing. */
+  generateSky(chunk: Chunk) {
+    const origin = chunk.cx === 0 && chunk.cz === 0;
+    if (this.voidWorld) {
+      if (origin) for (let x = 6; x <= 10; x++) for (let z = 6; z <= 10; z++) chunk.set(x, SKY_TOP, z, BLOCK_STONE); // a 5x5 platform to stand on
+      return;
+    }
+    const tree = (cx: number, cz: number, top: number, h: number) => {
+      for (let y = top + 1; y <= top + h; y++) chunk.set(cx, y, cz, BLOCK_WOOD);
+      for (let dy = -1; dy <= 1; dy++) {
+        const r = dy === 1 ? 1 : 2;
+        for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) {
+          if (r === 2 && Math.abs(dx) === 2 && Math.abs(dz) === 2) continue;
+          const lx = cx + dx, lz = cz + dz, ly = top + h + dy;
+          if (lx < 0 || lz < 0 || lx >= CHUNK_SIZE || lz >= CHUNK_SIZE) continue;
+          if (chunk.get(lx, ly, lz) === BLOCK_AIR) chunk.set(lx, ly, lz, BLOCK_LEAVES);
+        }
+      }
+      chunk.set(cx, top + h + 2, cz, BLOCK_LEAVES);
+    };
+    const blob = (cx: number, cz: number, top: number, radius: number, kind: 'grass' | 'sand' | 'stone', salt: number) => {
+      for (let dx = -6; dx <= 6; dx++) for (let dz = -6; dz <= 6; dz++) {
+        const x = cx + dx, z = cz + dz;
+        if (x < 0 || z < 0 || x >= CHUNK_SIZE || z >= CHUNK_SIZE) continue;
+        const wob = (this.hashCoord(chunk.cx * CHUNK_SIZE + x + salt, chunk.cz * CHUNK_SIZE + z) - 0.5) * 1.2;
+        const d = Math.hypot(dx, dz) - wob;
+        if (d > radius) continue;
+        if (kind === 'stone') {
+          chunk.set(x, top, z, BLOCK_STONE);
+          if (d <= radius - 0.8) { chunk.set(x, top - 1, z, BLOCK_STONE); chunk.set(x, top - 2, z, d <= radius - 1.8 ? BLOCK_STONE : BLOCK_AIR); }
+          const o = this.hashCoord(x * 31 + chunk.cx * 977, z * 17 + chunk.cz * 571);
+          if (o < 0.16) chunk.set(x, top, z, BLOCK_COAL_ORE); else if (o < 0.24) chunk.set(x, top - 1, z, BLOCK_IRON_ORE);
+          continue;
+        }
+        chunk.set(x, top, z, kind === 'grass' ? BLOCK_GRASS : BLOCK_SAND);
+        if (d <= radius - 0.4) chunk.set(x, top - 1, z, kind === 'grass' ? BLOCK_DIRT : BLOCK_SAND);
+        if (d <= radius - 0.9) chunk.set(x, top - 2, z, kind === 'grass' ? BLOCK_DIRT : BLOCK_SAND);
+        if (d <= radius - 1.9) chunk.set(x, top - 3, z, BLOCK_STONE);
+      }
+    };
+    if (origin) {
+      // The starter island: grass over dirt, a tree on the west side and a chest with the basics on the east
+      blob(8, 8, SKY_TOP, 4.6, 'grass', 7);
+      tree(5, 8, SKY_TOP, 4);
+      chunk.set(SKY_CHEST[0], SKY_CHEST[1], SKY_CHEST[2], BLOCK_CHEST);
+      return;
+    }
+    // Other islands: one every third chunk, each different (grass with a tree, sand with a cactus, or stone with ore)
+    const mod = (n: number) => ((n % 3) + 3) % 3;
+    if (mod(chunk.cx) !== 0 || mod(chunk.cz) !== 0) return;
+    const h = (k: number) => this.hash3(chunk.cx, k, chunk.cz, 913);
+    if (h(0) > 0.85) return;
+    const cx = 5 + Math.floor(h(1) * 6), cz = 5 + Math.floor(h(2) * 6);
+    const top = 26 + Math.floor(h(3) * 12);
+    const radius = 2.6 + h(4) * 2.4;
+    const t = h(5);
+    const kind = t < 0.5 ? 'grass' : t < 0.78 ? 'sand' : 'stone';
+    blob(cx, cz, top, radius, kind, 3);
+    if (kind === 'grass' && h(6) < 0.7) tree(cx, cz, top, 4);
+    else if (kind === 'sand' && h(6) < 0.5) { chunk.set(cx, top + 1, cz, BLOCK_CACTUS); chunk.set(cx, top + 2, cz, BLOCK_CACTUS); }
+  }
   generateArena(chunk: Chunk, kind: ArenaKind) {
     const x0 = chunk.cx * CHUNK_SIZE, z0 = chunk.cz * CHUNK_SIZE;
     for (const [ax0, ay0, az0, ax1, ay1, az1, b] of arenaLayout(kind, this.arenaVariant).boxes) {
@@ -5677,7 +5744,7 @@ class World {
   // blocks, instead of switching type every few chunks.
   getBiome(wx: number, wz: number): Biome {
     if (this.kind !== 'overworld') return this.kind;
-    if (this.flat) return 'plains';
+    if (this.flat || this.airWorld) return 'plains';
     if (this.oceanFactor(wx, wz) > 0.3 && this.terrainHeight(wx, wz) <= WATER_LEVEL - 2) return 'ocean';
     const temp = this.biomeNoise.fbm(wx, 0, wz, 2, 0.5, 0.0017);
     const moist = this.treeNoise.fbm(wx, 100, wz, 2, 0.5, 0.0017);
@@ -5729,7 +5796,7 @@ class World {
     const cached = this.lakeCache.get(key);
     if (cached !== undefined) return cached;
     let lake: { cx: number; cz: number; r: number; surface: number } | null = null;
-    if (!this.flat && this.hash3(gx, 0, gz, 41) < 0.45) {
+    if (!this.flat && !this.airWorld && this.hash3(gx, 0, gz, 41) < 0.45) {
       const r = 4 + Math.floor(this.hash3(gx, 1, gz, 43) * 6); // radius 4-9
       const cx = gx * 64 + r + 2 + Math.floor(this.hash3(gx, 2, gz, 47) * (60 - 2 * r));
       const cz = gz * 64 + r + 2 + Math.floor(this.hash3(gx, 3, gz, 53) * (60 - 2 * r));
@@ -5762,7 +5829,7 @@ class World {
 
   /** True when this column is dry land (used to avoid spawning players in the sea). */
   isDryLand(wx: number, wz: number): boolean {
-    return this.flat || (this.terrainHeight(wx, wz) > WATER_LEVEL + 1 && !this.lakeAt(wx, wz));
+    return this.flat || this.airWorld || (this.terrainHeight(wx, wz) > WATER_LEVEL + 1 && !this.lakeAt(wx, wz));
   }
 
   // Deterministic 0..1 pseudo-random value from integer coordinates
@@ -5899,6 +5966,11 @@ class World {
     }
     if (this.oneblock) {
       if (chunk.cx === 0 && chunk.cz === 0) chunk.set(ONEBLOCK_POS[0], ONEBLOCK_POS[1], ONEBLOCK_POS[2], BLOCK_GRASS);
+      chunk.generated = true;
+      return;
+    }
+    if (this.airWorld && this.kind === 'overworld') {
+      this.generateSky(chunk);
       chunk.generated = true;
       return;
     }
@@ -6052,7 +6124,7 @@ class World {
   private villageCache = new Map<string, Village | null>();
 
   villageInRegion(rx: number, rz: number): Village | null {
-    if (this.flat || this.kind !== 'overworld') return null;
+    if (this.flat || this.airWorld || this.kind !== 'overworld') return null;
     const key = `${rx},${rz}`;
     const cached = this.villageCache.get(key);
     if (cached !== undefined) return cached;
@@ -6288,7 +6360,7 @@ class World {
   private structCache = new Map<string, Structure | null>();
 
   templeInRegion(rx: number, rz: number): Structure | null {
-    if (this.flat || this.kind !== 'overworld') return null;
+    if (this.flat || this.airWorld || this.kind !== 'overworld') return null;
     const key = `t${rx},${rz}`;
     const hit = this.structCache.get(key);
     if (hit !== undefined) return hit;
@@ -6399,7 +6471,7 @@ class World {
   // ---------------- Dungeons, ruined portals and buried treasure ----------------
   private minorCache = new Map<string, Structure | null>();
   minorInRegion(kind: MinorStructureKind, rx: number, rz: number): Structure | null {
-    if (this.flat || this.kind !== 'overworld' || this.arena || this.oneblock) return null;
+    if (this.flat || this.airWorld || this.kind !== 'overworld' || this.arena || this.oneblock) return null;
     const key = `${kind[0]}${rx},${rz}`;
     const hit = this.minorCache.get(key);
     if (hit !== undefined) return hit;
@@ -6551,7 +6623,8 @@ class World {
   }
 
   /** Which loot a structure chest at this spot starts with ('temple' / 'fortress'), or null for a normal chest. */
-  lootAt(x: number, y: number, z: number): StructureKind | null {
+  lootAt(x: number, y: number, z: number): StructureKind | 'skyblock' | null {
+    if (this.skyblock && x === SKY_CHEST[0] && y === SKY_CHEST[1] && z === SKY_CHEST[2]) return 'skyblock';
     for (const k of ['dungeon', 'portal', 'treasure'] as const) {
       const m = this.minorInRegion(k, Math.floor(x / MINOR_REGION[k]), Math.floor(z / MINOR_REGION[k]));
       if (m && m.chests.some((c) => c[0] === x && c[1] === y && c[2] === z)) return k;
@@ -7223,10 +7296,12 @@ export type GameWorldMode = 'survival' | 'creative' | 'adventure';
 export type GraphicsQuality = 'low' | 'medium' | 'high' | 'epic' | 'max';
 /** The mode you're playing in right now (switchable with /gamemode). */
 export type PlayMode = GameWorldMode | 'spectator';
-export type WorldType = 'default' | 'superflat' | 'eggwars' | 'bridge' | 'oneblock';
+export type WorldType = 'default' | 'superflat' | 'eggwars' | 'bridge' | 'oneblock' | 'skyblock' | 'void';
 
 /** Actions you can put on any key (Settings > Controls). */
 export type KeyAction = 'forward' | 'back' | 'left' | 'right' | 'jump' | 'sprint' | 'crouch' | 'inventory' | 'drop' | 'offhand';
+/** Holding Shift (sprint) while flying is this much faster. */
+export const FLY_SPRINT_MULT = 2;
 export const DEFAULT_KEYBINDS: Record<KeyAction, string> = {
   forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD',
   jump: 'Space', sprint: 'ShiftLeft', crouch: 'AltLeft',
@@ -7304,6 +7379,9 @@ export function oneBlockPhaseIndex(count: number): number {
 }
 /** Where the block floats (local to chunk 0,0 it is [8, 32, 8]). */
 export const ONEBLOCK_POS: [number, number, number] = [8, 32, 8];
+/** Skyblock: the height of the starter island's top layer, and where its chest stands. */
+export const SKY_TOP = 32;
+const SKY_CHEST: [number, number, number] = [10, SKY_TOP + 1, 8];
 export type OneBlockView = {
   /** Blocks broken so far. */
   count: number;
@@ -8290,6 +8368,8 @@ export function createVoxelGame(
   if (worldType === 'eggwars' || worldType === 'bridge') world.arena = worldType;
   world.arenaVariant = arenaVariant;
   if (worldType === 'oneblock') world.oneblock = true;
+  if (worldType === 'skyblock') world.skyblock = true;
+  if (worldType === 'void') world.voidWorld = true;
   world.experimental = experimental;
   const worlds = new Map<string, World>([['overworld', world]]);
   const dimensionSpecs = new Map<string, DimensionSpec>();
@@ -8748,6 +8828,10 @@ export function createVoxelGame(
   // First-person pose for swords and tools, and for blocking with a sword (right-click and hold)
   const TOOL_FP = { scale: 1.15, x: 0.5, y: -0.15, z: -0.95, rx: -0.2, ry: -0.2, rz: 0.32 };
   const BLOCK_FP = { x: 0.22, y: -0.28, z: -0.85, rx: 0.1, ry: -0.9, rz: 1.2 };
+  // Swords are held like in Minecraft: the handle at the bottom right, the blade across the lower screen pointing up and to the left
+  // (worked out against a screenshot: tip near the middle of the screen, handle off the bottom right corner). Blocking raises it across the body.
+  const SWORD_FP = { scale: 0.9, x: 0.32, y: -0.5, z: -0.95, rx: -0.2, ry: -0.4, rz: 1.9 };
+  const SWORD_BLOCK_FP = { x: 0.1, y: -0.3, z: -0.85, rx: 0.1, ry: -0.5, rz: 1.35 };
   let swordBlocking = false;
   let blockLerp = 0;
   let crouchNow = false;
@@ -8797,8 +8881,12 @@ export function createVoxelGame(
       m.scale.setScalar(0.8);
       heldBase.set(0.42, -0.3, -0.85);
       m.rotation.set(0, -0.35, Math.PI / 4);
+    } else if (TOOLS[heldItem]?.kind === 'sword') {
+      m.scale.setScalar(SWORD_FP.scale);
+      heldBase.set(SWORD_FP.x, SWORD_FP.y, SWORD_FP.z);
+      m.rotation.set(SWORD_FP.rx, SWORD_FP.ry, SWORD_FP.rz);
     } else if (TOOLS[heldItem]) {
-      // Swords and tools: big and almost facing you, handle at the bottom, blade toward the top right
+      // Tools: big and almost facing you, handle at the bottom, blade toward the top right
       m.scale.setScalar(TOOL_FP.scale);
       heldBase.set(TOOL_FP.x, TOOL_FP.y, TOOL_FP.z);
       m.rotation.set(TOOL_FP.rx, TOOL_FP.ry, TOOL_FP.rz);
@@ -10446,8 +10534,7 @@ export function createVoxelGame(
       if (t !== null && t <= reach && (!best || t < best.t)) best = { id, rp, t };
     }
     if (!best) return false;
-    const wall = raycastBlock();
-    if (wall && new THREE.Vector3(wall.x + 0.5, wall.y + 0.5, wall.z + 0.5).distanceTo(camera.position) < best.t - 0.6) return false; // a block is in the way
+    if (rayWallDistance(camera.position.x, camera.position.y, camera.position.z, pvpDir.x, pvpDir.y, pvpDir.z, best.t) < best.t) return false; // a block is in the way
     const falling = velocityY < -1 && !wasGrounded;
     const dmg = weaponDamage() * (falling ? 1.5 : 1);
     const flat = Math.hypot(pvpDir.x, pvpDir.z) || 1;
@@ -10710,7 +10797,7 @@ export function createVoxelGame(
         playSfx('bow', m.pos);
         return { x: 0, z: 0, yaw: yawT, jump: false };
       }
-      if (dh < D.reach && dy < 2.2 && m.attackCooldown <= 0) {
+      if (dh < D.reach && dy < 2.2 && m.attackCooldown <= 0 && !wallBetween(m.pos.x, m.pos.y + 1.0, m.pos.z, enemyPos.x, enemyPos.y + 1.0, enemyPos.z)) {
         m.attackCooldown = D.cooldown * (0.85 + Math.random() * 0.3);
         m.attackAnim = 0.3;
         const dmg = (5 + b.tier) * D.damage;
@@ -11558,13 +11645,7 @@ export function createVoxelGame(
       }
       if (hit && tmin < bestT) { best = m; bestT = tmin; }
     }
-    if (best) {
-      const b = raycastBlock();
-      if (b) {
-        const bd = Math.hypot(b.x + 0.5 - o.x, b.y + 0.5 - o.y, b.z + 0.5 - o.z) - 0.5;
-        if (bd < bestT) return null;
-      }
-    }
+    if (best && rayWallDistance(o.x, o.y, o.z, dir.x, dir.y, dir.z, bestT) < bestT) return null; // a wall is in the way
     return best;
   }
 
@@ -11905,7 +11986,7 @@ export function createVoxelGame(
           // on a 3-block pillar you're out of reach (and can hit it back from up there).
           // It only swings with its feet on the ground, so a little hop never adds reach.
           const rise = chase.y - m.pos.y;
-          if (cd < 2.8 && m.attackCooldown <= 0 && m.onGround && rise < 2.5 && rise > -3) {
+          if (cd < 2.8 && m.attackCooldown <= 0 && m.onGround && rise < 2.5 && rise > -3 && !wallBetween(m.pos.x, m.pos.y + 1.2, m.pos.z, chase.x, chase.y + 1.0, chase.z)) {
             m.attackCooldown = 1.3;
             m.attackAnim = 0.4;
             if (targetIsPlayer) hurtPlayer(14, m.pos, 14, 'Iron Golem');
@@ -12024,7 +12105,7 @@ export function createVoxelGame(
           m.velY = 6;
           m.knock.set((dx / dh) * 5, 0, (dz / dh) * 5);
         }
-        if (dh < 1.3 + (m.kind === 'spider' ? 0.4 : swordCinder ? 0.3 : 0) && Math.abs(dy) < 1.6 && m.attackCooldown <= 0) {
+        if (dh < 1.3 + (m.kind === 'spider' ? 0.4 : swordCinder ? 0.3 : 0) && Math.abs(dy) < 1.6 && m.attackCooldown <= 0 && !wallBetween(m.pos.x, m.pos.y + 0.9, m.pos.z, camera.position.x, camera.position.y - 0.7, camera.position.z)) {
           if (swordCinder) {
             // a Cinderbone's sword leaves Blight behind
             if (hurtPlayer(7, m.pos, 7, 'Cinderbone')) giveEffect('blight', 10, 1);
@@ -13855,7 +13936,9 @@ export function createVoxelGame(
     if (!kind) return;
     let seed = (Math.imul(x, 73856093) ^ Math.imul(y, 19349663) ^ Math.imul(z, 83492791)) >>> 0;
     const rnd = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
-    const table: Array<[number, number, number, number]> = kind === 'temple' // [item, chance, min, max]
+    const table: Array<[number, number, number, number]> = kind === 'skyblock' // [item, chance, min, max]: the same every time
+      ? [[ITEM_WATER_BUCKET, 1, 1, 1], [ITEM_LAVA_BUCKET, 1, 1, 1], [BLOCK_ICE, 1, 2, 2], [BLOCK_DIRT, 1, 8, 8], [BLOCK_SAND, 1, 4, 4], [BLOCK_CACTUS, 1, 1, 1], [ITEM_BREAD, 1, 3, 3], [ITEM_COAL, 1, 3, 3]]
+      : kind === 'temple'
       ? [[ITEM_GOLD_INGOT, 0.6, 2, 7], [ITEM_IRON_INGOT, 0.6, 1, 5], [ITEM_DIAMOND, 0.22, 1, 3], [ITEM_EMERALD, 0.4, 1, 3], [ITEM_ROTTEN_FLESH, 0.5, 3, 7], [ITEM_GUNPOWDER, 0.4, 1, 8], [BLOCK_TERRACOTTA_ORANGE, 0.5, 2, 6]]
       : kind === 'dungeon'
       ? [[ITEM_BREAD, 0.6, 1, 3], [ITEM_IRON_INGOT, 0.55, 1, 4], [ITEM_GOLD_INGOT, 0.3, 1, 3], [ITEM_REDSTONE, 0.45, 2, 6], [ITEM_COAL, 0.5, 2, 6], [ITEM_BONE, 0.5, 1, 4], [ITEM_GUNPOWDER, 0.4, 1, 4], [ITEM_STRING, 0.4, 1, 4], [ITEM_NAME_TAG, 0.1, 1, 1], [ITEM_DIAMOND, 0.06, 1, 1]]
@@ -16028,6 +16111,27 @@ export function createVoxelGame(
   // Hits solid blocks and plants; fluids only when asked (buckets), so you can mine and build through water
   /** Where inside its cell the last raycast hit landed (0..1): tells which half of a slab you clicked. */
   const lastHitFrac = { x: 0.5, y: 0.5, z: 0.5 };
+  /** How far along a ray until a solid block (walls, floors, stairs and slabs where they really are), or Infinity: you can't hit through walls. */
+  function rayWallDistance(ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, maxD: number): number {
+    const len = Math.hypot(dx, dy, dz) || 1;
+    const ux = dx / len, uy = dy / len, uz = dz / len;
+    for (let d = 0.05; d <= maxD; d += 0.05) {
+      const x = ox + ux * d, y = oy + uy * d, z = oz + uz * d;
+      const bx = Math.floor(x), by = Math.floor(y), bz = Math.floor(z);
+      const b = world.getWorldBlock(bx, by, bz);
+      if (b === 0) continue;
+      if (isStepBlock(b)) { if (insideStep(b, bx, by, bz, x, y, z)) return d; }
+      else if (isSolid(b)) return d;
+    }
+    return Infinity;
+  }
+  /** Is a solid block between two points? Melee hits (bots, mobs, players) don't go through walls. */
+  function wallBetween(ax: number, ay: number, az: number, bx: number, by: number, bz: number): boolean {
+    const dx = bx - ax, dy = by - ay, dz = bz - az;
+    const len = Math.hypot(dx, dy, dz);
+    if (len < 0.3) return false;
+    return rayWallDistance(ax, ay, az, dx, dy, dz, len - 0.15) !== Infinity;
+  }
   /** Is a point inside one of the boxes of a stair or slab? (Arrows fly over the empty half.) */
   function insideStep(b: number, bx: number, by: number, bz: number, x: number, y: number, z: number): boolean {
     const boxes = shapeBoxes(b, (dx, dy, dz) => world.getWorldBlock(bx + dx, by + dy, bz + dz));
@@ -16690,10 +16794,11 @@ export function createVoxelGame(
     const slowedByHold = crouching || swordBlocking;
     const sprintHeld = down('sprint') && down('forward') && !down('back') && !(canBeAttacked() && hunger <= 6) && !inFluidNow && !slowedByHold;
     const walkSpeed = (sprintHeld ? SPRINT_SPEED : WALK_SPEED) * (crouching ? CROUCH_SLOW : 1) * (swordBlocking ? BLOCK_SLOW : 1) * (1 + 0.2 * effectLevel('speed')) * Math.max(0.2, 1 - 0.15 * effectLevel('slowness'));
-    // While flying, Shift means "descend", so flight gets its own steady speed
+    // While flying, the crouch key (Left Alt) descends and the sprint key (Shift) flies faster
+    const flySprint = isFlying && down('sprint');
     const onSoulSand = world.getWorldBlock(Math.floor(camera.position.x), Math.floor(camera.position.y - PLAYER_EYE - 0.1), Math.floor(camera.position.z)) === BLOCK_SOUL_SAND;
     const fluidSlow = (inFluidNow === 'water' ? 0.6 : inFluidNow === 'lava' ? 0.45 : 1) * (onSoulSand ? 0.55 : 1);
-    const speed = isFlying ? WALK_SPEED * (noclip ? 2.6 : 2.2) : walkSpeed * fluidSlow;
+    const speed = isFlying ? WALK_SPEED * (noclip ? 2.6 : 2.2) * (flySprint ? FLY_SPRINT_MULT : 1) : walkSpeed * fluidSlow;
     const forward = new THREE.Vector3();
     const right = new THREE.Vector3();
     camera.getWorldDirection(forward);
@@ -16811,12 +16916,12 @@ export function createVoxelGame(
       wasGrounded = true;
       fallPeakY = camera.position.y;
     } else if (isFlying) {
-      // Creative flight: no gravity, Space ascends, Shift descends.
-      const FLY_SPEED = 10;
+      // Creative flight: no gravity, Space ascends, the crouch key (Left Alt) descends, Shift flies faster.
+      const FLY_SPEED = 10 * (flySprint ? FLY_SPRINT_MULT : 1);
       velocityY = 0;
       let dyFly = 0;
       if (down('jump')) dyFly += FLY_SPEED * delta;
-      if (down('crouch') || (down('sprint') && !down('jump'))) dyFly -= FLY_SPEED * delta;
+      if (down('crouch')) dyFly -= FLY_SPEED * delta;
       if (dyFly !== 0) {
         const newY = camera.position.y + dyFly;
         // Creative flight still collides with blocks; only spectator passes through
@@ -17045,7 +17150,13 @@ export function createVoxelGame(
     if (heldMesh && hold === 'item') {
       const sw = punchPhase > 0 ? swingCurve(1 - punchPhase / PUNCH_DURATION) : 0;
       const draw = bowDrawing ? bowCharge() : 0;
-      if (heldItem !== null && TOOLS[heldItem]) {
+      if (heldItem !== null && TOOLS[heldItem]?.kind === 'sword') {
+        // Sword swing: the blade lifts, then chops down and forward across the screen and recovers; blocking holds it up across the body
+        const b = blockLerp, B = (a: number, c: number) => a + (c - a) * b;
+        const free = 1 - b * 0.6;
+        heldMesh.position.set(B(SWORD_FP.x, SWORD_BLOCK_FP.x) - 0.1 * sw + hbx * free + idleX * free + 0.06 * eq, B(SWORD_FP.y, SWORD_BLOCK_FP.y) + 0.05 * sw + hby * free + idleY + spY - 0.6 * eq, B(SWORD_FP.z, SWORD_BLOCK_FP.z) - 0.15 * sw + 0.03 * sprintLerp);
+        heldMesh.rotation.set(B(SWORD_FP.rx, SWORD_BLOCK_FP.rx) - 0.45 * sw - spR * free + 0.9 * eq, B(SWORD_FP.ry, SWORD_BLOCK_FP.ry) + 0.2 * sw, B(SWORD_FP.rz, SWORD_BLOCK_FP.rz) - 0.8 * sw + idleR * free);
+      } else if (heldItem !== null && TOOLS[heldItem]) {
         // Swing: wind back, then the blade arcs down toward the crosshair and recovers
         const b = blockLerp, B = (a: number, c: number) => a + (c - a) * b;
         const free = 1 - b * 0.6; // when blocking, the pose holds still
