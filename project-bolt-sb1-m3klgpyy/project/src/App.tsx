@@ -5672,7 +5672,9 @@ export default function App() {
     load();
     const timer = window.setInterval(load, 5 * 60_000);
     window.addEventListener('vb-standing-refresh', load);
-    return () => { alive = false; window.clearInterval(timer); window.removeEventListener('vb-standing-refresh', load); };
+    const onShow = () => { if (document.visibilityState === 'visible') load(); }; // a rank given while you were away shows as soon as you come back
+    document.addEventListener('visibilitychange', onShow);
+    return () => { alive = false; window.clearInterval(timer); window.removeEventListener('vb-standing-refresh', load); document.removeEventListener('visibilitychange', onShow); };
   }, [account?.username]);
   const [authWaitOver, setAuthWaitOver] = useState(false);
   const [unread, setUnread] = useState<Record<string, number>>({});

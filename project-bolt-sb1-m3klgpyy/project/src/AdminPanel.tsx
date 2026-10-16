@@ -8,7 +8,7 @@ import SideNav from './SideNav';
 import AccountPanel from './AccountPanel';
 import { ShieldCheck, Megaphone, Gavel, UserX, Ban, X, Loader2, Undo2, Crown, Sun, Moon, ShieldAlert, Tv, UserPlus } from 'lucide-react';
 import {
-  postAnnouncement, banEverywhere, unbanEverywhere, listBans, getLastAnnouncement, setLastAnnouncement, isOwnerName, giveRank, rankInfo, RANKS, RANK_LABELS, ANNOUNCE_MAX, USERNAME_RE,
+  postAnnouncement, banEverywhere, unbanEverywhere, listBans, getLastAnnouncement, setLastAnnouncement, isOwnerName, giveRank, rankInfo, rankPending, RANKS, RANK_LABELS, ANNOUNCE_MAX, USERNAME_RE,
   listAdmins, setAdmin, listCheatReports, type Account, type Ban as BanRow, type RankName, type CheatReport,
 } from './social';
 import { adStatus } from './adEconomy';
@@ -322,13 +322,13 @@ function RanksSection({ owner, say }: Ctx) {
   const [duration, setDuration] = useState('perm');
   const [customAmount, setCustomAmount] = useState('12');
   const [customUnit, setCustomUnit] = useState<'hours' | 'days'>('hours');
-  const [rankNow, setRankNow] = useState<{ rank: string; until: string | null } | '?' | null>(null);
+  const [rankNow, setRankNow] = useState<{ rank: string; until: string | null } | '?' | 'waiting' | null>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     setRankNow(null);
     if (!USERNAME_RE.test(rankName)) return;
     let live = true;
-    const t = setTimeout(() => { void rankInfo(rankName).then((r) => { if (live) setRankNow(r === null ? '?' : r); }); }, 350);
+    const t = setTimeout(() => { void rankInfo(rankName).then(async (r) => { if (r === null) { const w = await rankPending(rankName); if (live) setRankNow(w ? 'waiting' : '?'); } else if (live) setRankNow(r); }); }, 350);
     return () => { live = false; clearTimeout(t); };
   }, [rankName]);
   const temp = rankPick !== 'none';
@@ -343,8 +343,8 @@ function RanksSection({ owner, say }: Ctx) {
     setBusy(false);
     if (!r.ok) { say(false, r.error); return; }
     const until = hours === null ? null : new Date(Date.now() + hours * 3_600_000).toISOString();
-    say(true, rankPick === 'none' ? `${r.username} no longer has a rank.` : `${r.username} is now ${RANK_LABELS[rankPick]} ${hours === null ? 'for good' : `for ${hours >= 48 && hours % 24 === 0 ? `${hours / 24} days` : `${hours} hour${hours === 1 ? '' : 's'}`}`}. They see it the next time they sign in.`);
-    setRankNow({ rank: rankPick, until });
+    say(true, rankPick === 'none' ? `${r.username} no longer has a rank.` : `${r.username} is now ${RANK_LABELS[rankPick]} ${hours === null ? 'for good' : `for ${hours >= 48 && hours % 24 === 0 ? `${hours / 24} days` : `${hours} hour${hours === 1 ? '' : 's'}`}`}. ${r.pending ? 'They have no account yet: they get it the moment they sign up.' : 'They do not have to be online: they have it now (or see it when they sign in).'}`);
+    setRankNow(r.pending ? 'waiting' : { rank: rankPick, until });
   }
   const sel = 'bg-[#0a0e14] border border-[#243044] rounded-xl text-sm text-white px-3 py-2.5';
   return (
@@ -375,7 +375,7 @@ function RanksSection({ owner, say }: Ctx) {
         </button>
       </div>
       <p className="text-[11px] text-[#5a6b80] mt-2" data-testid="rank-now">
-        {rankNow === null ? 'Type a username to see their rank.' : rankNow === '?' ? 'Nobody has that name.'
+        {rankNow === null ? 'Type a username to see their rank.' : rankNow === '?' ? 'Nobody has that name yet. You can still give them a rank: they get it when they sign up.' : rankNow === 'waiting' ? 'No account with that name yet. A rank is waiting for them and they get it when they sign up.'
           : `Current rank: ${RANK_LABELS[(RANKS as readonly string[]).includes(rankNow.rank) ? rankNow.rank as RankName : 'none']}${rankNow.rank !== 'none' ? ` (${untilText(rankNow.until)})` : ''}`}
       </p>
     </div>

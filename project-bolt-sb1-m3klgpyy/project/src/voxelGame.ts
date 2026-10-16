@@ -4118,7 +4118,7 @@ export const ITEM_INFO: Record<number, { name: string; color: string; hidden?: b
   [ITEM_EMERALD_AXE]: { name: 'Emerald Axe', color: '#5cf59a' },
   [ITEM_STRING]: { name: 'String', color: '#e8e8e8' },
   [ITEM_SPIDER_EYE]: { name: 'Spider Eye', color: '#c0263a' },
-  [ITEM_TIME_CORE]: { name: 'Time Core', color: '#3fd0ff' },
+  [ITEM_TIME_CORE]: { name: 'Time Core', color: '#3fd0ff', lore: ['Hold it in your off-hand (F swaps).', "If you'd die, it shatters and rewinds you 5 seconds."] },
   [ITEM_IRON_PICKAXE]: { name: 'Iron Pickaxe', color: '#e0e0e0' },
   [ITEM_IRON_SWORD]: { name: 'Iron Sword', color: '#e0e0e0' },
   [ITEM_IRON_AXE]: { name: 'Iron Axe', color: '#e0e0e0' },
@@ -4725,6 +4725,11 @@ STEP_MATERIALS.forEach((m, mi) => {
   RECIPES.push({ id: `${m.key}_stairs`, name: `${m.name} Stairs`, pattern: [m.base, null, null, m.base, m.base, null, m.base, m.base, m.base], width: 3, height: 3, output: { id: stairId(mi, 0, false), count: 4 }, needsTable: true });
   RECIPES.push({ id: `${m.key}_slab`, name: `${m.name} Slab`, pattern: [m.base, m.base, m.base], width: 3, height: 1, output: { id: slabId(mi, false), count: 6 }, needsTable: true });
 });
+
+// Item descriptions are only for special items: the Time Core, VibeBlox's own rare items (and the player head's skin name).
+// Everything else (tools, redstone, food, blocks, spawn eggs...) has just its name. Mod items bring their own descriptions when they load.
+const LORE_ITEMS = new Set(['Time Core', 'Infernium Ingot', 'Hollow Star', 'Cinderbone Skull', 'Bridge Egg', 'Selection Wand', 'Player Head']);
+for (const key of Object.keys(ITEM_INFO)) { const info = ITEM_INFO[Number(key)]; if (info.lore && !LORE_ITEMS.has(info.name)) delete info.lore; }
 
 /**
  * Match a crafting grid against the recipe list. `grid` is row-major with

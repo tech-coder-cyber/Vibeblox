@@ -23,6 +23,8 @@ export const NEWS: NewsEntry[] = [
       'Usernames can\'t have spaces anymore (letters, numbers and _ only).',
       'Guest accounts can play but can\'t make worlds, level up, use the Shop or Social. Those are greyed out until you sign in.',
       'Owners and admins can unban players: /pardon <name> or the new Banned players list in Manage Server.',
+      'Ranks no longer need the player to be online: the owner can give a rank to anyone, even someone who is offline or has not made an account yet (it waits and they get it when they sign up). A rank that ran out is never shown, even before the clean-up runs.',
+      'Item descriptions are gone, except for special items like the Time Core, rare items and mod items.',
       'Daily reward opens by itself when you open VibeBlox (only if you haven\'t claimed it today). The banner at the top is gone and lootboxes are opened from the profile panel on the right.',
     ],
   },

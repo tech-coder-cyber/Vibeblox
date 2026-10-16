@@ -493,7 +493,7 @@ export const RANKS = ['none', 'vanguard', 'elite', 'champion'] as const;
 export type RankName = (typeof RANKS)[number];
 export const RANK_LABELS: Record<RankName, string> = { none: 'No rank', vanguard: 'Vanguard', elite: 'Elite', champion: 'Champion' };
 /** Owner only: give a player a rank (or take it away with 'none'). Returns their name as the database spells it. */
-export async function giveRank(username: string, rank: string, hours?: number | null): Promise<Result<{ username: string }>> {
+export async function giveRank(username: string, rank: string, hours?: number | null): Promise<Result<{ username: string; pending: boolean }>> {
   const name = username.trim();
   if (!USERNAME_RE.test(name)) return fail('That is not a valid username');
   if (!(RANKS as readonly string[]).includes(rank)) return fail('Pick a rank');
@@ -503,7 +503,15 @@ export async function giveRank(username: string, rank: string, hours?: number | 
   if (!r.ok && temp && /p_hours|function|schema cache|not find/i.test(r.error)) return fail('Run vibeblox_round17.sql in Supabase to give ranks for a limited time');
   if (!r.ok) return r.status === 403 || /owner only/i.test(r.error) ? fail('Only the owner can give ranks. ' + NOT_ADMIN_HINT) : fail(r.error);
   if (typeof r.data !== 'string' || !r.data) return fail(`Nobody is called ${name}`);
-  return { ok: true, username: r.data };
+  // The player does not have to be online. With no account yet, the rank waits and they get it when they sign up.
+  const pending = rank !== 'none' && (await rankInfo(r.data)) === null;
+  return { ok: true, username: r.data, pending };
+}
+/** Is a rank waiting for a username that has no account yet? (owner only) */
+export async function rankPending(username: string): Promise<boolean> {
+  if (!USERNAME_RE.test(username.trim())) return false;
+  const r = await rest('POST', 'rpc/rank_pending', { p_username: username.trim() });
+  return r.ok && r.data === true;
 }
 /** A player's rank, or null if there is no such player. */
 export async function rankOf(username: string): Promise<string | null> {
