@@ -31,7 +31,7 @@ const OWNER_NAME = 'master';
 let hostTier = 'none';
 const maxPlayers = () => (ENV_MAX && ENV_MAX > 0 ? ENV_MAX : CAPS[hostTier] || CAPS.none);
 const WORLD_FILE = process.env.WORLD_FILE || path.join(__dirname, 'world.json');
-const PROTOCOL = 14; // must match PROTOCOL_VERSION in the game (14: /title, fake ranks, badges; 13: sleeping, whispers, admin panel)
+const PROTOCOL = 15; // must match PROTOCOL_VERSION in the game (15: turned heads, low trapdoors; 14: /title, fake ranks, badges; 13: sleeping, whispers, admin panel)
 const DAY_LENGTH = 600; // seconds, must match the game
 const MAX_FRAME = 64 * 1024; // biggest message a client may send
 const VALID_MODES = ['survival', 'creative', 'adventure'];
@@ -336,7 +336,7 @@ const num = (v) => typeof v === 'number' && Number.isFinite(v);
 const int = (v) => Number.isInteger(v);
 const validBlock = (x, y, z, b) =>
   int(x) && int(y) && int(z) && int(b) && y >= 0 && y < 64 &&
-  Math.abs(x) < 30_000_000 && Math.abs(z) < 30_000_000 && ((b >= 0 && b < 100) || (b >= 1000 && b < 1400)); // 1000-1399: newer blocks (redstone, wool...)
+  Math.abs(x) < 30_000_000 && Math.abs(z) < 30_000_000 && ((b >= 0 && b < 100) || (b >= 1000 && b < 1400) || (b >= 2000 && b < 2300)); // 1000-1399: newer blocks (redstone, wool...); 2000+: stairs, slabs, turned heads, low trapdoors
 
 function finishJoin(p) {
   if ([...players.values()].filter((o) => o.joined).length >= maxPlayers()) return p.conn.close(4001, 'Server is full');
