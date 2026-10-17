@@ -75,7 +75,7 @@ export function QolSettings() {
           </button>
         );
       })}
-      <p className="text-[#5a6b80] text-xs">Press F2 in the game to save a screenshot.</p>
+      <p className="text-[#5a6b80] text-xs">Press F2 in the game, or type /screenshot, to save a screenshot.</p>
     </div>
   );
 }
@@ -102,5 +102,51 @@ export function PlaylistNote({ style }: { style: string }) {
         {status === 'empty' ? `No song files in public/music/${style} yet, so the built-in music plays.` : status === 'loading' ? 'Loading…' : 'Playing the songs one after another, on repeat.'}
       </span>
     </div>
+  );
+}
+
+const BLOCK_SOUND_OPTIONS: Array<[keyof QolPrefs, string, string]> = [
+  ['blockBreak', 'Breaking sounds', 'The crunch of stone, the thunk of wood and the crumble of sand when you mine and break blocks'],
+  ['blockPlace', 'Placing sounds', 'The sound a block makes when you set it down'],
+  ['footsteps', 'Footsteps', 'Your steps change with the ground: stone, wood, sand, grass and snow'],
+];
+
+/** Settings > Audio: the sounds blocks make, one switch each plus their own volume (on top of Sound Effects). */
+export function BlockSoundSettings() {
+  const prefs = useQol();
+  const all = prefs.blockBreak || prefs.blockPlace || prefs.footsteps;
+  return (
+    <section className="bg-[#121822] rounded-2xl border border-[#243044] p-6 mt-6" data-testid="block-sounds">
+      <div className="flex items-center justify-between mb-1">
+        <h2 className="text-white text-sm font-medium">Block Sounds</h2>
+        <button onClick={() => setQol({ blockBreak: !all, blockPlace: !all, footsteps: !all })} data-testid="block-sounds-all"
+          className="px-3 py-1 rounded-lg bg-[#0a0e14] border border-[#243044] text-xs text-[#8ea0b8] hover:border-[#00e676] hover:text-[#00e676] transition-colors">{all ? 'Turn all off' : 'Turn all on'}</button>
+      </div>
+      <p className="text-[#5a6b80] text-xs mb-4">Different blocks sound different. Pick which of these you want to hear.</p>
+      <div className="flex flex-col gap-2">
+        {BLOCK_SOUND_OPTIONS.map(([k, label, desc]) => {
+          const on = prefs[k] as boolean;
+          return (
+            <button key={k} onClick={() => setQol({ [k]: !on } as Partial<QolPrefs>)} data-testid={`qol-${k}`} aria-pressed={on}
+              className="flex items-center justify-between px-4 py-3 rounded-xl bg-[#0a0e14] border border-[#243044] text-left transition-all duration-200 hover:border-[#364860] hover:scale-[1.01] active:scale-[0.99]">
+              <div>
+                <div className="text-white text-sm font-medium">{label}</div>
+                <div className="text-[#5a6b80] text-xs">{desc}</div>
+              </div>
+              <div className={`w-10 h-6 rounded-full p-0.5 shrink-0 ml-3 transition-colors ${on ? 'bg-[#00e676]' : 'bg-[#243044]'}`}>
+                <div className={`w-5 h-5 rounded-full bg-white shadow transition-transform duration-200 ${on ? 'translate-x-4' : ''}`} />
+              </div>
+            </button>
+          );
+        })}
+      </div>
+      <div className="flex items-center justify-between mt-4 mb-2">
+        <span className="text-white text-sm font-medium">Block sound volume</span>
+        <span className="font-[var(--font-display)] text-[#00e676] text-lg" data-testid="block-volume-value">{Math.round(prefs.blockVolume * 100)}<span className="text-[#5a6b80] text-xs ml-1">%</span></span>
+      </div>
+      <input type="range" min={0} max={1} step={0.01} value={prefs.blockVolume} data-testid="block-volume"
+        onChange={(e) => setQol({ blockVolume: parseFloat(e.target.value) })}
+        className="w-full h-2 bg-[#0a0e14] rounded-full appearance-none cursor-pointer" />
+    </section>
   );
 }

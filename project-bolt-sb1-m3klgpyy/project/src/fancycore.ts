@@ -82,7 +82,7 @@ export function glitchText(text: string, amount = 0.3): string {
 }
 
 // ---- drawing it on a canvas (name tags in the 3D world): a still picture of the animated text ----
-export function drawFancy(ctx: CanvasRenderingContext2D, text: string, cx: number, cy: number, size: number, baseColor = '#ffffff', t = 0): void {
+export function drawFancy(ctx: CanvasRenderingContext2D, text: string, cx: number, cy: number, size: number, baseColor = '#ffffff', t = 0): number {
   const segs = parseFancy(text, baseColor);
   const pieces: Array<{ ch: string; font: string; fill: string; glow?: string; w: number }> = [];
   let idx = 0;
@@ -113,5 +113,6 @@ export function drawFancy(ctx: CanvasRenderingContext2D, text: string, cx: numbe
     x += p.w;
   }
   ctx.shadowBlur = 0;
+  return total; // how wide it came out, so callers can fit a background or shrink the text
 }
 

@@ -2,11 +2,24 @@
 // a small update to the current one is a point release (Indev 26.1, 26.2...), a big one is the next number.
 //
 // The News page in the sidebar shows this list, and a dot appears on it until the newest one has been read.
-export const GAME_VERSION = 26.1;
+export const GAME_VERSION = 26.2;
 
 export type NewsEntry = { version: number; date: string; title: string; changes: string[] };
 
 export const NEWS: NewsEntry[] = [
+  {
+    version: 26.2,
+    date: 'October 16, 2026',
+    title: 'Server tags, world likes, block sounds & nametag fixes',
+    changes: [
+      'Server tags: pick up to 3 tags (Survival, PvP, Minigames, Creative, Roleplay and more) when you create a world, or change them any time in Esc > Manage Server. The Servers page shows them on every world and you can filter by tag.',
+      'Likes: signed-in players can like a world on the Servers page (the heart). Sort the list by Most liked. You can not like your own world, and guests can not like. Likes stay with the world even after you close it.',
+      'Block sounds: Settings > Audio has a new Block Sounds section. Turn breaking, placing and footsteps on or off, and set how loud blocks are.',
+      'New command: /screenshot saves a picture of the game as a PNG download, in any world, minigame or server. F2 still does the same.',
+      'Fixed: press F5 for third person and you now see your own name (with your rank) over your head.',
+      'Fixed: a long username with a rank in front was cut off over other players\' heads. The name plate is wider now, and extra long ones shrink to fit instead of being cut.',
+    ],
+  },
   {
     version: 26.1,
     date: 'October 15, 2026',

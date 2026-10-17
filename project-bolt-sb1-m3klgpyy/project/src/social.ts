@@ -7,6 +7,7 @@
 //
 // Nothing here throws: every function returns { ok, ... } with a message that is fine to show the player.
 
+import { cleanTags } from './worldTags';
 export const SUPABASE_URL = 'https://okhtosecqytklgwouwxv.supabase.co';
 export const SUPABASE_ANON_KEY = 'sb_publishable_kyklbTdQk64bRSdGSrEX0w_1lKAD4X0';
 
@@ -222,6 +223,8 @@ export type HostedWorld = {
   privacy: 'public' | 'accounts' | 'friends'; players: number; max: number; updatedAt: string;
   /** What the host wrote about the world, and its picture (an image address or a small data: URL) */
   description?: string; image?: string;
+  /** Up to three server tags (see worldTags.ts), and how many players like the world (and whether you do). Likes come from vibeblox_round20.sql. */
+  tags: string[]; likes: number; liked: boolean;
 };
 export const HOSTED_FRESH_MS = 90_000;
 export const HOSTED_ID_RE = /^[a-z0-9]{8,32}$/;
@@ -231,23 +234,48 @@ async function restAny(method: string, path: string, body?: unknown, extra: Reco
   try { token = await config.getToken(); } catch { token = null; }
   return rest(method, path, body, extra, token ?? config.anonKey);
 }
-type HostedRow = { id: string; host_name: string; name: string; mode: string; world_type: string; privacy: string; players: number; max_players: number; updated_at: string; description?: string | null; image?: string | null };
+type HostedRow = { id: string; host_name: string; name: string; mode: string; world_type: string; privacy: string; players: number; max_players: number; updated_at: string; description?: string | null; image?: string | null; tags?: unknown };
 const toHosted = (r: HostedRow): HostedWorld => ({
   id: r.id, host: r.host_name, name: r.name, mode: r.mode, worldType: r.world_type,
   privacy: r.privacy === 'friends' || r.privacy === 'accounts' ? r.privacy : 'public', players: Number(r.players) || 0, max: Number(r.max_players) || 18, updatedAt: r.updated_at,
   description: r.description ?? undefined, image: r.image ?? undefined,
+  tags: cleanTags(r.tags), likes: 0, liked: false,
 });
 const HOSTED_COLS = 'id,host_name,name,mode,world_type,privacy,players,max_players,updated_at';
-/** The extra columns (description, picture) come from vibeblox_round16.sql; without it the list still works. */
+/** The extra columns (description, picture, tags) come from vibeblox_round16.sql and vibeblox_round20.sql; without them the list still works. */
 let hostedExtras = true;
+let hostedTags = true;
 export async function listHostedWorlds(): Promise<Result<{ worlds: HostedWorld[] }>> {
   void restAny('POST', 'rpc/prune_hosted_worlds', {}); // tidy up worlds whose host vanished (fire and forget)
   const since = new Date(Date.now() - HOSTED_FRESH_MS).toISOString();
   const q = (cols: string) => restAny('GET', `hosted_worlds?select=${cols}&updated_at=gte.${encodeURIComponent(since)}&order=players.desc,updated_at.desc&limit=60`);
-  let r = await q(hostedExtras ? HOSTED_COLS + ',description,image' : HOSTED_COLS);
-  if (!r.ok && hostedExtras && r.status === 400) { hostedExtras = false; r = await q(HOSTED_COLS); } // older database: no pictures yet
+  const cols = () => HOSTED_COLS + (hostedExtras ? ',description,image' : '') + (hostedTags ? ',tags' : '');
+  let r = await q(cols());
+  if (!r.ok && r.status === 400 && hostedTags) { hostedTags = false; r = await q(cols()); } // older database: no tags yet
+  if (!r.ok && r.status === 400 && hostedExtras) { hostedExtras = false; r = await q(cols()); } // older database: no pictures yet
   if (!r.ok) return fail(r.status === 404 ? 'World list isn\'t set up yet (run vibeblox_round13.sql in Supabase)' : r.error);
-  return { ok: true, worlds: (r.data as HostedRow[]).map(toHosted) };
+  const worlds = (r.data as HostedRow[]).map(toHosted);
+  await addLikes(worlds);
+  return { ok: true, worlds };
+}
+/** Fills in how many players like each world, and whether you do. Quietly does nothing if the database has no likes yet. */
+let likesAvailable = true;
+async function addLikes(worlds: HostedWorld[]): Promise<void> {
+  if (!likesAvailable || !worlds.length) return;
+  const r = await restAny('POST', 'rpc/world_likes_for', { p_ids: worlds.map((w) => w.id) });
+  if (!r.ok) { if (r.status === 404) likesAvailable = false; return; }
+  const byId = new Map<string, { likes: number; liked: boolean }>();
+  for (const row of (Array.isArray(r.data) ? r.data : []) as Array<{ world_id: string; likes: number | string; liked: boolean }>) byId.set(row.world_id, { likes: Number(row.likes) || 0, liked: !!row.liked });
+  for (const w of worlds) { const l = byId.get(w.id); if (l) { w.likes = l.likes; w.liked = l.liked; } }
+}
+/** Like (on = true) or un-like a world. Gives the new like count, or says why not (guests, your own world...). */
+export async function setWorldLike(id: string, on: boolean): Promise<Result<{ likes: number }>> {
+  if (!HOSTED_ID_RE.test(id)) return fail('Bad world id');
+  const r = await rest('POST', 'rpc/like_world', { p_id: id, p_on: on });
+  if (r.ok) return { ok: true, likes: Number(r.data) || 0 };
+  if (r.status === 404) return fail('Likes are not set up yet (run vibeblox_round20.sql in Supabase)');
+  const m = /sign in to like|guests cannot like|your own world|not open any more/.exec(String(r.error));
+  return fail(m ? ({ 'sign in to like': 'Sign in to like worlds', 'guests cannot like': 'Guests cannot like worlds. Sign in with an account.', 'your own world': 'You cannot like your own world', 'not open any more': 'That world is not open any more' } as Record<string, string>)[m[0]] : r.error);
 }
 /** One hosted world by id (null: it's gone, or you aren't allowed to see it). */
 export async function getHostedWorld(id: string): Promise<HostedWorld | null> {
@@ -256,14 +284,20 @@ export async function getHostedWorld(id: string): Promise<HostedWorld | null> {
   return r.ok && Array.isArray(r.data) && r.data[0] ? toHosted(r.data[0] as HostedRow) : null;
 }
 /** Lists (or refreshes) the world you are hosting. Call it every ~20 seconds while you play. */
-export async function publishHostedWorld(me: Account, w: { id: string; name: string; mode: string; worldType: string; privacy: string; players: number; max: number; description?: string; image?: string }): Promise<Result> {
+export async function publishHostedWorld(me: Account, w: { id: string; name: string; mode: string; worldType: string; privacy: string; players: number; max: number; description?: string; image?: string; tags?: string[] }): Promise<Result> {
   if (!HOSTED_ID_RE.test(w.id)) return fail('Bad world id');
   const row: Record<string, unknown> = {
     id: w.id, host_id: me.userId, host_name: me.username, name: w.name.slice(0, 40) || 'World', mode: w.mode, world_type: w.worldType,
     privacy: w.privacy, players: Math.max(0, Math.min(100, w.players)), max_players: Math.max(1, Math.min(100, w.max)), updated_at: new Date().toISOString(),
   };
   if (hostedExtras) { row.description = (w.description ?? '').slice(0, 200); row.image = cleanWorldImage(w.image); }
+  if (hostedTags) row.tags = cleanTags(w.tags);
   let r = await rest('POST', 'hosted_worlds?on_conflict=id', row, { prefer: 'resolution=merge-duplicates,return=minimal' });
+  if (!r.ok && hostedTags && r.status === 400) { // older database: no tags column yet
+    hostedTags = false;
+    delete row.tags;
+    r = await rest('POST', 'hosted_worlds?on_conflict=id', row, { prefer: 'resolution=merge-duplicates,return=minimal' });
+  }
   if (!r.ok && hostedExtras && r.status === 400) { // older database: no description/picture columns yet
     hostedExtras = false;
     delete row.description; delete row.image;

@@ -3,10 +3,14 @@
 //   lookingAt  the name of that block on screen
 //   uiSounds   a soft tick when you press a button in the menus
 //   nowPlaying "Now Playing" pop-up when a new song starts
+//   blockBreak / blockPlace / footsteps   the sounds blocks make (Settings > Audio), and blockVolume how loud they are
 import { useSyncExternalStore } from 'react';
 
-export type QolPrefs = { outline: boolean; lookingAt: boolean; uiSounds: boolean; nowPlaying: boolean };
-export const QOL_DEFAULT: QolPrefs = { outline: true, lookingAt: true, uiSounds: true, nowPlaying: true };
+export type QolPrefs = {
+  outline: boolean; lookingAt: boolean; uiSounds: boolean; nowPlaying: boolean;
+  blockBreak: boolean; blockPlace: boolean; footsteps: boolean; blockVolume: number;
+};
+export const QOL_DEFAULT: QolPrefs = { outline: true, lookingAt: true, uiSounds: true, nowPlaying: true, blockBreak: true, blockPlace: true, footsteps: true, blockVolume: 1 };
 const KEY = 'vb-qol';
 
 function load(): QolPrefs {
@@ -15,7 +19,10 @@ function load(): QolPrefs {
     if (raw) {
       const o = JSON.parse(raw) as Partial<QolPrefs>;
       const out = { ...QOL_DEFAULT };
-      for (const k of Object.keys(QOL_DEFAULT) as Array<keyof QolPrefs>) if (typeof o[k] === 'boolean') out[k] = o[k] as boolean;
+      for (const k of Object.keys(QOL_DEFAULT) as Array<keyof QolPrefs>) {
+        if (k === 'blockVolume') { if (typeof o[k] === 'number' && Number.isFinite(o[k])) out[k] = Math.max(0, Math.min(1, o[k] as number)); }
+        else if (typeof o[k] === 'boolean') (out as Record<string, unknown>)[k] = o[k];
+      }
       return out;
     }
   } catch { /* storage blocked or broken: use the defaults */ }

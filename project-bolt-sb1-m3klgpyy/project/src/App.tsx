@@ -33,7 +33,7 @@ import PrivateServers from './PrivateServersPanel';
 import VideoOptions from './VideoOptions';
 import { MusicPlayer, SOUNDTRACKS, subscribeNowPlaying, getNowPlaying, type SoundtrackStyle, type AnySoundtrack } from './music';
 import { playlist, isFileStyle } from './playlist';
-import { NowPlayingToast, LookingAtLabel, QolSettings, PlaylistNote, saveScreenshot } from './QolBits';
+import { NowPlayingToast, LookingAtLabel, QolSettings, BlockSoundSettings, PlaylistNote, saveScreenshot } from './QolBits';
 import { installUiSounds, setUiSoundVolume, getQol, subscribeQol } from './qol';
 import { useCompactLayout } from './layout';
 import SideNav from './SideNav';
@@ -50,7 +50,8 @@ import TouchControls, { RotateHint, touchEnabled, loadTouchPref, saveTouchPref, 
 import Tutorial, { tutorialDone } from './Tutorial';
 import { LOYALTY_RANKS, isYearMilestone, loyaltyLabel, pendingMilestones, nextMilestone, type LoyaltyRank } from './loyalty';
 import { fetchLoyalty, claimLoyalty, type LoyaltyInfo } from './social';
-import { saveProgressToAccount, loadProgressFromAccount, fetchLevelLeaderboard, reportCheat, cleanWorldImage, type LevelRow, addFriend, unfriendByName, loadFriends, sendDM, startPolling, isGuestName, reportActivity, fetchPlayingCounts, fetchLeaderboard, fetchStanding, recordPlay, setServerPresence, isOwnerName, listHostedWorlds, publishHostedWorld, unpublishHostedWorld, verifyToken, isFriendOf, isBannedName, isAdminToken, type DM, type Activity, type Friend, type LeaderRow, type Standing, type HostedWorld } from './social';
+import { WORLD_TAGS, MAX_WORLD_TAGS, cleanTags, toggleTag, tagInfo } from './worldTags';
+import { setWorldLike, saveProgressToAccount, loadProgressFromAccount, fetchLevelLeaderboard, reportCheat, cleanWorldImage, type LevelRow, addFriend, unfriendByName, loadFriends, sendDM, startPolling, isGuestName, reportActivity, fetchPlayingCounts, fetchLeaderboard, fetchStanding, recordPlay, setServerPresence, isOwnerName, listHostedWorlds, publishHostedWorld, unpublishHostedWorld, verifyToken, isFriendOf, isBannedName, isAdminToken, type DM, type Activity, type Friend, type LeaderRow, type Standing, type HostedWorld } from './social';
 
 // Multiplayer is optional: Vite only includes src/multiplayer.ts if the file
 // exists, so deleting it (or the server folder) never breaks the game.
@@ -988,6 +989,7 @@ type WorldConfig = {
   privacy?: WorldPrivacy; // who may join while you play it (public when not set)
   bans?: string[];        // players banned from this world
   description?: string;   // shown with the world's picture on the Servers page while it is open
+  tags?: string[];        // up to three server tags (Survival, PvP...) shown on the Servers page
 };
 
 const modeConfig: Record<WorldMode, { image: string; tag: string; accent: string; icon: typeof Swords; description: string }> = {
@@ -1050,6 +1052,7 @@ function CreateWorldView({ onSave, onBack, used, limit, initialMode = 'survival'
   const [experimental, setExperimental] = useState(false);
   const [privacy, setPrivacy] = useState<WorldPrivacy>('public');
   const [description, setDescription] = useState('');
+  const [tags, setTags] = useState<string[]>([]);
 
   function onImagePick(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -1094,6 +1097,7 @@ function CreateWorldView({ onSave, onBack, used, limit, initialMode = 'survival'
       experimental,
       privacy,
       description: description.trim().slice(0, 200) || undefined,
+      tags: tags.length ? tags : undefined,
     });
   }
 
@@ -1150,6 +1154,7 @@ function CreateWorldView({ onSave, onBack, used, limit, initialMode = 'survival'
               className="mt-1.5 w-full bg-[#0a0e14] border border-[#243044] rounded-xl px-4 py-2.5 text-white text-sm placeholder-[#364860] focus:border-[#00e676] focus:outline-none resize-none"
             />
             <p className="text-[#364860] text-[10px] mt-1">{description.length}/200 · add a picture below too</p>
+            <div className="mt-4"><TagPicker value={tags} onChange={setTags} testid="create-tags" /></div>
           </section>
 
           <section className="bg-[#121822] rounded-2xl border border-[#243044] p-6">
@@ -1675,6 +1680,7 @@ function SettingsView({
           className="w-full h-2 bg-[#0a0e14] rounded-full appearance-none cursor-pointer"
         />
       </section>
+      <BlockSoundSettings />
 
       </>}
       {tab === 'hud' && <section className="bg-[#121822] rounded-2xl border border-[#243044] p-6 mt-6">
@@ -3014,7 +3020,7 @@ function ManageServerView({ settings, hardcore, online, isHost, players, myId, h
   /** Anti-cheat alerts about players in this world (host only) */
   anticheat?: ReactNode;
   /** Your own world: who may join it (null when this isn't a world you can open to others). */
-  privacy?: { value: WorldPrivacy; open: boolean; players: number; signedIn: boolean; onChange: (p: WorldPrivacy) => void } | null;
+  privacy?: { value: WorldPrivacy; open: boolean; players: number; signedIn: boolean; onChange: (p: WorldPrivacy) => void; tags: string[]; onTags: (t: string[]) => void } | null;
   settings: ServerSettings; hardcore: boolean; online: boolean; isHost: boolean;
   players: Array<{ id: number; name: string }>; myId: number | null; hostId: number | null; weather: WeatherKind;
   onChange: (s: Partial<ServerSettings>) => void; onKick: (id: number) => void; onBan: (id: number) => void;
@@ -3055,6 +3061,7 @@ function ManageServerView({ settings, hardcore, online, isHost, players, myId, h
               : privacy.open ? <span className="text-[#7cfc7c]">Open: {privacy.players} {privacy.players === 1 ? 'player' : 'players'} here. {PRIVACY_INFO[privacy.value].hint}.</span>
               : <span className="text-[#ffb347]">Opening your world…</span>}
           </p>
+          {privacy.value !== 'private' && <div className="mt-4"><TagPicker value={privacy.tags} onChange={privacy.onTags} disabled={!isHost} testid="manage-tags" /></div>}
         </div>
       )}
       <div>
@@ -4139,6 +4146,7 @@ const COMMANDS: Array<{ names: string[]; usage: string; desc: string }> = [
   { names: ['difficulty'], usage: '/difficulty peaceful|easy|normal|hard', desc: 'Change the difficulty (not in Hardcore).' },
   { names: ['pardon', 'unban'], usage: '/pardon <player>', desc: 'Let a banned player join this world again (the world\'s owner, or an admin in someone else\'s world).' },
   { names: ['gamerule'], usage: '/gamerule keepInventory true|false', desc: 'Keep your items when you die.' },
+  { names: ['screenshot', 'ss'], usage: '/screenshot', desc: 'Save a picture of the game (a PNG download). F2 does the same. Works everywhere.' },
   { names: ['locate'], usage: '/locate village | temple | fortress | dungeon | portal | treasure', desc: 'Find the closest village, desert temple, dungeon, ruined portal, buried treasure, or (in the Nether) fortress.' },
 ];
 
@@ -5004,6 +5012,33 @@ function DeathScreen({ reason, onRespawn, onExit, hardcore = false }: { reason: 
   );
 }
 
+/** Pick up to three server tags. Used when you create a world and in Esc > Manage Server. */
+function TagPicker({ value, onChange, disabled = false, testid = 'tag-picker' }: { value: string[]; onChange: (tags: string[]) => void; disabled?: boolean; testid?: string }) {
+  const cur = cleanTags(value);
+  return (
+    <div data-testid={testid}>
+      <div className="flex items-center justify-between mb-1.5">
+        <p className="text-[#8ea0b8] text-xs">Server tags <span className="text-[#5a6b80]">(pick up to {MAX_WORLD_TAGS})</span></p>
+        <span className="text-[#5a6b80] text-[10px]" data-testid={`${testid}-count`}>{cur.length}/{MAX_WORLD_TAGS}</span>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {WORLD_TAGS.map((t) => {
+          const on = cur.includes(t.id);
+          const full = !on && cur.length >= MAX_WORLD_TAGS;
+          return (
+            <button key={t.id} type="button" disabled={disabled || full} aria-pressed={on} data-testid={`tag-${t.id}`}
+              onClick={() => onChange(toggleTag(cur, t.id))}
+              style={on ? { backgroundColor: t.color, borderColor: t.color, color: '#0a0e14' } : undefined}
+              className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all ${on ? '' : 'bg-[#0a0e14] border-[#243044] text-[#8ea0b8] hover:border-[#3a4a60] hover:text-white'} disabled:opacity-40 disabled:cursor-not-allowed`}>
+              {t.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 type NetStatus = 'offline' | 'connecting' | 'online';
 
 function ServersView({ serverUrl, onServerUrlChange, onJoin, status, error, available }: {
@@ -5020,6 +5055,26 @@ function ServersView({ serverUrl, onServerUrlChange, onJoin, status, error, avai
   const [listError, setListError] = useState<string | null>(null);
   const [showAddress, setShowAddress] = useState(false);
   const [joiningId, setJoiningId] = useState<string | null>(null);
+  const [tagFilter, setTagFilter] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState<'players' | 'likes'>('players');
+  const [likeMsg, setLikeMsg] = useState<string | null>(null);
+  const [liking, setLiking] = useState<string | null>(null);
+  const signedIn = !!summary.username && !isGuestName(summary.username);
+  /** Like or un-like a world: shows the change at once, then the real count from the database. */
+  async function toggleLike(w: HostedWorld) {
+    if (liking) return;
+    setLikeMsg(null);
+    setLiking(w.id);
+    const on = !w.liked;
+    setWorlds((prev) => prev && prev.map((x) => (x.id === w.id ? { ...x, liked: on, likes: Math.max(0, x.likes + (on ? 1 : -1)) } : x)));
+    const r = await setWorldLike(w.id, on);
+    if (r.ok) setWorlds((prev) => prev && prev.map((x) => (x.id === w.id ? { ...x, liked: on, likes: r.likes } : x)));
+    else {
+      setWorlds((prev) => prev && prev.map((x) => (x.id === w.id ? { ...x, liked: w.liked, likes: w.likes } : x)));
+      setLikeMsg(r.error);
+    }
+    setLiking(null);
+  }
   // The list keeps itself up to date while you look at it
   useEffect(() => {
     let live = true;
@@ -5034,6 +5089,9 @@ function ServersView({ serverUrl, onServerUrlChange, onJoin, status, error, avai
   }, []);
   useEffect(() => { if (!connecting) setJoiningId(null); }, [connecting]);
   const canJoin = available && hostingAvailable;
+  // filter by tag, then sort (most players first by default; most liked first when asked; ties keep the order from the database)
+  const shownWorlds = (worlds ?? []).filter((w) => !tagFilter || w.tags.includes(tagFilter)).map((w, i) => ({ w, i }))
+    .sort((a, b) => (sortBy === 'likes' ? b.w.likes - a.w.likes : 0) || b.w.players - a.w.players || a.i - b.i).map((x) => x.w);
   const privacyBadge = (p: HostedWorld['privacy']) => (p === 'friends' ? { icon: Users, text: 'Friends', cls: 'text-[#c8a2ff]' } : p === 'accounts' ? { icon: Shield, text: 'Accounts', cls: 'text-[#6ec6ff]' } : { icon: Globe, text: 'Public', cls: 'text-[#7cfc7c]' });
   const gameLabel = (w: HostedWorld) => (w.worldType === 'eggwars' ? 'EggWars' : w.worldType === 'bridge' ? 'Bridge Duels' : `${w.mode.charAt(0).toUpperCase()}${w.mode.slice(1)}${w.worldType === 'superflat' ? ' · Superflat' : ''}`);
   const fallbackImage = (w: HostedWorld) => (w.worldType === 'eggwars' ? '/images/eggwars-bg.jpg' : w.worldType === 'bridge' ? '/images/bridgeduels-bg.jpg' : w.worldType === 'superflat' ? '/images/superflat-bg.jpg' : (modeConfig as Record<string, { image: string }>)[w.mode]?.image ?? '/images/survival-bg.jpg');
@@ -5056,6 +5114,34 @@ function ServersView({ serverUrl, onServerUrlChange, onJoin, status, error, avai
         {error && <p className="text-red-400 text-xs mb-3 vb-fade-in" data-testid="join-error">{error}</p>}
         {!canJoin && <p className="text-amber-500 text-xs mb-3">Joining worlds isn't installed in this copy of the game (src/multiplayer.ts or src/hosting.ts is missing).</p>}
         {listError && !worlds?.length && <p className="text-[#ff9a3c] text-xs mb-2">{listError}</p>}
+        {worlds && worlds.length > 0 && (
+          <div className="mb-4 flex flex-col gap-2" data-testid="world-filters">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button onClick={() => setTagFilter(null)} data-testid="filter-all" aria-pressed={tagFilter === null}
+                className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all ${tagFilter === null ? 'bg-[#00e676] border-[#00e676] text-[#0a0e14]' : 'bg-[#0a0e14] border-[#243044] text-[#8ea0b8] hover:text-white'}`}>All</button>
+              {WORLD_TAGS.filter((t) => worlds.some((w) => w.tags.includes(t.id))).map((t) => (
+                <button key={t.id} onClick={() => setTagFilter(tagFilter === t.id ? null : t.id)} data-testid={`filter-${t.id}`} aria-pressed={tagFilter === t.id}
+                  style={tagFilter === t.id ? { backgroundColor: t.color, borderColor: t.color, color: '#0a0e14' } : undefined}
+                  className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all ${tagFilter === t.id ? '' : 'bg-[#0a0e14] border-[#243044] text-[#8ea0b8] hover:text-white'}`}>{t.label}</button>
+              ))}
+              <span className="flex-1" />
+              <label className="flex items-center gap-1.5 text-[11px] text-[#5a6b80]">Sort
+                <select value={sortBy} onChange={(e) => setSortBy(e.target.value as 'players' | 'likes')} data-testid="world-sort"
+                  className="bg-[#0a0e14] border border-[#243044] rounded-lg px-2 py-1 text-[#8ea0b8] text-[11px] focus:border-[#00e676] focus:outline-none">
+                  <option value="players">Most players</option>
+                  <option value="likes">Most liked</option>
+                </select>
+              </label>
+            </div>
+            {likeMsg && <p className="text-[#ff9a3c] text-xs vb-fade-in" data-testid="like-error">{likeMsg}</p>}
+          </div>
+        )}
+        {worlds && worlds.length > 0 && shownWorlds.length === 0 && (
+          <div className="rounded-xl bg-[#0a0e14] border border-[#243044] px-4 py-6 text-center mb-3" data-testid="world-filter-empty">
+            <p className="text-white text-sm">No open world has that tag right now.</p>
+            <button onClick={() => setTagFilter(null)} className="text-[#00e676] text-xs mt-1 hover:underline">Show all worlds</button>
+          </div>
+        )}
         {worlds && !worlds.length && !listError && (
           <div className="rounded-xl bg-[#0a0e14] border border-[#243044] px-4 py-6 text-center" data-testid="world-list-empty">
             <p className="text-white text-sm">Nobody is playing an open world right now.</p>
@@ -5063,7 +5149,7 @@ function ServersView({ serverUrl, onServerUrlChange, onJoin, status, error, avai
           </div>
         )}
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-          {worlds?.map((w) => {
+          {shownWorlds.map((w) => {
             const b = privacyBadge(w.privacy);
             const full = w.players >= w.max;
             const mine = !!summary.username && w.host.toLowerCase() === summary.username.toLowerCase();
@@ -5079,9 +5165,22 @@ function ServersView({ serverUrl, onServerUrlChange, onJoin, status, error, avai
                 <div className="flex-1 flex flex-col p-3 gap-1.5">
                   <div className="text-white text-sm font-bold truncate" data-testid="world-name">{w.name}</div>
                   <p className="text-[#8ea0b8] text-xs leading-snug line-clamp-2 min-h-[2rem]" data-testid="world-description">{w.description || (minigame ? 'An online match: join a team and play against real players.' : 'No description.')}</p>
+                  {w.tags.length > 0 && (
+                    <div className="flex flex-wrap gap-1" data-testid="world-tags">
+                      {w.tags.map((id) => { const t = tagInfo(id); return t ? (
+                        <button key={id} onClick={() => setTagFilter(id)} title={`Show only ${t.label} worlds`} data-testid={`world-tag-${id}`}
+                          style={{ color: t.color, borderColor: t.color + '66' }} className="px-1.5 py-px rounded-full border text-[10px] font-bold bg-black/20 hover:brightness-125">{t.label}</button>
+                      ) : null; })}
+                    </div>
+                  )}
                   <div className="text-[#5a6b80] text-[11px] flex items-center gap-2 flex-wrap mt-auto">
                     <span>by <span className="text-[#8ea0b8]">{w.host}</span></span>
                     <span className={`inline-flex items-center gap-1 ${b.cls}`}><b.icon className="w-3 h-3" />{b.text}</span>
+                    <button onClick={() => void toggleLike(w)} disabled={mine || !signedIn || liking === w.id} data-testid="world-like" aria-pressed={w.liked}
+                      title={mine ? 'You cannot like your own world' : !signedIn ? 'Sign in with an account to like worlds' : w.liked ? 'Remove your like' : 'Like this world'}
+                      className={`ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] font-bold transition-all ${w.liked ? 'bg-[#ff4d6d]/15 border-[#ff4d6d]/50 text-[#ff6b86]' : 'bg-black/20 border-[#243044] text-[#8ea0b8]'} ${mine || !signedIn ? 'opacity-60 cursor-not-allowed' : 'hover:border-[#ff4d6d]/60 hover:text-[#ff6b86] active:scale-95'}`}>
+                      <Heart className={`w-3 h-3 ${w.liked ? 'fill-current' : ''}`} /><span data-testid="world-like-count">{w.likes}</span>
+                    </button>
                   </div>
                   <button disabled={!canJoin || connecting || full || mine} data-testid="world-join"
                     onClick={() => { setJoiningId(w.id); onJoin('p2p:' + w.id, w.host); }}
@@ -5655,6 +5754,10 @@ export default function App() {
     const h = gameHandleRef.current;
     if (!h) return;
     for (const [id, name] of Object.entries(onlineNamesRef.current) as Array<[string, string]>) if (Number(id) !== myNetIdRef.current) h.setRemoteTag(Number(id), `${tagsFor(name)}${name}`);
+    // your own plate, the one you see over your head in third person (F5)
+    const me = usernameRef.current || 'Player';
+    const myTeam = matchRef.current && myNetIdRef.current !== null ? memberTeamsRef.current[myNetIdRef.current] : undefined;
+    h.setOwnTag(myTeam !== undefined ? `\\${TEAM_KEYS[myTeam] ?? 'white'}\\${me}` : `${tagsFor(me)}${me}`);
   }
   /** The host changes the fake ranks: saved with the world, and sent to everyone on a server. */
   function commitFakeRanks(next: FakeRanks) {
@@ -6319,6 +6422,8 @@ export default function App() {
       gameHandleRef.current = handle;
       handle.setPlayerLook(currentLook());
       handle.setOwnSkin(currentLook().skin);
+      refreshNameTags(); // your own name plate for third person
+      applyBlockSounds();
       setAir(10);
       handle.onAirChange((b) => setAir(b));
       setMinigame(null);
@@ -6529,6 +6634,11 @@ export default function App() {
   // Quality of life: a soft tick on menu buttons, and the block outline follows its switch in Settings
   useEffect(() => installUiSounds(), []);
   useEffect(() => subscribeQol(() => gameHandleRef.current?.setBlockOutline(getQol().outline)), []);
+  // keep it right when you log in, your rank changes, or a fake rank is given
+  useEffect(() => { if (gameMode === 'playing') refreshNameTags(); }, [gameMode, account?.username, myRank, myTier, isOwnerAccount, fakeRanks]); // eslint-disable-line react-hooks/exhaustive-deps
+  // block sounds: the switches and volume in Settings > Audio
+  const applyBlockSounds = () => { const q = getQol(); gameHandleRef.current?.setBlockSoundPrefs({ breaking: q.blockBreak, placing: q.blockPlace, footsteps: q.footsteps, volume: q.blockVolume }); };
+  useEffect(() => subscribeQol(applyBlockSounds), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Tell the engine which hotbar slot is selected (it holds the real inventory)
   useEffect(() => {
@@ -6941,13 +7051,13 @@ export default function App() {
   }
 
   // ---------------- Hosting: your world, open to others while you play ----------------
-  type Hosting = { id: string; room: HostRoomLike; peer: { start(): Promise<void>; stop(): void }; worldId: string; privacy: WorldPrivacy; name: string; mode: string; worldType: string; max: number; timer: number; description?: string; image?: string };
+  type Hosting = { id: string; room: HostRoomLike; peer: { start(): Promise<void>; stop(): void }; worldId: string; privacy: WorldPrivacy; name: string; mode: string; worldType: string; max: number; timer: number; description?: string; image?: string; tags?: string[] };
   const hostingRef = useRef<Hosting | null>(null);
   const [hostingInfo, setHostingInfo] = useState<{ privacy: WorldPrivacy; players: number } | null>(null);
   function publishHosting() {
     const hs = hostingRef.current, me = accountRef.current;
     if (!hs || !me) return;
-    void publishHostedWorld(me, { id: hs.id, name: hs.name, mode: hs.mode, worldType: hs.worldType, privacy: hs.privacy, players: hs.room.count, max: hs.max, description: hs.description, image: hs.image });
+    void publishHostedWorld(me, { id: hs.id, name: hs.name, mode: hs.mode, worldType: hs.worldType, privacy: hs.privacy, players: hs.room.count, max: hs.max, description: hs.description, image: hs.image, tags: hs.tags });
     void setServerPresence('p2p:' + hs.id);
   }
   /** Opens the world you're playing to others (unless it's private, you're a guest, or it's a minigame). */
@@ -6977,7 +7087,7 @@ export default function App() {
       onBans: (bans: string[]) => setSavedWorlds((prev) => prev.map((w) => (w.id === worldId ? { ...w, bans } : w))),
     });
     const peer = new hMod.PeerHost(id, signalingFor(hMod), room);
-    hostingRef.current = { id, room, peer, worldId, privacy, name: cfg.name, mode, worldType, max, timer: 0, description: cfg.description, image: await listImage(cfg.image) };
+    hostingRef.current = { id, room, peer, worldId, privacy, name: cfg.name, mode, worldType, max, timer: 0, description: cfg.description, image: await listImage(cfg.image), tags: cleanTags(cfg.tags) };
     joinedAddressRef.current = 'p2p:' + id;
     connectWith((mpMod as { MultiplayerClient: new () => MpClient }).MultiplayerClient, undefined, { hostSocket: hMod.loopback(room) });
     setHostingInfo({ privacy, players: 1 });
@@ -7047,7 +7157,7 @@ export default function App() {
     });
     const peer = new hMod.PeerHost(id, signalingFor(hMod), room);
     hostingRef.current = { id, room, peer, worldId: '', privacy: 'public', name, mode: 'survival', worldType: kind, max: teams * teamSize, timer: 0,
-      description: auto ? `Auto ${kind === 'bridge' ? 'Bridge Duels' : 'EggWars'}: starts by itself when players join.` : kind === 'bridge' ? `Bridge Duels, ${online.size}. First to 5 goals.` : `EggWars, ${online.size}. Protect your egg!`, image: kind === 'bridge' ? '/images/bridgeduels-bg.jpg' : '/images/eggwars-bg.jpg' };
+      description: auto ? `Auto ${kind === 'bridge' ? 'Bridge Duels' : 'EggWars'}: starts by itself when players join.` : kind === 'bridge' ? `Bridge Duels, ${online.size}. First to 5 goals.` : `EggWars, ${online.size}. Protect your egg!`, image: kind === 'bridge' ? '/images/bridgeduels-bg.jpg' : '/images/eggwars-bg.jpg', tags: ['minigames', 'pvp'] };
     joinedAddressRef.current = 'p2p:' + id;
     connectWith((mpMod as { MultiplayerClient: new () => MpClient }).MultiplayerClient, undefined, { hostSocket: hMod.loopback(room) });
     setHostingInfo({ privacy: 'public', players: 1 });
@@ -7131,6 +7241,17 @@ export default function App() {
       publishHosting();
       pushMessage(`Who can join: ${PRIVACY_INFO[p].label}.`, '#ffe066');
     } else void maybeStartHosting();
+  }
+
+  /** Manage Server: the tags on your world (shown on the Servers page). */
+  function setWorldTags(tags: string[]) {
+    const id = activeWorldIdRef.current;
+    if (!id) return;
+    const next = cleanTags(tags);
+    savedWorldsRef.current = savedWorldsRef.current.map((w) => (w.id === id ? { ...w, tags: next } : w));
+    setSavedWorlds((prev) => prev.map((w) => (w.id === id ? { ...w, tags: next } : w)));
+    const hs = hostingRef.current;
+    if (hs) { hs.tags = next; publishHosting(); }
   }
 
   // Friends see which server you are on (and get a Join button) while you play online
@@ -7963,6 +8084,15 @@ export default function App() {
       return true;
     };
     if (ctx && (cmd === 'help' || cmd === '?')) { info('Command blocks run commands; /help is for chat.'); return; }
+    if (cmd === 'screenshot' || cmd === 'ss') { // harmless, so it works in every world, minigame and server
+      if (ctx) { err('That command only works in chat'); return; }
+      void h.takeScreenshot().then((url) => {
+        if (!url) { err('Could not take the screenshot'); return; }
+        saveScreenshot(url);
+        info('Screenshot saved to your downloads');
+      });
+      return;
+    }
     const SOCIAL = ['friend', 'friends', 'unfriend', 'whisper', 'w', 'msg', 'tell', 'r', 'reply', 'panel'];
     if (SOCIAL.includes(cmd)) {
       if (ctx) { err('That command only works in chat'); return; }
@@ -8907,7 +9037,7 @@ export default function App() {
                   const wid = activeWorldIdRef.current;
                   const cfg = wid ? savedWorlds.find((w) => w.id === wid) : null;
                   if (!cfg || !HOSTABLE_TYPES.includes(cfg.worldType ?? 'default') || (mpRef.current && !hostingInfo)) return null;
-                  return { value: cfg.privacy ?? 'public', open: !!hostingInfo, players: hostingInfo?.players ?? 1, signedIn: !!account && !isGuestName(account.username), onChange: setWorldPrivacy };
+                  return { value: cfg.privacy ?? 'public', open: !!hostingInfo, players: hostingInfo?.players ?? 1, signedIn: !!account && !isGuestName(account.username), onChange: setWorldPrivacy, tags: cleanTags(cfg.tags), onTags: setWorldTags };
                 })()}
               />
             ) : menuPage === 'advancements' ? (

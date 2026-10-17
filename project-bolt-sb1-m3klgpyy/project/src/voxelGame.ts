@@ -7689,6 +7689,12 @@ export type GameHandle = {
   applyRemoteBlocks: (list: Array<[number, number, number, number]>, record?: boolean) => void;
   getNetState: () => { x: number; y: number; z: number; yaw: number; pitch: number; mode: PlayMode; held: number; act: number };
   setRemoteTag: (id: number, text: string) => void;
+  /** Settings > Audio: which block sounds play (breaking, placing, footsteps) and how loud. */
+  setBlockSoundPrefs: (p: { breaking: boolean; placing: boolean; footsteps: boolean; volume: number }) => void;
+  /** The name plate over your own head in third person (F5), with your rank in front. */
+  setOwnTag: (text: string) => void;
+  /** For tests: the text on your own name plate and whether it is showing (third person only). */
+  debugOwnTag: () => { text: string; visible: boolean } | null;
   setRemotePlayer: (id: number, name: string, x: number, y: number, z: number, yaw: number, pitch: number, mode: string, held?: number, act?: number) => void;
   removeRemotePlayer: (id: number) => void;
   /** Breath under water: 10 bubbles = full (it only matters with your head in water). */
@@ -9104,7 +9110,10 @@ export function createVoxelGame(
     src.stop(t + dur + 0.05);
   }
 
+  let blockSoundPrefs = { breaking: true, placing: true, footsteps: true, volume: 1 };
   function playBlockSound(block: number, pos: THREE.Vector3 | null, action: 'break' | 'place' | 'step' | 'dig') {
+    if (action === 'step' ? !blockSoundPrefs.footsteps : action === 'place' ? !blockSoundPrefs.placing : !blockSoundPrefs.breaking) return;
+    if (blockSoundPrefs.volume <= 0) return;
     block = stepBase(block) ?? block;
     const kind = block === BLOCK_STONE || block === BLOCK_BEDROCK || block === BLOCK_OBSIDIAN || isConcrete(block) || block === BLOCK_SPAWNER || (block >= BLOCK_COAL_ORE && block <= BLOCK_EMERALD_ORE) ? 'stone'
       : block === BLOCK_WOOD || block === BLOCK_CRAFTING_TABLE || block === ITEM_PLANKS || (block >= BLOCK_TRAPDOOR && block <= BLOCK_CAMPFIRE) ? 'wood'
@@ -9114,7 +9123,7 @@ export function createVoxelGame(
       : block === BLOCK_BOOKSHELF || isItemFrame(block) ? 'wood'
       : block === BLOCK_SNOW ? 'snow'
       : 'grass';
-    const vol = action === 'break' ? 0.9 : action === 'place' ? 0.75 : action === 'dig' ? 0.35 : 0.22;
+    const vol = (action === 'break' ? 0.9 : action === 'place' ? 0.75 : action === 'dig' ? 0.35 : 0.22) * blockSoundPrefs.volume;
     const dur = action === 'break' ? 0.22 : action === 'place' ? 0.14 : action === 'dig' ? 0.07 : 0.09;
     if (kind === 'stone') noiseHit(pos, 'bandpass', 2200, 900, dur, vol, 0, 1.2);
     else if (kind === 'wood') { noiseHit(pos, 'bandpass', 700, 400, dur, vol, 0, 2.5); tone(pos, 'triangle', 220, 140, dur * 0.8, vol * 0.35); }
@@ -12409,6 +12418,13 @@ export function createVoxelGame(
   scene.add(playerModel.root);
   let playerWalkPhase = 0;
   const lastModelPos = new THREE.Vector3();
+  // Your own name plate: only shown on your own model in third person (F5). Made on first use because the tag helpers are defined further down.
+  let ownTag: NameTag | null = null;
+  let ownTagText = '';
+  function setOwnTag(text: string) {
+    ownTagText = text;
+    if (ownTag && ownTag.text !== text) setTagText(ownTag, text);
+  }
 
   let ghostOn = false;
   const GHOST_OPACITY = 0.4;
@@ -12426,6 +12442,15 @@ export function createVoxelGame(
     // a spectator in third person (F5) is a see-through floating head: nobody else sees them at all
     setSpectatorGhost(third && mode === 'spectator');
     playerModel.root.visible = third;
+    if (third && !ownTag && ownTagText) {
+      const made = makeNameTag(ownTagText);
+      ownTag = made.tag;
+      playerModel.root.add(made.sprite);
+    }
+    if (ownTag) {
+      ownTag.sprite.visible = third && ownTagText !== '';
+      if (third) tickTag(ownTag, dt);
+    }
     if (!third) return camera;
 
     const feet = playerFeet();
@@ -12626,14 +12651,23 @@ export function createVoxelGame(
   /** A name tag floating over a head: it understands the \gold\\shiny\ colour codes, and moving ones keep redrawing. */
   type NameTag = { sprite: THREE.Sprite; tex: THREE.Texture; canvas: HTMLCanvasElement; text: string; base: string; animated: boolean; timer: number };
   const ANIMATED_FX = new Set(['rainbow', 'neon', 'shiny', 'glitched', 'flair']);
+  // The plate is wide (1024px for a 6.4 unit sprite, the same sharpness as before) so a long name with a rank in front is never cut off.
+  const TAG_W = 1024, TAG_H = 64;
   function drawTagCanvas(nt: NameTag, t: number) {
     const ctx = nt.canvas.getContext('2d')!;
-    ctx.clearRect(0, 0, 256, 64);
-    ctx.font = 'bold 30px sans-serif';
-    const w = Math.min(248, ctx.measureText(stripFancy(nt.text)).width + 24);
+    ctx.clearRect(0, 0, TAG_W, TAG_H);
+    let size = 30;
+    let w = drawFancy(ctx, nt.text, TAG_W / 2, 33, size, nt.base, t);
+    if (w > TAG_W - 32) { // absurdly long: shrink it to fit instead of cutting it off
+      ctx.clearRect(0, 0, TAG_W, TAG_H);
+      size = Math.max(12, Math.floor(size * (TAG_W - 32) / w));
+      w = drawFancy(ctx, nt.text, TAG_W / 2, 33, size, nt.base, t);
+    }
+    const bw = Math.min(TAG_W - 4, w + 24);
+    ctx.globalCompositeOperation = 'destination-over'; // the dark plate goes behind the text that is already drawn
     ctx.fillStyle = 'rgba(0,0,0,0.45)';
-    ctx.fillRect((256 - w) / 2, 10, w, 44);
-    drawFancy(ctx, nt.text, 128, 33, 30, nt.base, t);
+    ctx.fillRect((TAG_W - bw) / 2, 10, bw, 44);
+    ctx.globalCompositeOperation = 'source-over';
     nt.tex.needsUpdate = true;
   }
   function setTagText(nt: NameTag, text: string) {
@@ -12650,10 +12684,10 @@ export function createVoxelGame(
   }
   function makeNameTag(name: string, base = '#ffffff', y = 2.15): { sprite: THREE.Sprite; tex: THREE.Texture; tag: NameTag } {
     const c = document.createElement('canvas');
-    c.width = 256; c.height = 64;
+    c.width = TAG_W; c.height = TAG_H;
     const tex = new THREE.CanvasTexture(c);
     const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
-    sprite.scale.set(1.6, 0.4, 1);
+    sprite.scale.set(TAG_W / 160, TAG_H / 160, 1);
     sprite.position.y = y;
     sprite.renderOrder = 10;
     const tag: NameTag = { sprite, tex, canvas: c, text: name, base, animated: false, timer: 0 };
@@ -15719,7 +15753,11 @@ export function createVoxelGame(
   // F2: save a picture of the game. The picture is taken right after the next frame is drawn.
   let shotResolvers: Array<(url: string | null) => void> = [];
   function takeScreenshot(): Promise<string | null> {
-    return new Promise((res) => { shotResolvers.push(res); });
+    return new Promise((res) => {
+      shotResolvers.push(res);
+      // the picture is taken on the next frame; if no frame comes (the tab is hidden), give up instead of waiting forever
+      window.setTimeout(() => { const i = shotResolvers.indexOf(res); if (i >= 0) { shotResolvers.splice(i, 1); res(null); } }, 4000);
+    });
   }
 
   // --- Graphics quality (Low/Medium/High/Epic/Max) ---
@@ -17916,6 +17954,9 @@ export function createVoxelGame(
     getNetState,
     setRemotePlayer,
     setRemoteTag,
+    setOwnTag,
+    debugOwnTag: () => (ownTag ? { text: ownTag.text, visible: ownTag.sprite.visible } : null),
+    setBlockSoundPrefs: (p) => { blockSoundPrefs = { breaking: !!p.breaking, placing: !!p.placing, footsteps: !!p.footsteps, volume: Math.max(0, Math.min(1, p.volume)) }; },
     removeRemotePlayer,
     onAirChange: (cb) => { airCallback = cb; },
     getBossBar: bossBar,
