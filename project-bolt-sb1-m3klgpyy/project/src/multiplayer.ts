@@ -1,7 +1,9 @@
 // Browser-side multiplayer client for VibeBlox. Talks JSON over a WebSocket
 // to server/server.js. App.tsx wires these events into the game engine.
 
-export const PROTOCOL_VERSION = 14; // 14: /title, fake ranks, rank badges (13: sleeping vote, whispers, admin panel (12: block ids up to 1399, items 1400+ (11: weather, host sets time/weather; 10: host, kick/ban, server settings))
+/** An item thrown on the ground that every player sees. d = a tool's wear/enchantments/name as JSON. */
+export type NetDrop = { n: string; item: number; count: number; x: number; y: number; z: number; vx: number; vy: number; vz: number; d?: string };
+export const PROTOCOL_VERSION = 16; // 16: dropped items shared, host commands on other players (@a); 15: turned heads, low trapdoors, block ids 2000+ (14: /title, fake ranks, rank badges (13: sleeping vote, whispers, admin panel (12: block ids up to 1399, items 1400+ (11: weather, host sets time/weather; 10: host, kick/ban, server settings))
 
 export type NetBlock = [number, number, number, number]; // x, y, z, block id
 export type NetMove = [number, number, number, number, number, number, string, number, number]; // id, x, y, z, yaw, pitch, mode, held item, action bits
@@ -52,6 +54,13 @@ export type MultiplayerEvents = {
   onLeave?: (id: number, name: string) => void;
   onLook?: (id: number, look: NetLook) => void;
   onChat?: (name: string, text: string) => void;
+  /** Another player threw an item (so everyone sees it and can pick it up). n = its shared id. */
+  onDrop?: (d: NetDrop) => void;
+  /** An item somebody threw was picked up (by someone else, or the server said yes/no to you). */
+  onDropGone?: (n: string) => void;
+  onPickupResult?: (n: string, ok: boolean) => void;
+  /** The host ran a command (/give, /clear, /effect, /xp, /tp) on you. */
+  onRemoteCmd?: (cmd: string, args: Record<string, unknown>, from: string) => void;
   /** The host ran /title on you. */
   onTitle?: (text: string, sub: string) => void;
   /** The host changed the fake ranks. */
@@ -179,6 +188,11 @@ export class MultiplayerClient {
       case 'leave': e.onLeave?.(m.id as number, m.name as string); break;
       case 'look': e.onLook?.(m.id as number, { skin: String(m.skin), cape: String(m.cape), ...(typeof m.custom === 'string' ? { custom: m.custom } : {}) }); break;
       case 'chat': e.onChat?.(m.name as string, m.text as string); break;
+      case 'drop': e.onDrop?.({ n: String(m.n), item: Number(m.item), count: Number(m.count), x: Number(m.x), y: Number(m.y), z: Number(m.z), vx: Number(m.vx), vy: Number(m.vy), vz: Number(m.vz), ...(typeof m.d === 'string' ? { d: m.d } : {}) }); break;
+      case 'gone': e.onDropGone?.(String(m.n)); break;
+      case 'pickupOk': e.onPickupResult?.(String(m.n), true); break;
+      case 'pickupNo': e.onPickupResult?.(String(m.n), false); break;
+      case 'rcmd': e.onRemoteCmd?.(String(m.cmd), (m.args && typeof m.args === 'object' ? m.args : {}) as Record<string, unknown>, String(m.from ?? 'The host')); break;
       case 'title': e.onTitle?.(String(m.text ?? ''), String(m.sub ?? '')); break;
       case 'ranks': e.onRanks?.(m.ranks); break;
       case 'badge': e.onBadge?.(m.id as number, { owner: !!m.owner, rank: String(m.rank ?? 'none'), tier: String(m.tier ?? 'none'), og: m.og === true, staff: m.staff === 'helper' || m.staff === 'mod' ? m.staff : null }); break;
@@ -235,6 +249,12 @@ export class MultiplayerClient {
 
   /** Tell the server you got into / out of bed (the night passes when half the players sleep). */
   sendSleep(on: boolean) { this.send({ t: 'sleep', on }); }
+  /** You threw an item: everyone else sees it. */
+  sendDrop(d: NetDrop) { this.send({ t: 'drop', ...d }); }
+  /** You walked up to a thrown item: the server says whether you got it (pickupOk) or somebody else did (pickupNo). */
+  sendPickup(n: string) { this.send({ t: 'pickup', n }); }
+  /** Host only: run a command on another player ('*' = everyone else): give, clear, effect, xp, tp. */
+  sendRemoteCmd(to: string, cmd: string, args: Record<string, unknown>) { this.send({ t: 'rcmd', to, cmd, args }); }
   /** Host only: show a title on one player's screen (their name) or everyone's ('*'). */
   sendTitle(to: string, text: string, sub = '') { this.send({ t: 'title', to, text, sub }); }
   /** Host only: send the fake ranks list (it is kept with the world and everyone gets it). */

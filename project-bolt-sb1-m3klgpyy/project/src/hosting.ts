@@ -11,7 +11,7 @@
 import { AntiCheat, type AntiCheatSettings, type CheatAlert, type GroundProbe } from './anticheat';
 
 /** Must match PROTOCOL_VERSION in multiplayer.ts (and PROTOCOL in server/server.js). */
-export const ROOM_PROTOCOL = 14;
+export const ROOM_PROTOCOL = 16;
 export type Privacy = 'private' | 'friends' | 'accounts' | 'public';
 export const PRIVACY_LABELS: Record<Privacy, string> = { private: 'Private', friends: 'Friends only', accounts: 'Signed-in players', public: 'Public' };
 type NetBlock = [number, number, number, number];
@@ -123,14 +123,14 @@ function cleanRanks(v: unknown) {
 type Player = {
   id: number; conn: RoomConn; name: string; joined: boolean; joining: boolean; verified: boolean; joinedAt: number;
   x: number; y: number; z: number; yaw: number; pitch: number; mode: string; held: number; act: number; moved: boolean;
-  msgs: number; blocks: number; sleepSince: number; look?: Look; badge?: Badge;
+  msgs: number; blocks: number; drops: number; sleepSince: number; look?: Look; badge?: Badge;
 };
 
 const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const int = (v: unknown): v is number => Number.isInteger(v);
 const validBlock = (x: unknown, y: unknown, z: unknown, b: unknown) =>
   int(x) && int(y) && int(z) && int(b) && y >= 0 && y < 64 &&
-  Math.abs(x) < 30_000_000 && Math.abs(z) < 30_000_000 && ((b >= 0 && b < 100) || (b >= 1000 && b < 1400));
+  Math.abs(x) < 30_000_000 && Math.abs(z) < 30_000_000 && ((b >= 0 && b < 100) || (b >= 1000 && b < 1400) || (b >= 2000 && b < 2300)); // 2000+: stairs, slabs, turned heads, low trapdoors
 
 /** The world everyone shares, run inside the host's browser. */
 export class HostRoom {
@@ -147,6 +147,8 @@ export class HostRoom {
   private bans: string[];
   /** Players the host or staff muted (lowercase names). It lasts as long as this world is open. */
   private mutes = new Set<string>();
+  /** Thrown items still on the ground (shared id -> when). */
+  private drops = new Map<string, number>();
   private timers: Array<ReturnType<typeof setInterval>> = [];
   private stopped = false;
   privacy: Privacy;
@@ -206,7 +208,7 @@ export class HostRoom {
     if (this.stopped) { conn.close(4009, 'This world is closed'); return; }
     const p: Player = {
       id: this.nextId++, conn, name: '', joined: false, joining: false, verified: false, joinedAt: 0,
-      x: 0, y: 0, z: 0, yaw: 0, pitch: 0, mode: 'survival', held: 0, act: 0, moved: false, msgs: 0, blocks: 0, sleepSince: 0,
+      x: 0, y: 0, z: 0, yaw: 0, pitch: 0, mode: 'survival', held: 0, act: 0, moved: false, msgs: 0, blocks: 0, drops: 0, sleepSince: 0,
     };
     this.players.set(p.id, p);
     conn.onmessage = (text) => {
@@ -342,8 +344,10 @@ export class HostRoom {
     for (const p of this.players.values()) {
       p.msgs = 0;
       p.blocks = 0;
+      p.drops = 0;
       if (!p.conn.local && now - p.conn.lastSeen > 45_000) p.conn.close(4003, 'Timed out');
     }
+    for (const [n, t] of this.drops) if (now - t > 305_000) this.drops.delete(n);
     if (now >= this.weatherAt) this.setWeather(this.weather === 'clear' ? 'rain' : 'clear');
     this.matchTick(now);
   }
@@ -479,6 +483,38 @@ export class HostRoom {
         else { const target = [...this.players.values()].find((o) => o.joined && o.name.toLowerCase() === to.toLowerCase()); if (target && target.id !== p.id) target.conn.send(out); }
         return;
       }
+      case 'rcmd': {
+        if (!isHost) return;
+        const cmd = typeof msg.cmd === 'string' ? msg.cmd : '';
+        if (!['give', 'clear', 'effect', 'effclear', 'xp', 'tp'].includes(cmd)) return;
+        const args = msg.args && typeof msg.args === 'object' && JSON.stringify(msg.args).length < 600 ? msg.args : {};
+        const to = typeof msg.to === 'string' ? msg.to : '*';
+        const out = { t: 'rcmd', cmd, args, from: p.name };
+        if (to === '*') this.broadcast(out, p.id);
+        else { const target = [...this.players.values()].find((o) => o.joined && o.name.toLowerCase() === to.toLowerCase()); if (target && target.id !== p.id) target.conn.send(out); }
+        return;
+      }
+      case 'drop': {
+        const n = typeof msg.n === 'string' && /^[a-z0-9]{3,16}$/.test(msg.n) ? msg.n : null;
+        const item = msg.item, count = msg.count;
+        if (!n || !int(item) || item < 1 || item >= 4000 || !int(count) || count < 1 || count > 64 * 36) return;
+        if (![msg.x, msg.y, msg.z, msg.vx, msg.vy, msg.vz].every(num) || Math.abs(msg.vx as number) > 30 || Math.abs(msg.vy as number) > 30 || Math.abs(msg.vz as number) > 30) return;
+        if (!p.conn.local && ++p.drops > 40) return;
+        if (this.drops.has(n)) return;
+        if (this.drops.size > 600) this.drops.delete(this.drops.keys().next().value as string);
+        this.drops.set(n, Date.now());
+        const d = typeof msg.d === 'string' && msg.d.length <= 500 ? msg.d : undefined;
+        this.broadcast({ t: 'drop', n, item, count, x: msg.x, y: msg.y, z: msg.z, vx: msg.vx, vy: msg.vy, vz: msg.vz, ...(d ? { d } : {}) }, p.id);
+        return;
+      }
+      case 'pickup': {
+        const n = typeof msg.n === 'string' ? msg.n : '';
+        if (!this.drops.has(n)) { p.conn.send({ t: 'pickupNo', n: n.slice(0, 16) }); return; }
+        this.drops.delete(n);
+        p.conn.send({ t: 'pickupOk', n });
+        this.broadcast({ t: 'gone', n }, p.id);
+        return;
+      }
       case 'ranks': if (!isHost) return; this.ranks = cleanRanks(msg.ranks); this.broadcast({ t: 'ranks', ranks: this.ranks }, p.id); return;
       case 'admin': await this.handleAdmin(p, msg); return;
       case 'settings': {
@@ -510,7 +546,7 @@ export class HostRoom {
         if (![msg.x, msg.y, msg.z, msg.yaw, msg.pitch].every(num)) return;
         p.x = msg.x as number; p.y = msg.y as number; p.z = msg.z as number; p.yaw = msg.yaw as number; p.pitch = msg.pitch as number;
         p.mode = typeof msg.mode === 'string' ? msg.mode.slice(0, 12) : 'survival';
-        p.held = int(msg.held) && msg.held >= 0 && msg.held < 2000 ? msg.held : 0;
+        p.held = int(msg.held) && msg.held >= 0 && msg.held < 4000 ? msg.held : 0;
         p.act = int(msg.act) ? msg.act & 63 : 0;
         p.moved = true;
         if (!p.conn.local && !this.exemptFromAntiCheat(p)) this.anticheat.onMove(p.id, p.name, p.x, p.y, p.z, p.mode);

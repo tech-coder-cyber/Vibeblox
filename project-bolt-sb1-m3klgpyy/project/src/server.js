@@ -31,7 +31,7 @@ const OWNER_NAME = 'master';
 let hostTier = 'none';
 const maxPlayers = () => (ENV_MAX && ENV_MAX > 0 ? ENV_MAX : CAPS[hostTier] || CAPS.none);
 const WORLD_FILE = process.env.WORLD_FILE || path.join(__dirname, 'world.json');
-const PROTOCOL = 15; // must match PROTOCOL_VERSION in the game (15: turned heads, low trapdoors; 14: /title, fake ranks, badges; 13: sleeping, whispers, admin panel)
+const PROTOCOL = 16; // must match PROTOCOL_VERSION in the game (16: shared dropped items, host commands on players; 15: turned heads, low trapdoors; 14: /title, fake ranks, badges; 13: sleeping, whispers, admin panel)
 const DAY_LENGTH = 600; // seconds, must match the game
 const MAX_FRAME = 64 * 1024; // biggest message a client may send
 const VALID_MODES = ['survival', 'creative', 'adventure'];
@@ -332,6 +332,9 @@ function cleanName(raw, id, verified = false) {
   return final;
 }
 
+/** Thrown items that are still on the ground (shared id -> when it was thrown). They expire like they do in the game (5 minutes). */
+const drops = new Map();
+setInterval(() => { const old = Date.now() - 305_000; for (const [n, t] of drops) if (t < old) drops.delete(n); }, 30_000);
 const num = (v) => typeof v === 'number' && Number.isFinite(v);
 const int = (v) => Number.isInteger(v);
 const validBlock = (x, y, z, b) =>
@@ -465,6 +468,40 @@ function handle(p, msg) {
       }
       return;
     }
+    case 'rcmd': { // the host runs /give, /clear, /effect, /xp or /tp on other players (@a, @p, a name)
+      if (p.id !== hostId) return;
+      const cmd = typeof msg.cmd === 'string' ? msg.cmd : '';
+      if (!['give', 'clear', 'effect', 'effclear', 'xp', 'tp'].includes(cmd)) return;
+      const args = msg.args && typeof msg.args === 'object' && JSON.stringify(msg.args).length < 600 ? msg.args : {};
+      const to = typeof msg.to === 'string' ? msg.to : '*';
+      const out = { t: 'rcmd', cmd, args, from: p.name };
+      if (to === '*') broadcast(out, p.id);
+      else {
+        const target = [...players.values()].find((o) => o.joined && o.name.toLowerCase() === to.toLowerCase());
+        if (target && target.id !== p.id) target.conn.send(out);
+      }
+      return;
+    }
+    case 'drop': { // a player threw an item: everyone sees it, and the first to pick it up gets it
+      const n = typeof msg.n === 'string' && /^[a-z0-9]{3,16}$/.test(msg.n) ? msg.n : null;
+      const item = msg.item, count = msg.count;
+      if (!n || !Number.isInteger(item) || item < 1 || item >= 4000 || !Number.isInteger(count) || count < 1 || count > 64 * 36) return;
+      if (![msg.x, msg.y, msg.z, msg.vx, msg.vy, msg.vz].every(num) || Math.abs(msg.vx) > 30 || Math.abs(msg.vy) > 30 || Math.abs(msg.vz) > 30) return;
+      if (++p.dropsThisSecond > 40 || drops.has(n)) return;
+      if (drops.size > 600) drops.delete(drops.keys().next().value);
+      drops.set(n, Date.now());
+      const d = typeof msg.d === 'string' && msg.d.length <= 500 ? msg.d : undefined;
+      broadcast({ t: 'drop', n, item, count, x: msg.x, y: msg.y, z: msg.z, vx: msg.vx, vy: msg.vy, vz: msg.vz, ...(d ? { d } : {}) }, p.id);
+      return;
+    }
+    case 'pickup': { // exactly one player gets each thrown item
+      const n = typeof msg.n === 'string' ? msg.n : '';
+      if (!drops.has(n)) return p.conn.send({ t: 'pickupNo', n: n.slice(0, 16) });
+      drops.delete(n);
+      p.conn.send({ t: 'pickupOk', n });
+      broadcast({ t: 'gone', n }, p.id);
+      return;
+    }
     case 'ranks': {
       if (p.id !== hostId) return;
       world.ranks = cleanRanks(msg.ranks);
@@ -521,7 +558,7 @@ function handle(p, msg) {
       if (![msg.x, msg.y, msg.z, msg.yaw, msg.pitch].every(num)) return;
       p.x = msg.x; p.y = msg.y; p.z = msg.z; p.yaw = msg.yaw; p.pitch = msg.pitch;
       p.mode = typeof msg.mode === 'string' ? msg.mode.slice(0, 12) : 'survival';
-      p.held = Number.isInteger(msg.held) && msg.held >= 0 && msg.held < 2000 ? msg.held : 0; // item id in hand (1400+: newer items)
+      p.held = Number.isInteger(msg.held) && msg.held >= 0 && msg.held < 4000 ? msg.held : 0; // item id in hand (1400+: newer items)
       p.act = Number.isInteger(msg.act) ? msg.act & 63 : 0; // swinging / aiming / drawing a bow / blocking / sleeping / sneaking
       p.moved = true;
       return;
@@ -594,7 +631,7 @@ server.on('upgrade', (req, socket) => {
   const p = {
     id: nextId++, conn, name: '', joined: false,
     x: 0, y: 0, z: 0, yaw: 0, pitch: 0, mode: 'survival', moved: false,
-    msgsThisSecond: 0, blocksThisSecond: 0,
+    msgsThisSecond: 0, blocksThisSecond: 0, dropsThisSecond: 0,
   };
   players.set(p.id, p);
 
@@ -634,6 +671,7 @@ setInterval(() => {
   for (const p of players.values()) {
     p.msgsThisSecond = 0;
     p.blocksThisSecond = 0;
+    p.dropsThisSecond = 0;
     if (now - p.conn.lastSeen > 60_000) p.conn.close(4003, 'Timed out');
   }
 }, 1000);

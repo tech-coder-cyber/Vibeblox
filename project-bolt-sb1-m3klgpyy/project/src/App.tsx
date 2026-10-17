@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback, useSyncExternalStore, createContext, useContext, type FormEvent, type ChangeEvent, type MouseEvent as ReactMouseEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
-import { ADVANCEMENT_TABS, advancementsFor, checkItems, checkEvent, loadAdvancements, saveAdvancements, clearAdvancements, type Advancement, type AdvancementTab } from './advancements';
+import { ADVANCEMENT_TABS, rewardText, advancementsFor, checkItems, checkEvent, loadAdvancements, saveAdvancements, clearAdvancements, type Advancement, type AdvancementTab } from './advancements';
 import { SKINS, CAPES, CUSTOM_SKIN_ID, isCustomSkinData, type PlayerLook } from '@/cosmetics';
 import { CAN_LINK_OUT, CAN_SELL_RANKS, ADS_POSSIBLE, PLATFORM, initAds, triggerRewardedAd, setGameplayActive, reportLoadingFinished, setAdsBlocked, maybeInterstitial, lastAdResult } from '@/adEconomy';
 import {
@@ -17,7 +17,7 @@ import { pickWelcome, splitWelcome } from '@/welcome';
 import { useBackground, backgroundStyle, findDefaultBackground } from './background';
 import type { OneBlockView, KeyAction } from '@/voxelGame';
 import { ITEM_IRON_INGOT, ITEM_GOLD_INGOT, ITEM_DIAMOND, ITEM_ENDER_PEARL, ITEM_IRON_SWORD, ITEM_IRON_PICKAXE, ITEM_BOW, BLOCK_TNT, BLOCK_GLASS, armorId } from '@/voxelGame';
-import { createVoxelGame, MINIGAME_SIZES, type GameWorldMode, type GraphicsQuality, type Recipe, type PlayMode, type DebugInfo, type WorldType, type Slots, type ItemStack, type SaveData, type WeatherKind, EXPERIMENTAL_IDS, experimentalEnabled, isWater, isLava, BLOCK_WATER, BLOCK_LAVA, BLOCK_GRASS, BLOCK_DIRT, BLOCK_STONE, ARMOR, ARMOR_PIECES, CUSTOM_ITEMS, CUSTOM_BLOCKS, customIdForKey, registerCustomItem, registerCustomBlock, createPlayerPreview, drawLookPreview, getTexturePreviews, setTextureResolution, type TextureRes, type DimensionSpec, type TextureSpec, maxStack, addToSlots, countInSlots, emptySlots, INVENTORY_SIZE, ITEM_INFO, RECIPES, getItemIconURL, matchRecipe, getBowStage, subscribeBowStage, BOW_PULL_BASE, SMELTING, FUEL_SECONDS, isBlockId, type Trade, type Difficulty, ITEM_WAND, CHUNK_SIZE, CHUNK_HEIGHT, isPotionItem, isBrewIngredient, ITEM_BLAZE_POWDER, potionName, ITEM_NAME_TAG } from '@/voxelGame';
+import { createVoxelGame, MINIGAME_SIZES, type GameWorldMode, type GraphicsQuality, type Recipe, type PlayMode, type DebugInfo, type WorldType, type Slots, type ItemStack, type SaveData, type WeatherKind, EXPERIMENTAL_IDS, experimentalEnabled, isWater, isLava, BLOCK_WATER, BLOCK_LAVA, BLOCK_GRASS, BLOCK_DIRT, BLOCK_STONE, ARMOR, ARMOR_PIECES, CUSTOM_ITEMS, CUSTOM_BLOCKS, customIdForKey, registerCustomItem, registerCustomBlock, createPlayerPreview, drawLookPreview, getTexturePreviews, setTextureResolution, type TextureRes, type DimensionSpec, type TextureSpec, maxStack, addToSlots, countInSlots, emptySlots, INVENTORY_SIZE, ITEM_INFO, RECIPES, getItemIconURL, matchRecipe, getBowStage, subscribeBowStage, BOW_PULL_BASE, SMELTING, FUEL_SECONDS, isBlockId, type Trade, type Difficulty, ITEM_WAND, CHUNK_SIZE, CHUNK_HEIGHT, isPotionItem, isBrewIngredient, ITEM_BLAZE_POWDER, potionName, ITEM_NAME_TAG, toolLore } from '@/voxelGame';
 import * as THREE from 'three';
 import {
   withCount, addStackToSlots, maxDurability, itemDisplayName, enchantLabel, ENCHANTMENTS, enchantFits, enchantsConflict, ITEM_LAPIS, ITEM_BOOK, ITEM_ENCHANTED_BOOK, type Station,
@@ -35,7 +35,7 @@ import PrivateServers from './PrivateServersPanel';
 import VideoOptions from './VideoOptions';
 import { MusicPlayer, SOUNDTRACKS, subscribeNowPlaying, getNowPlaying, type SoundtrackStyle, type AnySoundtrack } from './music';
 import { playlist, isFileStyle } from './playlist';
-import { NowPlayingToast, LookingAtLabel, QolSettings, BlockSoundSettings, BackgroundSettings, PlaylistNote, saveScreenshot } from './QolBits';
+import { NowPlayingToast, LookingAtLabel, AttackIndicator, QolSettings, BlockSoundSettings, BackgroundSettings, PlaylistNote, saveScreenshot } from './QolBits';
 import { installUiSounds, setUiSoundVolume, getQol, subscribeQol } from './qol';
 import { useCompactLayout } from './layout';
 import SideNav from './SideNav';
@@ -137,6 +137,7 @@ type NetPlayerInfo = { id: number; name: string; x: number; y: number; z: number
 type ServerSettings = { difficulty: Difficulty; keepInventory: boolean; scripts: boolean; mods: boolean; commands: boolean; pvp?: boolean };
 const DEFAULT_SERVER: ServerSettings = { difficulty: 'normal', keepInventory: false, scripts: true, mods: true, commands: true, pvp: true };
 type Welcome = { game?: NetGame; id: number; name: string; seed: number; worldType: 'default' | 'superflat' | 'eggwars' | 'bridge'; mode: string; time: number; changes: NetBlock[]; players: NetPlayerInfo[]; hostId?: number | null; settings?: ServerSettings; weather?: WeatherKind; experimental?: boolean; maxPlayers?: number; ranks?: unknown };
+import type { NetDrop } from './multiplayer';
 type MpEvents = {
   onPing?: (ms: number) => void;
   onWelcome?: (w: Welcome) => void;
@@ -149,6 +150,10 @@ type MpEvents = {
   onLook?: (id: number, look: PlayerLook) => void;
   onChat?: (name: string, text: string) => void;
   onTitle?: (text: string, sub: string) => void;
+  onDrop?: (d: NetDrop) => void;
+  onDropGone?: (n: string) => void;
+  onPickupResult?: (n: string, ok: boolean) => void;
+  onRemoteCmd?: (cmd: string, args: Record<string, unknown>, from: string) => void;
   onRanks?: (ranks: unknown) => void;
   onBadge?: (id: number, badge: NetBadge) => void;
   onSystem?: (text: string) => void;
@@ -188,6 +193,9 @@ type MpClient = {
   sendSleep(on: boolean): void;
   sendWhisper(to: string, text: string): void;
   sendTitle(to: string, text: string, sub?: string): void;
+  sendDrop(d: NetDrop): void;
+  sendPickup(n: string): void;
+  sendRemoteCmd(to: string, cmd: string, args: Record<string, unknown>): void;
   sendRanks(ranks: unknown): void;
   sendAdmin(token: string, action: 'check' | 'players' | 'kick' | 'ban' | 'unban' | 'bans' | 'gamemode' | 'mute' | 'unmute' | 'mutes', extra?: { name?: string; mode?: string }): void;
   disconnect(): void;
@@ -204,7 +212,7 @@ const savedSettings: SavedSettings = (() => {
 // Before version 15 "Max" was what is now called "Epic": keep those players on the tier they picked
 if (savedSettings.graphicsQuality === 'max' && !savedSettings.gfxV) savedSettings.graphicsQuality = 'epic';
 // Textures must be set before anything is drawn, so this runs right away
-setTextureResolution(savedSettings.textureRes === 32 ? 32 : 16);
+setTextureResolution(savedSettings.textureRes === 32 && savedSettings.graphicsQuality !== 'low' ? 32 : 16); // Low graphics always uses 16×16
 import {
   Settings,
   Users,
@@ -2849,6 +2857,7 @@ function ItemTooltip({ st, x, y }: { st: ItemStack; x: number; y: number }) {
     <div className="fixed z-50 pointer-events-none max-w-[280px] px-2.5 py-1.5 bg-[#12001c]/95 border-2 border-[#2c0a63] rounded" style={{ left: x + 16, top: y - 12 }} data-testid="item-tooltip">
       <div className={`text-sm ${st.name ? 'italic text-[#55ffff]' : st.ench ? 'text-[#55ffff]' : 'text-white'}`}>{st.name ? <FancyText text={st.name} /> : itemDisplayName(st)}</div>
       {Object.entries(st.ench ?? {}).map(([k, l]) => <div key={k} className="text-xs leading-5 text-[#aaaaaa]">{enchantLabel(k, l)}</div>)}
+      {(toolLore(st.id) ?? []).map((l, i) => <div key={`t${i}`} className="text-xs leading-5 text-[#5555ff]" data-testid="tool-lore">{l}</div>)}
       {(info.lore ?? []).map((l, i) => <div key={i} className="text-xs leading-5"><ColorText text={l} color="#aaaaaa" /></div>)}
       {max > 0 && st.damage ? <div className="text-xs leading-5 text-white/80">Durability: {max - st.damage} / {max}</div> : null}
     </div>
@@ -4088,7 +4097,7 @@ const COMMANDS: Array<{ names: string[]; usage: string; desc: string }> = [
   { names: ['give'], usage: '/give <player> <item> [count]', desc: 'Give an item, e.g. /give @p diamond 5 or /give @s stone_pickaxe.' },
   { names: ['clear'], usage: '/clear [player]', desc: 'Empty an inventory (yours if you leave the player out).' },
   { names: ['kill'], usage: '/kill [target]', desc: 'Kill yourself, or a target: /kill @e[type=zombie] kills every zombie nearby, /kill @e kills everything (you too!).' },
-  { names: ['title'], usage: '/title <player> <text> [| subtitle] · /title clear', desc: 'Show a big title on a screen, e.g. /title @p \\green\\\\shiny\\ Hello world! Add a subtitle after a | . Codes: colours (\\red\\ \\gold\\ \\#ff8800\\), styles (\\bold\\ \\italic\\ \\underline\\ \\strike\\), moving effects (\\shiny\\ \\rainbow\\ \\neon\\ \\toxic\\ \\pristine\\ \\glitched\\ \\wave\\ \\shake\\ \\pulse\\), fonts (\\serif\\ \\mono\\ \\cursive\\ \\comic\\ \\impact\\ \\pixel\\ \\retro\\) and \\reset\\. Works in chat, signs of lore, scripts and command blocks.' },
+  { names: ['title'], usage: '/title <player> <text> [| subtitle] · /title clear', desc: 'Show a big title on a screen, e.g. /title @p \\green\\\\shiny\\ Hello world! Add a subtitle after a | . Codes: colours (\\red\\ \\gold\\ \\ff8800\\ for any hex colour), styles (\\bold\\ \\italic\\ \\underline\\ \\strike\\), moving effects (\\shiny\\ \\rainbow\\ \\neon\\ \\toxic\\ \\pristine\\ \\glitched\\ \\wave\\ \\shake\\ \\pulse\\), fonts (\\serif\\ \\mono\\ \\cursive\\ \\comic\\ \\impact\\ \\pixel\\ \\retro\\) and \\reset\\. Works in chat, signs of lore, scripts and command blocks.' },
   { names: ['rank'], usage: '/rank add <name> [tag] · /rank join <name> [player] · /rank modify <name> <tag> · /rank leave · /rank remove <name> · /rank list', desc: 'Make fake ranks for your world or server. They show in front of names in chat, the player list, Manage Server and over heads. Example: /rank add Owner, then /rank join Owner, then /rank modify Owner \\gold\\\\shiny\\OWNER.' },
   { names: ['effect'], usage: '/effect <player> <effect> [seconds] [level] · /effect clear [player]', desc: 'Give an effect: speed, slowness, jump_boost, regeneration, resistance, slow_falling, night_vision, weakness, blight, strength, fire_resistance, water_breathing or poison.' },
   { names: ['time'], usage: '/time set <sunrise|day|noon|sunset|night|midnight|0-24000>', desc: 'Change the time of day. Monsters only spawn at night. On a server, only the host can.' },
@@ -4889,6 +4898,7 @@ function AdvancementsPanel({ have, experimental }: { have: ReadonlySet<string>; 
               <div className="min-w-0">
                 <div className={`text-sm font-medium ${got ? 'text-white' : 'text-[#8ea0b8]'}`}>{a.title}{(a.goal || a.challenge) && <span className="ml-1.5 text-[9px] font-bold uppercase" style={{ color: k.color }}>{a.challenge ? 'Challenge' : 'Goal'}</span>}</div>
                 <div className="text-[11px] text-[#5a6b80] mt-0.5">{a.description}</div>
+                {a.reward && <div className="text-[10px] mt-0.5 font-bold" style={{ color: got ? '#7cfc7c' : '#ffe066' }} data-testid="adv-reward">{got ? 'Reward claimed: ' : 'Reward: '}{rewardText(a.reward, (id) => ITEM_INFO[id]?.name ?? 'item')}</div>}
               </div>
             </div>
           );
@@ -5830,8 +5840,9 @@ export default function App() {
   const [textureRes, setTextureRes] = useState<TextureRes>(savedSettings.textureRes === 32 ? 32 : 16);
 
   /** Switch textures right now, even in the middle of a game. */
+  const [, bumpTexIcons] = useState(0);
   function changeTextureRes(res: TextureRes) {
-    setTextureResolution(res); // clears every cached texture
+    setTextureResolution(graphicsQuality === 'low' ? 16 : res); // clears every cached texture (Low graphics stays 16×16)
     setTextureRes(res); // saves the choice and redraws the hotbar and inventory icons
     gameHandleRef.current?.reloadTextures(); // re-skins the running world
   }
@@ -5938,6 +5949,58 @@ export default function App() {
   const [armor, setArmor] = useState<Slots>(() => emptySlots(4));
   const [titleCard, setTitleCard] = useState<{ text: string; sub: string; id: number } | null>(null);
   /** Shows a big title (colour codes and effects work: \\green\\\\shiny\\ Hello). */
+  /** The host ran /give, /clear, /effect, /xp or /tp on you (from @a, @p or your name). */
+  function applyRemoteCmd(cmd: string, args: Record<string, unknown>, from: string) {
+    const h = gameHandleRef.current;
+    if (!h) return;
+    const num = (v: unknown, lo: number, hi: number, def: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : def);
+    switch (cmd) {
+      case 'give': {
+        let id = Math.floor(num(args.id, 1, 4000, 0));
+        if (!id || !ITEM_INFO[id]) return;
+        if (isPlayerHeadItem(id)) id = playerHeadItem(currentLook().skin);
+        const count = Math.floor(num(args.count, 1, 64 * 36, 1));
+        const ench = args.ench && typeof args.ench === 'object' ? (args.ench as Record<string, number>) : undefined;
+        if (ench) {
+          const inv = h.getInventory();
+          if (addStackToSlots(inv, { id, count: 1, ench }) > 0) { pushMessage(`${from} tried to give you ${ITEM_INFO[id].name}, but your inventory is full`, '#ff6b6b'); return; }
+          h.setSlots(inv);
+          pushMessage(`${from} gave you [${ITEM_INFO[id].name}]`, '#aaaaaa');
+          return;
+        }
+        const given = h.addItem(id, count);
+        pushMessage(given > 0 ? `${from} gave you ${given} [${ITEM_INFO[id].name}]` : `${from} tried to give you ${ITEM_INFO[id].name}, but your inventory is full`, given > 0 ? '#aaaaaa' : '#ff6b6b');
+        return;
+      }
+      case 'clear': h.clearInventory(); pushMessage(`${from} cleared your inventory`, '#aaaaaa'); return;
+      case 'effclear': h.clearEffects(); pushMessage(`${from} removed your effects`, '#aaaaaa'); return;
+      case 'effect': {
+        const name = String(args.name ?? '');
+        if (!/^[a-z_]{3,20}$/.test(name)) return;
+        const secs = num(args.secs, 1, 3600, 30), level = Math.floor(num(args.level, 1, 5, 1));
+        h.giveEffect(name, secs, level);
+        pushMessage(`${from} gave you ${name.replace('_', ' ')} ${level} for ${Math.round(secs)} seconds`, '#aaaaaa');
+        return;
+      }
+      case 'xp': {
+        const n = Math.floor(num(args.n, 0, 100000, 0));
+        if (args.mode === 'set') h.setXpLevel(n);
+        else if (args.mode === 'levels') h.setXpLevel(h.getXp().level + n);
+        else h.addXp(n);
+        pushMessage(`${from} changed your experience`, '#aaaaaa');
+        return;
+      }
+      case 'tp': {
+        const x = num(args.x, -30000000, 30000000, NaN), y = num(args.y, -64, 400, NaN), z = num(args.z, -30000000, 30000000, NaN);
+        if ([x, y, z].some((v) => Number.isNaN(v))) return;
+        h.teleport(x, y, z);
+        pushMessage(`${from} teleported you`, '#aaaaaa');
+        return;
+      }
+      default:
+    }
+  }
+
   function showTitle(text: string, sub = '', seconds = 3) {
     setTitleCard({ text: String(text).slice(0, 160), sub: String(sub).slice(0, 200), id: Date.now() + Math.random() });
     window.clearTimeout(titleTimerRef.current);
@@ -5948,13 +6011,28 @@ export default function App() {
 
 
   // ---- Scripts & mods ----
-  type ModsState = { enabled: string[]; custom: Mod[]; starred: string[] };
+  // Mods you made or imported live in one library, but which ones are SWITCHED ON is kept per world (byWorld), so adding a mod to
+  // one world does not add it to all of them. (`enabled` is the old, shared list: it is moved into the worlds you already had.)
+  type ModsState = { enabled: string[]; custom: Mod[]; starred: string[]; byWorld: Record<string, string[]> };
   const [modsState, setModsState] = useState<ModsState>(() => {
-    try { return { enabled: [], custom: [], starred: [], ...JSON.parse(localStorage.getItem('vb-mods') ?? '{}') } as ModsState; }
-    catch { return { enabled: [], custom: [], starred: [] }; }
+    try {
+      const saved = JSON.parse(localStorage.getItem('vb-mods') ?? '{}') as Partial<ModsState>;
+      let byWorld = saved.byWorld;
+      if (!byWorld) {
+        byWorld = {};
+        const legacy = Array.isArray(saved.enabled) ? saved.enabled : [];
+        if (legacy.length) {
+          try { for (const w of JSON.parse(localStorage.getItem('vb-worlds') ?? '[]') as Array<{ id: string }>) byWorld[w.id] = [...legacy]; } catch { /* no worlds yet */ }
+        }
+      }
+      return { enabled: [], custom: saved.custom ?? [], starred: saved.starred ?? [], byWorld };
+    } catch { return { enabled: [], custom: [], starred: [], byWorld: {} }; }
   });
   const modsStateRef = useRef(modsState);
   modsStateRef.current = modsState;
+  /** The mods that are on in the world you are in (quick play has its own, empty, list). */
+  const enabledNow = (): string[] => modsStateRef.current.byWorld[activeWorldIdRef.current ?? '_quick'] ?? [];
+  const setEnabledNow = (st: ModsState, list: string[]): ModsState => ({ ...st, byWorld: { ...st.byWorld, [activeWorldIdRef.current ?? '_quick']: list } });
   useEffect(() => { try { localStorage.setItem('vb-mods', JSON.stringify(modsState)); } catch { /* storage blocked */ } }, [modsState]);
   const [scripts, setScripts] = useState<ScriptDoc[]>(() => {
     try {
@@ -6590,9 +6668,14 @@ export default function App() {
   }, [renderDistance]);
 
   useEffect(() => {
+    // Low graphics always draws 16×16 textures; leaving Low brings your chosen resolution back
+    setTextureResolution(graphicsQuality === 'low' ? 16 : textureRes);
     if (gameHandleRef.current) {
       gameHandleRef.current.setGraphicsQuality(graphicsQuality);
+      gameHandleRef.current.reloadTextures();
     }
+    bumpTexIcons((n) => n + 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graphicsQuality]);
 
   useEffect(() => {
@@ -6663,7 +6746,7 @@ export default function App() {
         });
         return;
       }
-      if (e.code === 'KeyL') { if (advAllowedRef.current) openGameMenu('advancements'); return; }
+      if (e.code === 'KeyL' || e.code === 'KeyG') { if (advAllowedRef.current) openGameMenu('advancements'); return; } // G or L
       if (e.code === 'Enter' || e.code === 'KeyT' || e.key === '/') {
         e.preventDefault(); // so the key doesn't get typed into the new chat box
         openChat(e.key === '/' ? '/' : '');
@@ -6720,7 +6803,7 @@ export default function App() {
     gameHandleRef.current?.setRules({ difficulty: st.difficulty, keepInventory: st.keepInventory });
     const runner = getRunner();
     if (!st.scripts) for (const sc of scripts) runner.stop(sc.id);
-    if (!st.mods) for (const id of modsState.enabled) runner.stop(`mod:${id}`);
+    if (!st.mods) for (const id of enabledNow()) runner.stop(`mod:${id}`);
     if (!st.scripts || !st.mods) setRunningScripts(runner.runningIds().filter((id) => !id.startsWith("mod:")));
     // remember a planet's settings with the planet
     const wid = activeWorldIdRef.current;
@@ -6781,6 +6864,11 @@ export default function App() {
     setAdvHave(new Set(advRef.current));
     if (performance.now() < advQuietUntilRef.current) return; // catching up on an old save: no pop-ups
     for (const a of fresh) {
+      if (a.reward) { // the hard ones pay out (not when catching up on an old save: that returned above)
+        gameHandleRef.current?.addXp(a.reward.xp);
+        for (const [id, n] of a.reward.items ?? []) gameHandleRef.current?.addItem(id, n);
+        pushMessage(`Reward: ${rewardText(a.reward, (id) => ITEM_INFO[id]?.name ?? 'item')}`, '#ffe066');
+      }
       const key = Date.now() + Math.random();
       setAdvToasts((t) => [...t.slice(-2), { key, adv: a }]);
       window.setTimeout(() => setAdvToasts((t) => t.filter((x) => x.key !== key)), 5000);
@@ -6979,6 +7067,10 @@ export default function App() {
       },
       onChat: (name, text) => pushMessage(`<${tagsFor(name)}${name}> ${text}`),
       onTitle: (text, sub) => showTitle(text, sub),
+      onDrop: (d) => gameHandleRef.current?.addRemoteDrop(d),
+      onDropGone: (n) => gameHandleRef.current?.removeNetDrop(n),
+      onPickupResult: (n, ok) => gameHandleRef.current?.resolvePickup(n, ok),
+      onRemoteCmd: (cmd, args, from) => applyRemoteCmd(cmd, args, from),
       onRanks: (r) => { applyFakeRanks(cleanFakeRanks(r)); refreshNameTags(); },
       onBadge: (id, badge) => {
         const nm = onlineNamesRef.current[id];
@@ -7271,7 +7363,11 @@ export default function App() {
       const blocks = h.takeBlockChanges();
       if (blocks.length) mp.sendBlocks(blocks);
     }, 100);
-    return () => clearInterval(t);
+    // Items you throw show up for everyone, and the server decides who picks each one up
+    const h0 = gameHandleRef.current;
+    h0?.onDropThrown((d) => mpRef.current?.sendDrop(d));
+    h0?.onPickupRequest((n) => mpRef.current?.sendPickup(n));
+    return () => { clearInterval(t); h0?.onDropThrown(null); h0?.onPickupRequest(null); };
   }, [gameMode, netStatus]);
 
   // Hold Tab to see who's online
@@ -7681,12 +7777,12 @@ export default function App() {
   function startEnabledMods() {
     if (!ownsWorldRef.current) return; // no mods in minigames or in worlds you don't own
     const runner = getRunner();
-    for (const m of allMods()) if (modsStateRef.current.enabled.includes(m.id)) runner.run(`mod:${m.id}`, m.name, m.code);
+    for (const m of allMods()) if (enabledNow().includes(m.id)) runner.run(`mod:${m.id}`, m.name, m.code);
   }
 
   function toggleMod(m: Mod) {
-    const on = !modsStateRef.current.enabled.includes(m.id);
-    setModsState((st) => ({ ...st, enabled: on ? [...st.enabled, m.id] : st.enabled.filter((x) => x !== m.id) }));
+    const on = !enabledNow().includes(m.id);
+    setModsState((st) => { const cur = st.byWorld[activeWorldIdRef.current ?? '_quick'] ?? []; return setEnabledNow(st, on ? [...cur, m.id] : cur.filter((x) => x !== m.id)); });
     if (gameModeRef.current === 'playing') {
       if (on && ownsWorldRef.current) getRunner().run(`mod:${m.id}`, m.name, m.code);
       else getRunner().stop(`mod:${m.id}`);
@@ -7697,7 +7793,7 @@ export default function App() {
     const mod: Mod = { ...m, id: m.id || `c-${newWorldId()}`, official: false };
     setModsState((st) => ({ ...st, custom: st.custom.some((x) => x.id === mod.id) ? st.custom.map((x) => (x.id === mod.id ? mod : x)) : [...st.custom, mod] }));
     // Restart it so edits take effect right away
-    if (gameModeRef.current === 'playing' && ownsWorldRef.current && modsStateRef.current.enabled.includes(mod.id)) getRunner().run(`mod:${mod.id}`, mod.name, mod.code);
+    if (gameModeRef.current === 'playing' && ownsWorldRef.current && enabledNow().includes(mod.id)) getRunner().run(`mod:${mod.id}`, mod.name, mod.code);
   }
 
   /** Saves a Builder mod and switches it on, so it works straight away. */
@@ -7705,11 +7801,10 @@ export default function App() {
     const id = m.id || `c-${newWorldId()}`;
     const mod: Mod = { ...m, id, official: false };
     setBuilderMod(mod); // later saves update this same mod instead of making copies
-    setModsState((st) => ({
-      ...st,
-      custom: st.custom.some((x) => x.id === id) ? st.custom.map((x) => (x.id === id ? mod : x)) : [...st.custom, mod],
-      enabled: st.enabled.includes(id) ? st.enabled : [...st.enabled, id],
-    }));
+    setModsState((st) => {
+      const cur = st.byWorld[activeWorldIdRef.current ?? '_quick'] ?? [];
+      return setEnabledNow({ ...st, custom: st.custom.some((x) => x.id === id) ? st.custom.map((x) => (x.id === id ? mod : x)) : [...st.custom, mod] }, cur.includes(id) ? cur : [...cur, id]);
+    });
     if (gameModeRef.current === 'playing' && ownsWorldRef.current) getRunner().run(`mod:${id}`, mod.name, mod.code);
   }
 
@@ -7719,7 +7814,7 @@ export default function App() {
 
   function deleteMod(m: Mod) {
     getRunner().stop(`mod:${m.id}`);
-    setModsState((st) => ({ ...st, custom: st.custom.filter((x) => x.id !== m.id), enabled: st.enabled.filter((x) => x !== m.id), starred: st.starred.filter((x) => x !== m.id) }));
+    setModsState((st) => ({ ...st, custom: st.custom.filter((x) => x.id !== m.id), byWorld: Object.fromEntries(Object.entries(st.byWorld).map(([k, v]) => [k, v.filter((x) => x !== m.id)])), starred: st.starred.filter((x) => x !== m.id) }));
   }
 
   /** Returns an error, null when all went in, or 'SKIPPED:n' when the mod went in but n of its schematics were not usable. */
@@ -7959,7 +8054,7 @@ export default function App() {
 
   /** Schematics that come with the mods that are switched on. */
   function bundledSchematics(): Schematic[] {
-    const on = modsStateRef.current.enabled;
+    const on = enabledNow();
     const out: Schematic[] = [];
     for (const m of allMods()) if (on.includes(m.id) && m.schematics) out.push(...m.schematics);
     return out;
@@ -8061,6 +8156,24 @@ export default function App() {
       if (!r.some((t) => t.who === 'you')) { err(r.some((t) => t.who === 'mob') ? `You can't ${what} a mob` : `You can only ${what} yourself here. Admins can manage other players with /panel.`); return null; }
       return true;
     };
+    /** The host can also reach other players (@a, @p, a name): the command is sent to their game and runs there. */
+    const iAmHost = !!mpRef.current?.connected && hostId === myNetIdRef.current;
+    const reach = (tok: string | undefined, what: string): { you: boolean; others: string[] } | null => {
+      if (tok === undefined) return { you: true, others: [] };
+      const r = resolve(tok);
+      if (typeof r === 'string') { err(r); return null; }
+      if (!r.length) { err('No targets matched that selector'); return null; }
+      const you = r.some((t) => t.who === 'you');
+      const others = r.filter((t) => t.who === 'player').map((t) => t.name);
+      if (!you && !others.length) { err(`You can't ${what} a mob`); return null; }
+      if (others.length && !iAmHost) {
+        if (!you) { err(`Only the host can ${what} other players. Admins can manage players with /panel.`); return null; }
+        return { you, others: [] };
+      }
+      return { you, others };
+    };
+    const sendOthers = (rc: { others: string[] }, c: string, a: Record<string, unknown>) => { for (const n of rc.others) mpRef.current?.sendRemoteCmd(n, c, a); };
+    const toldOthers = (rc: { others: string[] }, text: string) => { if (rc.others.length) info(`${text} ${rc.others.length === 1 ? rc.others[0] : rc.others.length + ' players'}`); };
     if (ctx && (cmd === 'help' || cmd === '?')) { info('Command blocks run commands; /help is for chat.'); return; }
     if (cmd === 'screenshot' || cmd === 'ss') { // harmless, so it works in every world, minigame and server
       if (ctx) { err('That command only works in chat'); return; }
@@ -8237,9 +8350,10 @@ export default function App() {
         for (const t of movers) {
           if (t.who === 'you') { h.teleport(dest.x, dest.y, dest.z); moved++; }
           else if (t.who === 'mob') { if (h.teleportEntity(t.id, dest.x, dest.y, dest.z)) moved++; }
+          else if (iAmHost) { mpRef.current?.sendRemoteCmd(t.name, 'tp', { x: dest.x, y: dest.y, z: dest.z }); moved++; }
           else refused.push(t.name);
         }
-        if (refused.length && !moved) { err(`You can only teleport yourself and mobs, not ${refused.join(', ')}`); return; }
+        if (refused.length && !moved) { err(`Only the host can teleport other players (not ${refused.join(', ')})`); return; }
         info(movers.length === 1 && movers[0].who === 'you' ? `Teleported to ${dest.label}` : `Teleported ${moved} ${moved === 1 ? 'target' : 'targets'} to ${dest.label}`);
         return;
       }
@@ -8248,18 +8362,23 @@ export default function App() {
           err(`Usage: /give <player> <item> [count]   e.g. /give @p diamond 5${args[0] && !isTargetToken(args[0]) ? ` (say who gets it: /give @s ${args.join(' ')})` : ''}`);
           return;
         }
-        if (!onlyYou(args[0], 'give items to')) return;
+        const rc = reach(args[0], 'give items to');
+        if (!rc) return;
         args.shift(); // the rest is just like before: item, count / enchantment, level
         let id = itemIdFromName(args[0]);
         if (id === null) {
           err(`Unknown item "${args[0]}". Names look like: dirt, planks, stone_pickaxe, diamond`);
           return;
         }
+        const rawId = id;
         if (isPlayerHeadItem(id)) id = playerHeadItem(currentLook().skin); // a player head shows your own skin
         if (id === ITEM_ENCHANTED_BOOK) { // /give enchanted_book [enchantment] [level]
           const def = args[1] ? findEnchantment(args[1]) : undefined;
           if (args[1] && !def) { err(`Unknown enchantment "${args[1]}". Try: ${ENCHANTMENTS.map((d) => d.key).join(', ')}`); return; }
           const level = def ? Math.max(1, Math.min(def.max, parseInt(args[2] ?? '1', 10) || 1)) : 0;
+          sendOthers(rc, 'give', { id, count: 1, ...(def ? { ench: { [def.key]: level } } : {}) });
+          toldOthers(rc, 'Gave an enchanted book to');
+          if (!rc.you) return;
           const inv = h.getInventory();
           const left = addStackToSlots(inv, def ? { id, count: 1, ench: { [def.key]: level } } : { id, count: 1 });
           if (left > 0) { err('Your inventory is full'); return; }
@@ -8268,16 +8387,25 @@ export default function App() {
           return;
         }
         const count = Math.max(1, Math.min(64 * 36, parseInt(args[1] ?? '1', 10) || 1));
+        sendOthers(rc, 'give', { id: rawId, count });
+        toldOthers(rc, `Gave ${count} [${ITEM_INFO[rawId].name}] to`);
+        if (!rc.you) return;
         const given = h.addItem(id, count);
         if (given === 0) err('Your inventory is full');
         else info(`Gave ${given} [${ITEM_INFO[id].name}]`);
         return;
       }
       case 'clear':
-        if (!onlyYou(args[0], 'clear the inventory of')) return;
+      {
+        const rc = reach(args[0], 'clear the inventory of');
+        if (!rc) return;
+        sendOthers(rc, 'clear', {});
+        toldOthers(rc, 'Cleared the inventory of');
+        if (!rc.you) return;
         h.clearInventory();
         info('Cleared your inventory');
         return;
+      }
       case 'kill': {
         const r = resolve(args[0] ?? '@s');
         if (typeof r === 'string') { err(r); return; }
@@ -8348,18 +8476,26 @@ export default function App() {
         let a = [...args];
         if ((a[0] ?? '').toLowerCase() === 'give') a = a.slice(1); // Minecraft's /effect give @p speed works too
         if ((a[0] ?? '').toLowerCase() === 'clear') {
-          if (!onlyYou(a[1], 'clear the effects of')) return;
+          const rcc = reach(a[1], 'clear the effects of');
+          if (!rcc) return;
+          sendOthers(rcc, 'effclear', {});
+          toldOthers(rcc, 'Removed every effect from');
+          if (!rcc.you) return;
           h.clearEffects();
           info('Removed every effect');
           return;
         }
         if (a.length < 2) { err(usage); return; }
-        if (!onlyYou(a[0], 'give effects to')) return;
+        const rce = reach(a[0], 'give effects to');
+        if (!rce) return;
         const name = a[1].toLowerCase().replace(/^minecraft:/, '');
         if (!effects.includes(name)) { err(`Unknown effect "${a[1]}". ${usage}`); return; }
         const secs = a[2] === undefined ? 30 : Number(a[2]);
         const level = a[3] === undefined ? 1 : Number(a[3]);
         if (!(secs > 0) || !(level >= 1)) { err(usage); return; }
+        sendOthers(rce, 'effect', { name, secs: Math.min(3600, secs), level: Math.min(5, Math.floor(level)) });
+        toldOthers(rce, `Gave ${name.replace('_', ' ')} to`);
+        if (!rce.you) return;
         h.giveEffect(name, Math.min(3600, secs), Math.min(5, Math.floor(level)));
         info(`Gave you ${name.replace('_', ' ')} ${Math.floor(level)} for ${Math.round(Math.min(3600, secs))} seconds`);
         return;
@@ -8422,11 +8558,15 @@ export default function App() {
       case 'experience': {
         // /xp 30 (points)  ·  /xp 5 levels  ·  /xp set 10  (a player or selector anywhere, e.g. /xp 5 levels @p)
         const who = args.findIndex((a) => isTargetToken(a) || a.startsWith('@'));
-        if (who >= 0) { if (!onlyYou(args[who], 'give experience to')) return; args.splice(who, 1); }
+        let rcx: { you: boolean; others: string[] } = { you: true, others: [] };
+        if (who >= 0) { const got = reach(args[who], 'give experience to'); if (!got) return; rcx = got; args.splice(who, 1); }
         const setTo = args[0]?.toLowerCase() === 'set';
         const n = Number(setTo ? args[1] : args[0]);
         const levels = setTo || /^l(evels?)?$/i.test(args[1] ?? '');
         if (!Number.isFinite(n) || n < 0 || n > 100000) { err('Usage: /xp <amount> [levels]  or  /xp set <level>'); return; }
+        sendOthers(rcx, 'xp', { mode: setTo ? 'set' : levels ? 'levels' : 'points', n: Math.floor(n) });
+        toldOthers(rcx, 'Changed the experience of');
+        if (!rcx.you) return;
         if (setTo) { h.setXpLevel(Math.floor(n)); info(`Set your level to ${Math.floor(n)}`); return; }
         if (levels) { h.setXpLevel(h.getXp().level + Math.floor(n)); info(`Gave you ${Math.floor(n)} levels`); return; }
         h.addXp(Math.floor(n));
@@ -8934,6 +9074,7 @@ export default function App() {
         )}
         {flash && <div key={flash.key} data-testid="screen-flash" className="absolute inset-0 z-[46] bg-white pointer-events-none" onAnimationEnd={() => setFlash(null)} style={{ animation: `vbFlash ${flash.secs}s ease-in forwards` }}><style>{'@keyframes vbFlash{0%,25%{opacity:1}100%{opacity:0}}'}</style></div>}
         {!showMenu && <NowPlayingToast />}
+        {!showMenu && <AttackIndicator getCharge={() => gameHandleRef.current?.getAttackCharge?.() ?? 1} />}
         {!showMenu && <LookingAtLabel getName={() => gameHandleRef.current?.getTargetName() ?? ''} paused={chatOpen || helpOpen || inventoryOpen} />}
         {!showMenu && showPlayerList && netStatus === 'online' && <PlayerList players={onlinePlayers} myId={myNetIdRef.current} max={serverMax} tagOf={tagsFor} />}
         {!showMenu && disconnectReason !== null && <DisconnectedScreen reason={disconnectReason} onExit={leaveDisconnected} />}
@@ -9044,7 +9185,7 @@ export default function App() {
               <ModsPanel
                 official={OFFICIAL_MODS}
                 custom={modsState.custom}
-                enabled={modsState.enabled}
+                enabled={modsState.byWorld[activeWorldIdRef.current ?? '_quick'] ?? []}
                 starred={modsState.starred}
                 author={username ?? 'You'}
                 onToggle={toggleMod}

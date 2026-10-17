@@ -2,11 +2,31 @@
 // a small update to the current one is a point release (Indev 26.1, 26.2...), a big one is the next number.
 //
 // The News page in the sidebar shows this list, and a dot appears on it until the newest one has been read.
-export const GAME_VERSION = 26.3;
+export const GAME_VERSION = 26.4;
 
 export type NewsEntry = { version: number; date: string; title: string; changes: string[] };
 
 export const NEWS: NewsEntry[] = [
+  {
+    version: 26.4,
+    date: 'October 17, 2026',
+    title: 'Attack cooldown, tool stats, eating, trapdoors, rain & Low graphics',
+    changes: [
+      'Multiplayer fixes: items you throw are now seen by everyone and the first player to walk up to one gets it. The host\'s /give, /clear, /effect, /xp and /tp now work on other players (@a, @p, or a name). Everyone can see what other players hold, including stairs and slabs.',
+      'Attack cooldown (like Minecraft Java): swords recharge in 0.5 seconds, axes in 1 second. Swing too early and you hit for less. A little knife icon under the crosshair fills up while it recharges (no text).',
+      'Tool stats: swords, axes and the rest now show "+3 Attack Damage" (in hearts) and their attack speed in the item tooltip. Axes hit harder than swords but swing slower. Using an axe as a weapon costs 2 durability instead of 1.',
+      'Movement: walking and running are a little slower so ninja and speed bridging feel more natural. Turning around fast (about 180 degrees) while running stops your sprint. Arms and legs swing slower in F5 while running.',
+      'The Cinderbone Skull only summons the Hollow Tyrant when you build the T (three skulls on soul sand or soul soil). Right-clicking with one no longer does anything.',
+      'Eating takes time: hold right-click for about 1.5 seconds with the food raised to your mouth. Let go and you stop eating.',
+      'First-person hand now wears your skin\'s sleeve, and it changes when you upload a custom skin or pick a new one. The sword is tilted up and to the right so you can see the handle.',
+      'Mods are per world now: adding a mod to one world no longer adds it to all your worlds.',
+      'Trapdoors can be placed on the bottom, the top, and against the left, right, front or back. Heads can be placed diagonally (click near a corner of the block).',
+      'Advancements: press G (or L) to open them. The hard ones now give rewards (XP and items).',
+      'Hex colours: use \\ff8800\\ in /title, chat, signs and anvil names (for example \\ff8800\\\\shiny\\ Hello). The [OG] tag is cyan.',
+      'High and Max graphics: raindrops make ripples on water, the sun turns warm at sunset and moonlight is cool and blue. Max also gets puddles that streak when you drag the camera, and dry slowly after the rain.',
+      'Low graphics is lower: 16x16 textures, no lighting, and mobs and players keep a single still pose (items still move, blocks are not animated).',
+    ],
+  },
   {
     version: 26.3,
     date: 'October 16, 2026',
