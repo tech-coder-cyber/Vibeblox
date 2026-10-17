@@ -2,11 +2,29 @@
 // a small update to the current one is a point release (Indev 26.1, 26.2...), a big one is the next number.
 //
 // The News page in the sidebar shows this list, and a dot appears on it until the newest one has been read.
-export const GAME_VERSION = 26.2;
+export const GAME_VERSION = 26.3;
 
 export type NewsEntry = { version: number; date: string; title: string; changes: string[] };
 
 export const NEWS: NewsEntry[] = [
+  {
+    version: 26.3,
+    date: 'October 16, 2026',
+    title: 'OG & staff ranks, smarter bots, new background and drops',
+    changes: [
+      '[OG] rank: everyone who played before gets the [OG] tag. OG players get Elite\'s perks (a bigger planet limit, more script time, no ads). The OG rank will be removed soon, so enjoy it while it lasts!',
+      'Staff ranks: the owner can make someone [HELPER] or [MOD] in the Admin panel (Staff tab). They get Elite\'s perks, and in every world they can kick, ban, mute and use commands and cheats. New chat commands: /mute, /unmute, /mutes, /kick and /ban (and /panel opens their Staff Panel).',
+      'Skeletons can drop a bow (rarely) and arrows (uncommon). Spiders drop string (1-2), as before.',
+      'The bow changes while you pull it: the picture in your hotbar and the bow in your hand bend back with an arrow on the string, in 3 stages.',
+      'More redstone: redstone ore now spawns about three times as often, and a bit higher up.',
+      'Menu background: put a picture called background.jpg (or .png / .webp) in public/images and it becomes the default background behind the menus. Change it, use your own picture or turn it off in Settings > Video > Menu Background.',
+      'EggWars and Bridge Duels are Find a match only now (no more hosting your own match).',
+      'Smarter bots: if you build up, they try to jump up to you, and if that fails they build a tower. Bots also have styles: most bridge normally, some ninja bridge, a few are tryhards, and very rarely one can godbridge.',
+      'About 45 new achievements: redstone, hunting, fishing, the Nether, crafting and more.',
+      'The Home greeting changes every time instead of always saying Welcome back, and there is only one VibeBlox logo now (in the sidebar).',
+      'Sword in third person: the raised sword pose only shows while you are blocking. Holding it without blocking looks relaxed.',
+    ],
+  },
   {
     version: 26.2,
     date: 'October 16, 2026',

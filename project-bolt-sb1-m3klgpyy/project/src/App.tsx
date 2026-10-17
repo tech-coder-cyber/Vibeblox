@@ -9,13 +9,15 @@ import {
 } from '@/progression';
 import { ModBuilder } from '@/ModBuilder';
 import { parseModCode } from '@/modBuilderLogic';
-import { readRank, worldLimit, WORLD_LIMITS, RANK_NAMES, effectiveRank, playerCap, scriptBudgetMs, canUploadSkin, SCRIPT_BUDGET_MS, creatorTier, CREATOR_PLAYS, CREATOR_NAMES, PLAYER_CAP, adsAllowedFor, badgeTags, type RankId, type CreatorTier } from '@/ranks';
+import { readRank, worldLimit, WORLD_LIMITS, RANK_NAMES, effectiveRank, playerCap, scriptBudgetMs, canUploadSkin, SCRIPT_BUDGET_MS, creatorTier, CREATOR_PLAYS, CREATOR_NAMES, PLAYER_CAP, adsAllowedFor, badgeTags, perkRank, isStaffId, type StaffId, type RankId, type CreatorTier } from '@/ranks';
 import { GAME_VERSION, NEWS } from '@/news';
 import { t, useLanguage, setLanguage, LANGUAGES, type LangCode } from '@/i18n';
 import { useKeybinds, rebind, resetBinds, keyLabel, KEY_ACTIONS, setCapturingKey, isCapturingKey, getBinds } from '@/keybinds';
+import { pickWelcome, splitWelcome } from '@/welcome';
+import { useBackground, backgroundStyle, findDefaultBackground } from './background';
 import type { OneBlockView, KeyAction } from '@/voxelGame';
 import { ITEM_IRON_INGOT, ITEM_GOLD_INGOT, ITEM_DIAMOND, ITEM_ENDER_PEARL, ITEM_IRON_SWORD, ITEM_IRON_PICKAXE, ITEM_BOW, BLOCK_TNT, BLOCK_GLASS, armorId } from '@/voxelGame';
-import { createVoxelGame, MINIGAME_SIZES, type GameWorldMode, type GraphicsQuality, type Recipe, type PlayMode, type DebugInfo, type WorldType, type Slots, type ItemStack, type SaveData, type WeatherKind, EXPERIMENTAL_IDS, experimentalEnabled, isWater, isLava, BLOCK_WATER, BLOCK_LAVA, BLOCK_GRASS, BLOCK_DIRT, BLOCK_STONE, ARMOR, ARMOR_PIECES, CUSTOM_ITEMS, CUSTOM_BLOCKS, customIdForKey, registerCustomItem, registerCustomBlock, createPlayerPreview, drawLookPreview, getTexturePreviews, setTextureResolution, type TextureRes, type DimensionSpec, type TextureSpec, maxStack, addToSlots, countInSlots, emptySlots, INVENTORY_SIZE, ITEM_INFO, RECIPES, getItemIconURL, matchRecipe, SMELTING, FUEL_SECONDS, isBlockId, type Trade, type Difficulty, ITEM_WAND, CHUNK_SIZE, CHUNK_HEIGHT, isPotionItem, isBrewIngredient, ITEM_BLAZE_POWDER, potionName, ITEM_NAME_TAG } from '@/voxelGame';
+import { createVoxelGame, MINIGAME_SIZES, type GameWorldMode, type GraphicsQuality, type Recipe, type PlayMode, type DebugInfo, type WorldType, type Slots, type ItemStack, type SaveData, type WeatherKind, EXPERIMENTAL_IDS, experimentalEnabled, isWater, isLava, BLOCK_WATER, BLOCK_LAVA, BLOCK_GRASS, BLOCK_DIRT, BLOCK_STONE, ARMOR, ARMOR_PIECES, CUSTOM_ITEMS, CUSTOM_BLOCKS, customIdForKey, registerCustomItem, registerCustomBlock, createPlayerPreview, drawLookPreview, getTexturePreviews, setTextureResolution, type TextureRes, type DimensionSpec, type TextureSpec, maxStack, addToSlots, countInSlots, emptySlots, INVENTORY_SIZE, ITEM_INFO, RECIPES, getItemIconURL, matchRecipe, getBowStage, subscribeBowStage, BOW_PULL_BASE, SMELTING, FUEL_SECONDS, isBlockId, type Trade, type Difficulty, ITEM_WAND, CHUNK_SIZE, CHUNK_HEIGHT, isPotionItem, isBrewIngredient, ITEM_BLAZE_POWDER, potionName, ITEM_NAME_TAG } from '@/voxelGame';
 import * as THREE from 'three';
 import {
   withCount, addStackToSlots, maxDurability, itemDisplayName, enchantLabel, ENCHANTMENTS, enchantFits, enchantsConflict, ITEM_LAPIS, ITEM_BOOK, ITEM_ENCHANTED_BOOK, type Station,
@@ -33,7 +35,7 @@ import PrivateServers from './PrivateServersPanel';
 import VideoOptions from './VideoOptions';
 import { MusicPlayer, SOUNDTRACKS, subscribeNowPlaying, getNowPlaying, type SoundtrackStyle, type AnySoundtrack } from './music';
 import { playlist, isFileStyle } from './playlist';
-import { NowPlayingToast, LookingAtLabel, QolSettings, BlockSoundSettings, PlaylistNote, saveScreenshot } from './QolBits';
+import { NowPlayingToast, LookingAtLabel, QolSettings, BlockSoundSettings, BackgroundSettings, PlaylistNote, saveScreenshot } from './QolBits';
 import { installUiSounds, setUiSoundVolume, getQol, subscribeQol } from './qol';
 import { useCompactLayout } from './layout';
 import SideNav from './SideNav';
@@ -187,7 +189,7 @@ type MpClient = {
   sendWhisper(to: string, text: string): void;
   sendTitle(to: string, text: string, sub?: string): void;
   sendRanks(ranks: unknown): void;
-  sendAdmin(token: string, action: 'check' | 'players' | 'kick' | 'ban' | 'unban' | 'bans' | 'gamemode', extra?: { name?: string; mode?: string }): void;
+  sendAdmin(token: string, action: 'check' | 'players' | 'kick' | 'ban' | 'unban' | 'bans' | 'gamemode' | 'mute' | 'unmute' | 'mutes', extra?: { name?: string; mode?: string }): void;
   disconnect(): void;
 };
 
@@ -803,20 +805,10 @@ function PlanetsView({ savedWorlds, limit, onPlayWorld, onCreate, onDelete }: { 
 }
 
 /** EggWars / Bridge Duels: play against bots now; real players are coming. */
-function MinigamePicker({ kind, onPlay, onClose, onHost, onJoin, onFind }: { kind: ArenaKind; onPlay: (d: BotDifficulty, size: MinigameSize) => void; onClose: () => void; onHost?: (size: MinigameSize) => void; onJoin?: (w: HostedWorld) => void; onFind?: () => void }) {
+function MinigamePicker({ kind, onPlay, onClose, onFind }: { kind: ArenaKind; onPlay: (d: BotDifficulty, size: MinigameSize) => void; onClose: () => void; onFind?: () => void }) {
   const [diff, setDiff] = useState<BotDifficulty>('normal');
   const [size, setSize] = useState<MinigameSize>('solo');
-  const [onlineSize, setOnlineSize] = useState<MinigameSize>('solo');
   const summary = useContext(AccountSummaryContext);
-  // open matches of this game that you can join (refreshes while the menu is open)
-  const [open, setOpen] = useState<HostedWorld[] | null>(null);
-  useEffect(() => {
-    let live = true;
-    const load = () => { void listHostedWorlds().then((r) => { if (live) setOpen(r.ok ? r.worlds.filter((w) => w.worldType === kind) : []); }); };
-    load();
-    const t = window.setInterval(load, 6000);
-    return () => { live = false; window.clearInterval(t); };
-  }, [kind]);
   const sizeBlurb: Record<MinigameSize, string> = kind === 'eggwars'
     ? { solo: 'Every team is one player: you against 3 bots.', duos: 'Teams of 2: you and a bot teammate against three bot duos.', squads: 'Teams of 4: you and 3 bot teammates against three bot squads.' }
     : { solo: '1 v 1: you against one bot.', duos: '2 v 2: you and a bot teammate against two bots.', squads: '4 v 4: you and 3 bot teammates against four bots.' };
@@ -847,46 +839,16 @@ function MinigamePicker({ kind, onPlay, onClose, onHost, onJoin, onFind }: { kin
           </div>
           <button onClick={() => onPlay(diff, size)} data-testid="play-vs-ai" className="w-full py-3 rounded-xl bg-[#00e676] text-[#0a0e14] font-bold text-sm hover:brightness-110 active:scale-95 transition-all">Play vs AI</button>
         </div>
-        {kind === 'eggwars' ? (
         <div className="rounded-xl border border-[#7c4dff]/40 bg-[#7c4dff]/5 p-4" data-testid="play-online">
           <div className="flex items-center gap-2 mb-1"><Users className="w-4 h-4 text-[#b39dff]" /><span className="text-white font-bold text-sm">Play against players</span></div>
-          <p className="text-[#5a6b80] text-xs mb-3">Solo EggWars with real players. You are matched into a game automatically: it starts 30 seconds after 2 players are in, or in 5 seconds when the lobby is full.</p>
+          <p className="text-[#5a6b80] text-xs mb-3">{kind === 'eggwars'
+            ? 'Solo EggWars with real players. You are matched into a game automatically: it starts 30 seconds after 2 players are in, or in 5 seconds when the lobby is full.'
+            : 'Find a 1v1 with a real player. You are matched into a game automatically and it starts 5 seconds after your opponent joins.'}</p>
           <button onClick={() => onFind?.()} disabled={!onFind} data-testid="find-game"
             className="w-full py-3 rounded-xl bg-[#7c4dff] text-white font-bold text-sm hover:brightness-110 active:scale-95 transition-all disabled:opacity-40">
-            {summary.signedIn ? 'Find a game' : 'Sign in to find a game'}
+            {summary.signedIn ? (kind === 'eggwars' ? 'Find a game' : 'Find a match') : (kind === 'eggwars' ? 'Sign in to find a game' : 'Sign in to find a match')}
           </button>
         </div>
-        ) : (
-        <div className="rounded-xl border border-[#7c4dff]/40 bg-[#7c4dff]/5 p-4" data-testid="play-online">
-          <div className="flex items-center gap-2 mb-1"><Users className="w-4 h-4 text-[#b39dff]" /><span className="text-white font-bold text-sm">Play against players</span></div>
-          <p className="text-[#5a6b80] text-xs mb-3">Find a 1v1 right away (it starts 5 seconds after someone joins), join an open match, or host your own and start it when everyone is in.</p>
-          <button onClick={() => onFind?.()} disabled={!onFind} data-testid="find-game"
-            className="w-full py-3 mb-3 rounded-xl bg-[#00e5ff] text-[#0a0e14] font-bold text-sm hover:brightness-110 active:scale-95 transition-all disabled:opacity-40">
-            {summary.signedIn ? 'Find a match' : 'Sign in to find a match'}
-          </button>
-          <div className="flex flex-col gap-1.5 mb-3 max-h-40 overflow-y-auto vb-scroll" data-testid="open-matches">
-            {open === null && <p className="text-[#5a6b80] text-xs">Looking for matches…</p>}
-            {open !== null && !open.length && <p className="text-[#5a6b80] text-xs" data-testid="no-matches">No open matches right now. Host one!</p>}
-            {open?.map((w) => (
-              <div key={w.id} className="flex items-center gap-2 rounded-lg bg-[#0a0e14] border border-[#243044] px-3 py-2" data-testid="open-match">
-                <span className="flex-1 min-w-0 text-white text-xs font-medium truncate">{w.name}</span>
-                <span className="text-[#8ea0b8] text-[11px] tabular-nums">{w.players}/{w.max}</span>
-                <button onClick={() => onJoin?.(w)} disabled={w.players >= w.max || !onJoin} data-testid="join-match"
-                  className="px-3 py-1 rounded-lg bg-[#7c4dff] text-white text-[11px] font-bold disabled:opacity-40 active:scale-95">{w.players >= w.max ? 'Full' : 'Join'}</button>
-              </div>
-            ))}
-          </div>
-          <div className="grid grid-cols-3 gap-2 mb-2" data-testid="online-size">
-            {(['solo', 'duos', 'squads'] as MinigameSize[]).map((z) => (
-              <button key={z} onClick={() => setOnlineSize(z)} data-testid={`online-size-${z}`} className={`py-1.5 rounded-xl text-[11px] font-bold capitalize ${onlineSize === z ? 'bg-[#b39dff] text-[#0a0e14]' : 'bg-[#121822] border border-[#243044] text-[#8ea0b8] hover:text-white'}`}>{z}</button>
-            ))}
-          </div>
-          <button onClick={() => onHost?.(onlineSize)} disabled={!onHost} data-testid="play-vs-players"
-            className="w-full py-3 rounded-xl bg-[#7c4dff] text-white font-bold text-sm hover:brightness-110 active:scale-95 transition-all disabled:opacity-40">
-            {summary.signedIn ? 'Host a match' : 'Sign in to host a match'}
-          </button>
-        </div>
-        )}
       </div>
     </div>
   );
@@ -896,14 +858,16 @@ function HomeView({ username, onPlaySurvival, savedWorlds, onPlayWorld, onCreate
   useLanguage();
   const displayName = username.toUpperCase() || 'PLAYER';
   const [picker, setPicker] = useState<ArenaKind | null>(null);
+  const welcome = useMemo(() => splitWelcome(pickWelcome()), []); // a different greeting each time you open Home
   return (
     <div className="vb-fade-in">
       <header className="mb-8">
-        <div className="vb-logo-wrapper inline-block mb-4 cursor-pointer">
-          <img src="/images/logo.png" alt="VibeBlox" className="vb-logo-img w-12 h-12 rounded-xl" />
-        </div>
-        <h1 className="font-[var(--font-retro)] text-2xl text-white leading-relaxed tracking-wider">
-          <span className="text-[#00e676]">{t('home.welcomeBack')}</span>, {displayName}!
+        <h1 className="font-[var(--font-retro)] text-2xl text-white leading-relaxed tracking-wider" data-testid="welcome-title">
+          {t('home.welcomeBack') === 'WELCOME BACK' ? (
+            <><span className="text-[#00e676]">{welcome[0].toUpperCase()}</span>{displayName}<span className="text-[#00e676]">{welcome[1].toUpperCase()}</span></>
+          ) : (
+            <><span className="text-[#00e676]">{t('home.welcomeBack')}</span>, {displayName}!</>
+          )}
         </h1>
         <p className="font-[var(--font-display)] text-[#5a6b80] mt-3 text-sm tracking-wide">
           {t('home.tagline')}
@@ -942,9 +906,7 @@ function HomeView({ username, onPlaySurvival, savedWorlds, onPlayWorld, onCreate
         </div>
       </section>
       {picker && <MinigamePicker kind={picker} onClose={() => setPicker(null)} onPlay={(d, z) => { const k = picker; setPicker(null); onMinigame(k, d, z); }}
-        onHost={(z) => { const k = picker; setPicker(null); onMinigame(k, 'normal', z, { host: true }); }}
-        onFind={() => { const k = picker; setPicker(null); onMinigame(k, 'normal', 'solo', { find: true }); }}
-        onJoin={(w) => { setPicker(null); onMinigame(picker, 'normal', 'solo', { join: w.id, hostName: w.host }); }} />}
+        onFind={() => { const k = picker; setPicker(null); onMinigame(k, 'normal', 'solo', { find: true }); }} />}
 
     </div>
   );
@@ -1650,6 +1612,7 @@ function SettingsView({
       </section>
 
       <VideoOptions />
+      <BackgroundSettings />
       </>}
       {tab === 'language' && <LanguagePicker />}
       {tab === 'controls' && <ControlsPanel />}
@@ -2189,11 +2152,13 @@ function MainContent({
   sfxVolume: number;
   onSfxVolumeChange: (v: number) => void;
 }) {
+  const bgPic = useBackground();
+  useEffect(() => { void findDefaultBackground(); }, []);
   if (view === 'social') {
     return <main className="flex-1 flex flex-col overflow-hidden bg-[#0a0e14] min-w-0">{socialView}</main>;
   }
   return (
-    <main className="flex-1 min-h-0 overflow-y-auto vb-scroll bg-[#0a0e14]">
+    <main className="flex-1 min-h-0 overflow-y-auto vb-scroll bg-[#0a0e14]" style={backgroundStyle(bgPic)} data-testid="main-bg" data-bg={bgPic.url ? 'on' : 'off'}>
       <div className={compact ? 'px-3 py-3' : 'px-8 py-6'}>
         {view === 'home' && compact && <MobileProfileBar username={username} onPlayNow={() => onPlaySurvival()} />}
         {view === 'home' && !compact && <DiscordBanner />}
@@ -2725,6 +2690,7 @@ function GameHUD({ inventory, offhand, armor, health, hunger, selectedSlot, mode
   mode: PlayMode;
 }) {
   const heldId = inventory[selectedSlot]?.id ?? null;
+  const bowStage = useSyncExternalStore(subscribeBowStage, getBowStage); // the held bow's picture changes as you pull it back
 
   // Item name pops up above the hotbar when you switch to it, then fades
   const [nameVisible, setNameVisible] = useState(false);
@@ -2829,7 +2795,7 @@ function GameHUD({ inventory, offhand, armor, health, hunger, selectedSlot, mode
               }`}
               style={{ boxShadow: isSelected ? '0 0 0 1px rgba(255,255,255,0.6)' : 'inset -2px -2px 0 rgba(0,0,0,0.25), inset 2px 2px 0 rgba(255,255,255,0.15)' }}
             >
-              {id !== null && <ItemIcon id={id} className="w-8 h-8" />}
+              {id !== null && <ItemIcon id={isSelected && id === ITEM_BOW && bowStage > 0 ? BOW_PULL_BASE + bowStage : id} className="w-8 h-8" />}
               {id !== null && count > 1 && (
                 <span className="absolute bottom-0 right-0.5 text-[10px] text-white font-bold drop-shadow-[0_1px_0_black]">{count}</span>
               )}
@@ -4145,6 +4111,8 @@ const COMMANDS: Array<{ names: string[]; usage: string; desc: string }> = [
   { names: ['desel'], usage: '/desel', desc: 'Clear the selection.' },
   { names: ['difficulty'], usage: '/difficulty peaceful|easy|normal|hard', desc: 'Change the difficulty (not in Hardcore).' },
   { names: ['pardon', 'unban'], usage: '/pardon <player>', desc: 'Let a banned player join this world again (the world\'s owner, or an admin in someone else\'s world).' },
+  { names: ['mute', 'unmute', 'mutes'], usage: '/mute <player> · /unmute <player> · /mutes', desc: 'Stop a player from chatting in this world (the host and staff: HELPER and MOD).' },
+  { names: ['kick', 'ban'], usage: '/kick <player> · /ban <player>', desc: 'Remove a player from this world (staff and admins; a ban only covers this world).' },
   { names: ['gamerule'], usage: '/gamerule keepInventory true|false', desc: 'Keep your items when you die.' },
   { names: ['screenshot', 'ss'], usage: '/screenshot', desc: 'Save a picture of the game (a PNG download). F2 does the same. Works everywhere.' },
   { names: ['locate'], usage: '/locate village | temple | fortress | dungeon | portal | treasure', desc: 'Find the closest village, desert temple, dungeon, ruined portal, buried treasure, or (in the Nether) fortress.' },
@@ -5719,13 +5687,23 @@ export default function App() {
     return () => { live = false; save(); window.clearInterval(t); offLevel(); document.removeEventListener('visibilitychange', onHide); };
   }, [account?.username]); // eslint-disable-line react-hooks/exhaustive-deps
   const myRank: RankId = effectiveRank(account, isOwnerAccount);
+  const myOg = !!account && !isGuestName(account.username) && account.og === true;
+  const myStaff: StaffId | null = account && !isGuestName(account.username) && isStaffId(account.staff) ? account.staff : null;
+  /** The rank whose perks you get: OG players and staff (HELPER, MOD) get Elite's perks. The tag still shows the real rank. */
+  const myPerk: RankId = perkRank(myRank, { og: myOg, staff: myStaff });
   const myTier: CreatorTier = isOwnerAccount ? 'star' : creatorTier(standing?.plays ?? 0);
+  /** Admins and staff can kick, ban, mute and use commands in every world. */
+  const canModerate = !!admin || !!myStaff;
+  const canModerateRef = useRef(canModerate);
+  canModerateRef.current = canModerate;
+  const myOgRef = useRef(myOg); myOgRef.current = myOg;
+  const myStaffRef = useRef<StaffId | null>(myStaff); myStaffRef.current = myStaff;
   const rising = myTier !== 'none';
-  const budgetRef = useRef(scriptBudgetMs(myRank, myTier));
-  budgetRef.current = scriptBudgetMs(myRank, myTier);
+  const budgetRef = useRef(scriptBudgetMs(myPerk, myTier));
+  budgetRef.current = scriptBudgetMs(myPerk, myTier);
   const myRankRef = useRef(myRank);
   myRankRef.current = myRank;
-  useEffect(() => { setAdsBlocked(!adsAllowedFor(myRank, isOwnerAccount)); }, [myRank, isOwnerAccount]);
+  useEffect(() => { setAdsBlocked(!adsAllowedFor(myPerk, isOwnerAccount)); }, [myPerk, isOwnerAccount]);
   const myTierRef = useRef(myTier);
   myTierRef.current = myTier;
   const isOwnerRef = useRef(isOwnerAccount);
@@ -5743,7 +5721,7 @@ export default function App() {
     if (fr) parts.push(`${fr}\\reset\\`);
     const me = name.toLowerCase() === (usernameRef.current || '').toLowerCase();
     const a = accountRef.current;
-    const badge: NetBadge | undefined = me ? (a && !isGuestName(a.username) ? { owner: isOwnerRef.current, rank: myRankRef.current, tier: myTierRef.current } : undefined) : badgesRef.current[name.toLowerCase()];
+    const badge: NetBadge | undefined = me ? (a && !isGuestName(a.username) ? { owner: isOwnerRef.current, rank: myRankRef.current, tier: myTierRef.current, og: myOgRef.current, staff: myStaffRef.current } : undefined) : badgesRef.current[name.toLowerCase()];
     parts.push(...badgeTags(badge));
     return parts.length ? parts.join(' ') + ' ' : '';
   }
@@ -6635,7 +6613,7 @@ export default function App() {
   useEffect(() => installUiSounds(), []);
   useEffect(() => subscribeQol(() => gameHandleRef.current?.setBlockOutline(getQol().outline)), []);
   // keep it right when you log in, your rank changes, or a fake rank is given
-  useEffect(() => { if (gameMode === 'playing') refreshNameTags(); }, [gameMode, account?.username, myRank, myTier, isOwnerAccount, fakeRanks]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (gameMode === 'playing') refreshNameTags(); }, [gameMode, account?.username, myRank, myTier, isOwnerAccount, fakeRanks, myOg, myStaff]); // eslint-disable-line react-hooks/exhaustive-deps
   // block sounds: the switches and volume in Settings > Audio
   const applyBlockSounds = () => { const q = getQol(); gameHandleRef.current?.setBlockSoundPrefs({ breaking: q.blockBreak, placing: q.blockPlace, footsteps: q.footsteps, volume: q.blockVolume }); };
   useEffect(() => subscribeQol(applyBlockSounds), []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -7178,7 +7156,7 @@ export default function App() {
       isFriend: (uid: string) => isFriendOf(me.userId, uid),
       isBanned: isBannedName,
       isAdmin: isAdminToken,
-      standing: async (name: string) => { const st = await fetchStanding(name); return { rank: st?.rank ?? 'none', tier: creatorTier(st?.plays ?? 0) }; },
+      standing: async (name: string) => { const st = await fetchStanding(name); return { rank: st?.rank ?? 'none', tier: creatorTier(st?.plays ?? 0), og: st?.og === true, staff: st?.staff ?? null }; },
     };
   }
   /** Anti-cheat for a world you host: alerts go to you (chat + Manage Server) and to the admins' report list. */
@@ -7993,7 +7971,7 @@ export default function App() {
     const info = (t: string) => pushMessage(t, '#aaaaaa');
     const err = (t: string) => pushMessage(t, '#ff6b6b');
     if (cmd === 'panel') {
-      if (!me || !adminRef.current) { err("You don't have permission to use /panel"); return; }
+      if (!me || !canModerateRef.current) { err("You don't have permission to use /panel"); return; }
       return 'panel';
     }
     if (cmd === 'friend' || cmd === 'unfriend' || cmd === 'friends') {
@@ -8098,18 +8076,36 @@ export default function App() {
       if (ctx) { err('That command only works in chat'); return; }
       return runSocialCommand(cmd, args);
     }
+    if (cmd === 'kick' || cmd === 'ban') {
+      if (ctx) { err('That command only works in chat'); return; }
+      if (!args[0]) { err(`Usage: /${cmd} <player>`); return; }
+      if (canModerateRef.current && accountRef.current && mpRef.current?.connected) mpRef.current.sendAdmin(accountRef.current.token, cmd, { name: args[0] }); // the server answers in chat
+      else err('Only staff and admins can use /' + cmd + ' (hosts: use Manage Server)');
+      return;
+    }
+    if (cmd === 'mute' || cmd === 'unmute' || cmd === 'mutes') {
+      if (ctx) { err('That command only works in chat'); return; }
+      const who = args[0];
+      if (cmd !== 'mutes' && !who) { err(`Usage: /${cmd} <player>`); return; }
+      const room = hostingRef.current?.room as { mute?: (n: string) => string; unmute?: (n: string) => string; mutesList?: () => string } | undefined;
+      if (ownsWorldRef.current && room?.mute) info(cmd === 'mute' ? room.mute(who) : cmd === 'unmute' ? room.unmute!(who) : room.mutesList!());
+      else if (canModerateRef.current && accountRef.current && mpRef.current?.connected) mpRef.current.sendAdmin(accountRef.current.token, cmd, who ? { name: who } : {}); // the server answers in chat
+      else err(cmd === 'mutes' || cmd === 'mute' || cmd === 'unmute' ? 'Only the host and staff can mute players' : t('restricted.world'));
+      return;
+    }
     if (cmd === 'pardon' || cmd === 'unban') {
       if (ctx) { err('That command only works in chat'); return; }
       const who = args[0];
       if (!who) { err('Usage: /pardon <player>'); return; }
       if (ownsWorldRef.current) {
         if (unbanName(who)) info(`${who} can join this world again`); else err(`${who} isn't banned from this world`);
-      } else if (adminRef.current && accountRef.current && mpRef.current?.connected) mpRef.current.sendAdmin(accountRef.current.token, 'unban', { name: who }); // the server answers in chat
+      } else if (canModerateRef.current && accountRef.current && mpRef.current?.connected) mpRef.current.sendAdmin(accountRef.current.token, 'unban', { name: who }); // the server answers in chat
       else err(isMinigameRef.current ? t('restricted.minigame') : t('restricted.world'));
       return;
     }
-    if (!ownsWorldRef.current && cmd !== 'help' && cmd !== '?') { err(isMinigameRef.current ? t('restricted.minigame') : t('restricted.world')); return; } // no cheats in minigames or other people's worlds
-    if (!serverSettingsRef.current.commands && cmd !== 'help' && cmd !== '?') { err('Commands are turned off on this server (Manage Server).'); return; }
+    const staffPower = canModerateRef.current && !!accountRef.current; // admins and staff use commands in every world
+    if (!ownsWorldRef.current && !staffPower && cmd !== 'help' && cmd !== '?') { err(isMinigameRef.current ? t('restricted.minigame') : t('restricted.world')); return; } // no cheats in minigames or other people's worlds
+    if (!serverSettingsRef.current.commands && !staffPower && cmd !== 'help' && cmd !== '?') { err('Commands are turned off on this server (Manage Server).'); return; }
 
     switch (cmd) {
       case 'wand':
@@ -8556,7 +8552,7 @@ export default function App() {
     setRenderDistance(rd);
   }
 
-  const planetLimit = worldLimit(myRank);
+  const planetLimit = worldLimit(myPerk);
   const lastLaunchRef = useRef(0);
   /** Starting a game: ignore a second start right after the first (a focused button + Space used to restart the game). */
   function startGuard(): boolean {
@@ -8568,7 +8564,7 @@ export default function App() {
   }
 
   function handleSaveWorld(config: WorldConfig) {
-    if (savedWorlds.length >= planetLimit) { setHint(`You've reached your limit of ${planetLimit} planets (${RANK_NAMES[myRank]}). Delete one to make a new one.`); return; }
+    if (savedWorlds.length >= planetLimit) { setHint(`You've reached your limit of ${planetLimit} planets (${myOg && myPerk !== myRank ? 'OG' : myStaff ? myStaff.toUpperCase() : RANK_NAMES[myPerk]}). Delete one to make a new one.`); return; }
     if (!startGuard()) return;
     const made: WorldConfig = { ...config, creator: currentUsername || 'Guest', createdAt: Date.now(), lastPlayed: Date.now(), playSeconds: 0 };
     setSavedWorlds((prev) => [...prev, made]);
@@ -8703,7 +8699,7 @@ export default function App() {
 
   return (
     <AccountSummaryContext.Provider value={{ username: account?.username ?? '', signedIn: !!account && !isGuestName(account.username), isOwner: isOwnerAccount, isAdmin: !!admin, openAdmin: () => openPanel() }}>
-    <StandingContext.Provider value={{ rank: myRank, rising, tier: myTier, isOwner: isOwnerAccount, standing, signedIn: !!account && !isGuestName(account.username), guest: (accountChecked || authWaitOver) && (!account || isGuestName(account.username)) }}>
+    <StandingContext.Provider value={{ rank: myPerk, rising, tier: myTier, isOwner: isOwnerAccount, standing, signedIn: !!account && !isGuestName(account.username), guest: (accountChecked || authWaitOver) && (!account || isGuestName(account.username)) }}>
       <DailyUiContext.Provider value={{ openDaily: () => setShowDaily(true) }}>
       {/* Persistent soundtrack element — lives at the App level (not inside
           any view) so it keeps playing across sidebar navigation and while
@@ -9088,9 +9084,11 @@ export default function App() {
         )}
       </div>
 
-      {panelOpen && account && admin && (
+      {panelOpen && account && (admin || myStaff) && (
         <AdminPanel
           account={account}
+          staffOnly={!admin}
+          onMute={(n, on) => { if (mpRef.current?.connected) mpRef.current.sendAdmin(account.token, on ? 'mute' : 'unmute', { name: n }); }}
           online={netStatus === 'online'}
           players={adminPlayers}
           onSetMode={adminSetMode}

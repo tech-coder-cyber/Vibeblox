@@ -829,14 +829,24 @@ function drawMiscItemCanvas(id: number): HTMLCanvasElement {
     case ITEM_LEATHER:
       blobPx(ctx, 8, 8, 6.5, 6, '#8b5a2b', '#5e3a17', '#b07a45');
       break;
-    default: { // bow
+    default: { // bow (stage 0 at rest; 1-3 drawn back further, with an arrow on the string)
+      const stage = id >= BOW_PULL_BASE ? Math.min(3, id - BOW_PULL_BASE) : 0;
       for (let t = 0; t <= 1.0001; t += 0.04) {
-        const bulge = Math.sin(Math.PI * t) * 3.5;
+        const bulge = Math.sin(Math.PI * t) * (3.5 + stage * 0.35);
         const x = Math.round(3 + 10 * t - bulge), y = Math.round(13 - 10 * t - bulge);
         setPx(ctx, x, y, '#8a5a2b');
         setPx(ctx, Math.min(15, x + 1), y, '#b07a45');
       }
-      linePx(ctx, 3, 13, 13, 3, '#e6e6e6');
+      if (stage === 0) linePx(ctx, 3, 13, 13, 3, '#e6e6e6');
+      else {
+        const px = 8 + stage * 1.5, py = 8 + stage * 1.5; // where the string is pulled to
+        linePx(ctx, 3, 13, Math.round(px), Math.round(py), '#e6e6e6');
+        linePx(ctx, Math.round(px), Math.round(py), 13, 3, '#e6e6e6');
+        // the arrow rests on the string and points out of the bow
+        linePx(ctx, Math.round(px), Math.round(py), 4, 4, '#c9883a');
+        setPx(ctx, 3, 3, '#d8d8d8'); setPx(ctx, 4, 3, '#d8d8d8'); setPx(ctx, 3, 4, '#d8d8d8');
+        setPx(ctx, Math.round(px) + 1, Math.round(py), '#ffffff'); setPx(ctx, Math.round(px), Math.round(py) + 1, '#ffffff');
+      }
     }
   }
   return c;
@@ -904,6 +914,25 @@ export function pickRoles(kind: 'eggwars' | 'bridge', n: number, human = false, 
   if (kind === 'bridge' && n > 0 && !out.includes('fighter')) out[0] = 'fighter';
   if (kind === 'eggwars' && n >= 3 && !out.includes('fighter')) out[0] = 'fighter';
   return out;
+}
+
+/** How a minigame bot plays. Most bridge normally; some "ninja bridge" (quick, hugging the edge); a few are tryhards
+ *  (fast, accurate, never waste a move); and, super rarely, one can godbridge (blocks come out almost as fast as you can click). */
+export type BotStyle = 'normal' | 'ninja' | 'tryhard' | 'god';
+export const BOT_STYLES: Record<BotStyle, { label: string; bridge: number; cap: number; pause: number; react: number; damage: number; speed: number; chance: number }> = {
+  normal: { label: 'Normal', bridge: 1, cap: 1, pause: 1, react: 1, damage: 1, speed: 1, chance: 0.63 },
+  ninja: { label: 'Ninja bridger', bridge: 1.7, cap: 1.45, pause: 0.3, react: 0.9, damage: 1, speed: 1.02, chance: 0.2 },
+  tryhard: { label: 'Tryhard', bridge: 1.45, cap: 1.25, pause: 0, react: 0.6, damage: 1.12, speed: 1.06, chance: 0.15 },
+  god: { label: 'Godbridger', bridge: 3.1, cap: 2.1, pause: 0, react: 0.7, damage: 1.05, speed: 1.04, chance: 0.02 },
+};
+/** Picks a style for a new bot (`rnd` is 0..1 so tests can steer it). */
+export function pickBotStyle(rnd: () => number = Math.random): BotStyle {
+  let r = rnd();
+  for (const k of ['normal', 'ninja', 'tryhard', 'god'] as BotStyle[]) {
+    r -= BOT_STYLES[k].chance;
+    if (r < 0) return k;
+  }
+  return 'normal';
 }
 
 type MobModel = {
@@ -1441,7 +1470,9 @@ export function mobDrops(kind: MobKind, ctx: { baby?: boolean; burning?: boolean
     : kind === 'chicken' ? [[ITEM_CHICKEN, 1], [ITEM_FEATHER, r(0, 2)]]
     : kind === 'sheep' ? [[ITEM_MUTTON, r(1, 2)], ...(ctx.wool != null ? [[woolId(ctx.wool), 1] as [number, number]] : [])]
     : kind === 'zombie' ? [[ITEM_ROTTEN_FLESH, r(1, 2)]]
-    : kind === 'skeleton' ? [[ITEM_BONE, r(1, 2)], [ITEM_ARROW, r(0, 2)]]
+    : kind === 'skeleton' ? [[ITEM_BONE, r(1, 2)],
+      [ITEM_ARROW, Math.random() < 0.3 + 0.08 * (ctx.looting ?? 0) ? r(1, 2) : 0],   // uncommon
+      [ITEM_BOW, Math.random() < 0.06 + 0.02 * (ctx.looting ?? 0) ? 1 : 0]]          // rare
     : kind === 'spider' ? [[ITEM_STRING, r(1, 2)], [ITEM_SPIDER_EYE, r(0, 1)]]
     : kind === 'blaze' ? [[ITEM_BLAZE_ROD, r(0, 1)]]
     : kind === 'ghast' ? [[ITEM_GUNPOWDER, r(0, 2)], [ITEM_GHAST_TEAR, r(0, 1)]]
@@ -2779,6 +2810,7 @@ function itemCanvasBase(id: number): HTMLCanvasElement | null {
     case ITEM_IRON_DOOR: return drawIronDoor(false);
     case ITEM_COOKED_PORKCHOP: case ITEM_STEAK: case ITEM_COOKED_CHICKEN: case ITEM_COOKED_MUTTON: return drawCookedCanvas(id);
     case ITEM_BONE: case ITEM_ARROW: case ITEM_FEATHER: case ITEM_GUNPOWDER: case ITEM_LEATHER: case ITEM_BOW: return drawMiscItemCanvas(id);
+    case BOW_PULL_BASE + 1: case BOW_PULL_BASE + 2: case BOW_PULL_BASE + 3: return drawMiscItemCanvas(id);
     default: return null;
   }
 }
@@ -3038,6 +3070,13 @@ export const ITEM_GUNPOWDER = 117;
 export const ITEM_FEATHER = 118;
 export const ITEM_LEATHER = 119;
 export const ITEM_BOW = 120;
+/** Not real items: the pictures of a bow being drawn back (stage 1-3), used for the hotbar icon and the held model. */
+export const BOW_PULL_BASE = 9120;
+let bowStageNow = 0;
+const bowStageListeners = new Set<() => void>();
+export const getBowStage = () => bowStageNow;
+export function subscribeBowStage(cb: () => void) { bowStageListeners.add(cb); return () => { bowStageListeners.delete(cb); }; }
+function setBowStage(n: number) { if (n === bowStageNow) return; bowStageNow = n; bowStageListeners.forEach((f) => f()); }
 export const ITEM_BUCKET = 121;
 export const ITEM_WATER_BUCKET = 122;
 export const ITEM_LAVA_BUCKET = 123;
@@ -5180,9 +5219,10 @@ function poseArms(model: MobModel, o: { swing: number; punch: number; slash?: nu
   } else if (style === 'item') {
     R.rotation.set(0.5 + s * 0.15 + o.punch * 0.9, 0, 0);
   } else if (style === 'sword') {
-    // Blocking: the arm comes up and across the chest with the blade upright in front of you. Holding: the arm is a little raised, the sword ready.
+    // Blocking: the arm comes up and across the chest with the blade upright in front of you. Just holding it: the arm hangs
+    // relaxed like with any other tool (the raised "ready" pose only shows while you block).
     if (o.blocking) R.rotation.set(1.1, 0, -0.95);
-    else R.rotation.set(0.6 + s * 0.15 + wind, 0, -0.12);
+    else R.rotation.set(0.32 + s * 0.15 + wind, 0, 0);
   } else if (style === 'block') {
     R.rotation.set(0.4 + s * 0.2 + o.punch * 1.0, 0, -0.1);
   } else if (style === 'gun1') {
@@ -5863,7 +5903,7 @@ class World {
     if (y < 22 && this.hash3(cx, cy, cz, 17) < 0.005) return BLOCK_GOLD_ORE;
     if (y < 40 && this.hash3(cx, cy, cz, 19) < 0.016) return BLOCK_IRON_ORE;
     if (y < 54 && this.hash3(cx, cy, cz, 23) < 0.035) return BLOCK_COAL_ORE;
-    if (y < 16 && this.hash3(cx, cy, cz, 29) < 0.009) return BLOCK_REDSTONE_ORE;
+    if (y < 22 && this.hash3(cx, cy, cz, 29) < 0.028) return BLOCK_REDSTONE_ORE; // plenty of redstone
     if (y < 30 && this.hash3(cx, cy, cz, 37) < 0.004) return BLOCK_LAPIS_ORE;
     return this.stoneAt(wx, y, wz);
   }
@@ -7530,6 +7570,9 @@ export type BotRole = 'fighter' | 'builder' | 'upgrader' | 'defender' | 'rusher'
 export type BotBrain = {
   targetTeam?: number; breakTimer: number;
   role: BotRole; name: string;
+  style: BotStyle;
+  climbTimer: number; climbBase: number; // going up toward a target above it: jump first, then build up
+  climbing: 'no' | 'jump' | 'build';
   coins: number; // what an upgrader has collected from its generator
   bowTimer: number; drawTimer: number; pauseTimer: number; wtap: number;
   bridgeHold: number; // keeps it crouched and facing back between blocks while it bridges
@@ -7671,7 +7714,7 @@ export type GameHandle = {
   /** Experience: drop orbs worth this much at your feet. */
   dropXp: (amount: number) => void;
   /** For tests and tools: a plain look at mobs and orbs. */
-  debugMobs: () => Array<{ id: number; kind: string; baby: boolean; sheared: boolean; color: number; fire: number; love: number; health: number; x: number; y: number; z: number; width: number; height: number; charge: number; team: number; goal: string | null; shop: boolean; botName?: string; role?: string; bridging?: boolean; yaw?: number; tier?: number; coins?: number }>;
+  debugMobs: () => Array<{ id: number; kind: string; baby: boolean; sheared: boolean; color: number; fire: number; love: number; health: number; x: number; y: number; z: number; width: number; height: number; charge: number; team: number; goal: string | null; shop: boolean; botName?: string; role?: string; style?: string; climbing?: string; bridging?: boolean; yaw?: number; tier?: number; coins?: number }>;
   debugOrbs: () => Array<{ value: number; size: string; x: number; y: number; z: number }>;
   debugDoorCracks: () => Array<{ key: string; stage: number }>;
   onPlayerDeath: (cb: (reason: string) => void) => void;
@@ -7740,7 +7783,7 @@ export type GameHandle = {
   listPlayers: () => Array<{ id: number; name: string; x: number; y: number; z: number }>;
   /** Minigames (worlds made as 'eggwars' or 'bridge'): (re)start against bots, and follow the score. */
   /** forceRole (tests): every bot gets this role instead of a random one. */
-  startMinigame: (difficulty: BotDifficulty, size?: MinigameSize, forceRole?: BotRole) => boolean;
+  startMinigame: (difficulty: BotDifficulty, size?: MinigameSize, forceRole?: BotRole, forceStyle?: BotStyle) => boolean;
   onMinigame: (cb: ((v: MinigameView) => void) | null) => void;
   /** Online EggWars / Bridge Duels: start with no bots, take the room's state, put the arena back, and hear what happens to you. */
   startOnlineMinigame: () => boolean;
@@ -8698,6 +8741,7 @@ export function createVoxelGame(
   let rightUseDown = false;
   let bowDrawing = false;
   let bowDrawStart = 0;
+  let bowDrawElapsed = 0; // seconds since the draw started (simulated time, not the wall clock)
   let isFlying = false;
   let lastSpaceTapTime = 0;
   let miningTarget: { x: number; y: number; z: number } | null = null;
@@ -8832,6 +8876,7 @@ export function createVoxelGame(
   // --- Held item shown in the hand ---
   let heldMesh: THREE.Mesh | null = null;
   let heldMeshId: number | null = null;
+  let heldBowStage = 0;
   // The held item is attached to the camera (not the arm) so it can be posed
   // like Minecraft: tools tilted up toward the crosshair, blocks turned 45°,
   // bows held upright.
@@ -8875,6 +8920,7 @@ export function createVoxelGame(
     equipLerp = 1; // the new item rises up from below
     if (heldMesh) { camera.remove(heldMesh); disposeObject(heldMesh); heldMesh = null; }
     heldMeshId = heldItem;
+    heldBowStage = 0;
     if (heldItem === null) return;
     const m = makeItemMesh(heldItem, true);
     if (!m) return;
@@ -10073,7 +10119,7 @@ export function createVoxelGame(
     goal: { x0: number; x1: number; z0: number; z1: number } | null;
     score: number; human: boolean; outAt: number; // outAt: when it was knocked out (0 = still in)
     online?: { players: number; alive: number }; // online matches: real players on this team
-    bots: Array<{ id: number | null; respawn: number; out: boolean; name: string; tag: string; role: BotRole }>;
+    bots: Array<{ id: number | null; respawn: number; out: boolean; name: string; tag: string; role: BotRole; style: BotStyle }>;
   };
   type MgState = {
     kind: ArenaKind; size: MinigameSize; phase: 'waiting' | 'countdown' | 'playing' | 'over'; timer: number; difficulty: BotDifficulty;
@@ -10210,7 +10256,7 @@ export function createVoxelGame(
     const who = t.bots[slot];
     m.bot = {
       goal: 'idle', target: null, enemyId: null, fighting: false, bridging: false, placeTimer: 0, thinkTimer: 0.5 + Math.random() * 0.5, eggTimer: 0, tier: 0, blocks: 9999, stuckTimer: 0, lastX: pos.x, lastZ: pos.z, breakTimer: 0,
-      role: who.role, name: who.name, coins: 0, bowTimer: 2 + Math.random() * 3, drawTimer: 0, pauseTimer: 0, wtap: 0, bridgeHold: 0,
+      role: who.role, name: who.name, style: who.style ?? 'normal', climbTimer: 0, climbBase: pos.y, climbing: 'no', coins: 0, bowTimer: 2 + Math.random() * 3, drawTimer: 0, pauseTimer: 0, wtap: 0, bridgeHold: 0,
     };
     const { sprite, tex } = makeNameTag(who.tag);
     sprite.position.y = 2.25;
@@ -10242,7 +10288,7 @@ export function createVoxelGame(
   }
   /** Starts (or restarts) the minigame. */
   let lastMgSize: MinigameSize = 'solo';
-  function startMinigame(difficulty: BotDifficulty = 'normal', size: MinigameSize = lastMgSize, forceRole?: BotRole) {
+  function startMinigame(difficulty: BotDifficulty = 'normal', size: MinigameSize = lastMgSize, forceRole?: BotRole, forceStyle?: BotStyle) {
     lastMgSize = size;
     const per = MINIGAME_SIZES[size] ?? 1;
     if (!arenaKind || !arena) return false;
@@ -10256,7 +10302,7 @@ export function createVoxelGame(
         idx: i, name: TEAM_COLORS[i].name, color: TEAM_COLORS[i].color, wool: TEAM_COLORS[i].wool,
         spawn: new THREE.Vector3(...sp.spawn), yaw: sp.yaw, egg: sp.egg ?? null, eggAlive: !!sp.egg,
         goal: sp.goal ?? null, score: 0, human: i === 0, outAt: 0,
-        bots: Array.from({ length: i === 0 ? per - 1 : per }, () => ({ id: null, respawn: 0, out: false, name: 'Bot', tag: 'Bot', role: 'fighter' as BotRole })),
+        bots: Array.from({ length: i === 0 ? per - 1 : per }, () => ({ id: null, respawn: 0, out: false, name: 'Bot', tag: 'Bot', role: 'fighter' as BotRole, style: 'normal' as BotStyle })),
       })),
       you: { team: 0, out: false, kills: 0, deaths: 0, respawn: 0 },
       placed: new Set(), gens: (kind === 'eggwars' ? [...arena.gens, ...arena.teams.flatMap((t) => t.gens)] : []).map((g) => ({ ...g, t: g.every })),
@@ -10276,7 +10322,7 @@ export function createVoxelGame(
     setGameMode('survival');
     isFlying = false;
     rules = { ...rules, keepInventory: false, hardcore: false, difficulty: 'normal' };
-    dressBots(kind, mg.teams, forceRole);
+    dressBots(kind, mg.teams, forceRole, forceStyle);
     for (const t of mg.teams) t.bots.forEach((_, k) => spawnBotFor(t, k));
     placeYouAtSpawn();
     giveArenaKit();
@@ -10290,7 +10336,7 @@ export function createVoxelGame(
   /** The name a bot plays under (like a real player's). */
   const botNameOf = (m: Mob): string => m.bot?.name ?? 'Bot';
   /** Gives every bot slot a player-like name, a team-coloured name tag (some have a rank in front) and a role. */
-  function dressBots(kind: ArenaKind, teams: MgTeam[], forceRole?: BotRole) {
+  function dressBots(kind: ArenaKind, teams: MgTeam[], forceRole?: BotRole, forceStyle?: BotStyle) {
     const used = new Set<string>();
     for (const t of teams) {
       const roles = pickRoles(kind, t.bots.length, t.human);
@@ -10298,6 +10344,7 @@ export function createVoxelGame(
         const id = randomBotIdentity(used);
         b.name = id.name;
         b.role = forceRole ?? roles[k];
+        b.style = forceStyle ?? pickBotStyle();
         b.tag = `${id.rank ? RANK_TAGS[id.rank] + ' ' : ''}\\${TEAM_COLORS[t.idx].key}\\${id.name}`;
       });
     }
@@ -10772,9 +10819,10 @@ export function createVoxelGame(
     b.fighting = false; b.bridging = false;
     if (mg.phase !== 'playing') return stand;
     const D = BOT_DIFF[mg.difficulty];
+    const S = BOT_STYLES[b.style ?? 'normal'];
     const team = mg.teams[m.team];
     b.thinkTimer -= dt; b.placeTimer -= dt; b.bowTimer -= dt; b.pauseTimer -= dt; b.wtap -= dt; b.bridgeHold -= dt;
-    if (b.thinkTimer <= 0) { b.thinkTimer = D.react * (0.7 + Math.random() * 0.6); decideBot(m); }
+    if (b.thinkTimer <= 0) { b.thinkTimer = D.react * S.react * (0.7 + Math.random() * 0.6); decideBot(m); }
     let enemyPos: THREE.Vector3 | null = null, enemyMob: Mob | null = null;
     let tx: number, tz: number;
     if (b.goal === 'fight') {
@@ -10791,7 +10839,7 @@ export function createVoxelGame(
     else return stand;
     const dx = tx - m.pos.x, dz = tz - m.pos.z, dh = Math.hypot(dx, dz);
     let yawT = dh > 0.05 ? yawToward(dx, dz) : m.yaw;
-    const speed = MOB_INFO.bot.speed * D.speed;
+    const speed = MOB_INFO.bot.speed * D.speed * S.speed;
     let mvx = 0, mvz = 0, jump = false;
     // Drawing the bow: stand still, aim, let go
     if (b.drawTimer > 0) {
@@ -10814,7 +10862,7 @@ export function createVoxelGame(
       if (dh < D.reach && dy < 2.2 && m.attackCooldown <= 0 && !wallBetween(m.pos.x, m.pos.y + 1.0, m.pos.z, enemyPos.x, enemyPos.y + 1.0, enemyPos.z)) {
         m.attackCooldown = D.cooldown * (0.85 + Math.random() * 0.3);
         m.attackAnim = 0.3;
-        const dmg = (5 + b.tier) * D.damage;
+        const dmg = (5 + b.tier) * D.damage * S.damage;
         if (enemyMob) hurtMob(enemyMob, dmg, m.pos, 7, false, false);
         else hurtPlayer(dmg, m.pos, 6, botNameOf(m));
         b.wtap = 0.15 + Math.random() * 0.1; // let go of W for a moment after a hit (keeps the combo going)
@@ -10879,6 +10927,43 @@ export function createVoxelGame(
     } else if (b.goal === 'defend' && dh < 1) {
       b.thinkTimer = Math.min(b.thinkTimer, 0.8); // look around, then shuffle to another spot
     } else if (dh > 0.25) { mvx = (dx / dh) * speed; mvz = (dz / dh) * speed; }
+    // Going up: the target is higher than it can walk (you built up). Try to jump onto it first; if that does not get
+    // it any higher, build up under its own feet (jump, place a block at the top of the jump, repeat).
+    {
+      const goalY = enemyPos ? enemyPos.y : b.target ? b.target.y : m.pos.y;
+      const wantUp = mg.phase === 'playing' && goalY - m.pos.y > 1.3 && dh < 5 && b.drawTimer <= 0;
+      if ((globalThis as any).__cd) console.log('W', wantUp, goalY.toFixed(1), m.pos.y.toFixed(2), dh.toFixed(2), b.climbing, b.stuckTimer.toFixed(2));
+      if (!wantUp) { b.climbing = 'no'; b.climbTimer = 0; b.climbBase = m.pos.y; }
+      else {
+        if (m.pos.y > b.climbBase + 0.9) { b.climbBase = m.pos.y; b.climbTimer = 0; if (b.climbing === 'build' && m.onGround) b.climbing = 'jump'; } // it got up a step: keep going
+        b.climbTimer += dt;
+        if (b.climbing === 'no') { b.climbing = 'jump'; b.climbTimer = 0; b.climbBase = m.pos.y; }
+        if (b.climbing === 'jump') {
+          // a gentle approach, not a run straight at the wall: that would just trip the generic "stuck, dig through" logic below
+          if (dh > 0.6) { mvx = (dx / dh) * speed * 0.35; mvz = (dz / dh) * speed * 0.35; } else { mvx = 0; mvz = 0; }
+          if (m.onGround) jump = true;
+          b.stuckTimer = 0;
+          if (b.climbTimer > 0.7 * (b.style === 'tryhard' || b.style === 'god' ? 0.6 : 1)) b.climbing = 'build'; // jumping did not work: build up
+        }
+        if (b.climbing === 'build') {
+          b.bridging = true; // looks down at its feet while it builds
+          b.stuckTimer = 0;
+          mvx = 0; mvz = 0; // stay on top of the tower
+          if (dh > 0.6) { mvx = (dx / dh) * 0.4; mvz = (dz / dh) * 0.4; }
+          if (m.onGround) jump = true;
+          const fx = Math.floor(m.pos.x), fz = Math.floor(m.pos.z), fy = Math.floor(m.pos.y - 0.3);
+          const headRoom = !isSolid(world.getWorldBlock(fx, Math.floor(m.pos.y + 2.1), fz));
+          if (!m.onGround && m.velY <= 0.35 && b.placeTimer <= 0 && b.blocks > 0 && headRoom && fy + 1 <= arena.buildMax && fy >= arena.buildMin
+              && isReplaceable(world.getWorldBlock(fx, fy, fz)) && m.pos.y - fy < 1.6) {
+            setBlocksQuiet([[fx, fy, fz, team.wool]]);
+            playBlockSound(team.wool, new THREE.Vector3(fx + 0.5, fy + 0.5, fz + 0.5), 'place');
+            b.blocks--;
+            b.placeTimer = 0.18 / S.bridge;
+            m.attackAnim = 0.25;
+          }
+        }
+      }
+    }
     // Bridging, the way people do it: back up to the edge crouched, look down, place a block under the step
     // behind you, shuffle back onto it (never "walk forward over the void" while placing in front).
     if ((mvx || mvz) && m.onGround) {
@@ -10893,7 +10978,7 @@ export function createVoxelGame(
       if (!voidAhead && b.bridgeHold > 0 && far && !goalAhead) {
         b.bridging = true;
         yawT = yawToward(-mvx, -mvz);
-        const cap = 1.3 + D.speed * 0.9;
+        const cap = (1.3 + D.speed * 0.9) * S.cap;
         if (ml > cap) { mvx *= cap / ml; mvz *= cap / ml; }
       }
       if (!goalAhead && voidAhead && gy >= arena.buildMin) {
@@ -10905,14 +10990,14 @@ export function createVoxelGame(
           setBlocksQuiet([[bx, gy, bz, team.wool]]);
           playBlockSound(team.wool, new THREE.Vector3(bx + 0.5, gy + 0.5, bz + 0.5), 'place');
           b.blocks--;
-          b.placeTimer = (1 / D.bridgeRate) * (0.85 + Math.random() * 0.4);
-          if (Math.random() < 0.08) b.pauseTimer = 0.3 + Math.random() * 0.5;
+          b.placeTimer = (1 / (D.bridgeRate * S.bridge)) * (0.85 + Math.random() * 0.4);
+          if (Math.random() < 0.08 * S.pause) b.pauseTimer = 0.3 + Math.random() * 0.5;
           m.attackAnim = 0.25;
         }
         if (!isSolid(world.getWorldBlock(bx, gy, bz))) { mvx = 0; mvz = 0; }
         else {
           // sneaking speed while on the edge
-          const cap = 1.3 + D.speed * 0.9;
+          const cap = (1.3 + D.speed * 0.9) * S.cap;
           if (ml > cap) { mvx *= cap / ml; mvz *= cap / ml; }
         }
       }
@@ -14094,7 +14179,7 @@ export function createVoxelGame(
 
   // ---- Bow: hold right-click to draw, release to shoot ----
   function bowCharge(): number {
-    return Math.min(1, (performance.now() - bowDrawStart) / 1000);
+    return Math.min(1, bowDrawElapsed);
   }
 
   function startDrawingBow() {
@@ -14103,7 +14188,7 @@ export function createVoxelGame(
       return;
     }
     bowDrawing = true;
-    bowDrawStart = performance.now();
+    bowDrawStart = performance.now(); bowDrawElapsed = 0;
   }
 
   function releaseBow() {
@@ -14116,6 +14201,7 @@ export function createVoxelGame(
       if (infinite) { if (countInSlots(slots, ITEM_ARROW) === 0) return; }
       else if (removeItem(ITEM_ARROW, 1) === 0) return;
     }
+    engineEvent('bowShot', { charge });
     const dir = new THREE.Vector3();
     camera.getWorldDirection(dir);
     const from = camera.position.clone().addScaledVector(dir, 0.6);
@@ -16825,6 +16911,7 @@ export function createVoxelGame(
     camera.rotation.y = yaw;
     camera.rotation.x = pitch;
 
+    if (bowDrawing) bowDrawElapsed += delta;
     updateBoats(delta); // before you move: in a boat, you go where the boat goes
     // Movement
     const noclip = mode === 'spectator';
@@ -17214,7 +17301,19 @@ export function createVoxelGame(
     // the nocked arrow follows the bow while it is drawn
     {
       const drawn = bowDrawing && heldItem === ITEM_BOW && heldMesh !== null && perspective === 0;
-      nockMesh.visible = drawn;
+      // the bow's picture changes as you pull it back (hotbar icon + the model in your hand)
+      const stage = bowDrawing && heldItem === ITEM_BOW ? (bowCharge() < 0.3 ? 1 : bowCharge() < 0.7 ? 2 : 3) : 0;
+      setBowStage(stage);
+      if (heldMesh && heldItem === ITEM_BOW && heldBowStage !== stage) {
+        const nm = makeItemMesh(stage ? BOW_PULL_BASE + stage : ITEM_BOW, true);
+        if (nm) {
+          heldMesh.geometry.dispose();
+          (Array.isArray(heldMesh.material) ? heldMesh.material : [heldMesh.material]).forEach((mm) => mm.dispose());
+          heldMesh.geometry = nm.geometry; heldMesh.material = nm.material;
+        }
+        heldBowStage = stage;
+      }
+      nockMesh.visible = drawn && false;
       if (drawn && heldMesh) {
         const dr = bowCharge();
         nockMesh.position.set(heldMesh.position.x - 0.07, heldMesh.position.y + 0.04, heldMesh.position.z - 0.12 + 0.3 * dr);
@@ -17938,7 +18037,7 @@ export function createVoxelGame(
     isSleeping: () => sleeping !== null,
     setSleepOnline: (on) => { sleepOnline = on; },
     dropXp: (amount) => spawnXpOrbs(amount, playerFeet().add(new THREE.Vector3(0, 1, 0))),
-    debugMobs: () => mobs.filter((m) => m.deathTime < 0).map((m) => ({ id: m.id, kind: m.kind, baby: m.baby, sheared: m.sheared, color: m.variant, fire: m.fire, love: m.love, health: m.health, x: m.pos.x, y: m.pos.y, z: m.pos.z, width: infoOf(m).width, height: infoOf(m).height, charge: m.charge, team: m.team, goal: m.bot?.goal ?? null, shop: !!m.shop, botName: m.bot?.name, role: m.bot?.role, bridging: m.bot?.bridging, yaw: m.yaw, tier: m.bot?.tier, coins: m.bot?.coins })),
+    debugMobs: () => mobs.filter((m) => m.deathTime < 0).map((m) => ({ id: m.id, kind: m.kind, baby: m.baby, sheared: m.sheared, color: m.variant, fire: m.fire, love: m.love, health: m.health, x: m.pos.x, y: m.pos.y, z: m.pos.z, width: infoOf(m).width, height: infoOf(m).height, charge: m.charge, team: m.team, goal: m.bot?.goal ?? null, shop: !!m.shop, botName: m.bot?.name, role: m.bot?.role, style: m.bot?.style, climbing: m.bot?.climbing, bridging: m.bot?.bridging, yaw: m.yaw, tier: m.bot?.tier, coins: m.bot?.coins })),
     debugDoorCracks,
     debugOrbs: () => xpOrbs.map((o) => ({ value: o.value, size: xpOrbSize(o.value), x: o.pos.x, y: o.pos.y, z: o.pos.z })),
     onPlayerDeath: (cb: (reason: string) => void) => { deathCallback = cb; },
@@ -18002,7 +18101,7 @@ export function createVoxelGame(
     setOwnSkin: (skin) => { ownSkin = skin; },
     getMinimap,
     listPlayers: () => [...remotePlayers.entries()].map(([id, rp]) => ({ id, name: rp.name ?? '', x: rp.target.x, y: rp.target.y, z: rp.target.z })),
-    startMinigame: (d, size, role) => startMinigame(d, size, role),
+    startMinigame: (d, size, role, style) => startMinigame(d, size, role, style),
     onMinigame: (cb) => { minigameCallback = cb; if (cb && mg) mgEmit(true); },
     startOnlineMinigame,
     probeGround,

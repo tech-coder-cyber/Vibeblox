@@ -119,11 +119,14 @@ async function sb(pathAndQuery, token, init = {}) {
   }
 }
 const adminCache = new Map(); // token -> { ok, until }
+const mutes = new Set(); // lowercase names muted by staff (until the server restarts)
 async function isAdminToken(token) {
   if (typeof token !== 'string' || token.length < 20 || token.length > 4096) return false;
   const hit = adminCache.get(token);
   if (hit && hit.until > Date.now()) return hit.ok;
-  const r = await sb('/rest/v1/rpc/is_admin', token, { method: 'POST', body: '{}' });
+  // admins and staff ([HELPER] / [MOD]) can use the /panel actions; older databases only have is_admin
+  let r = await sb('/rest/v1/rpc/is_staff', token, { method: 'POST', body: '{}' });
+  if (r !== true && r !== false) r = await sb('/rest/v1/rpc/is_admin', token, { method: 'POST', body: '{}' });
   const ok = r === true;
   adminCache.set(token, { ok, until: Date.now() + 60_000 });
   if (adminCache.size > 200) adminCache.clear();
@@ -157,7 +160,7 @@ async function standingOf(name) {
   const r = await sb('/rest/v1/rpc/player_standing', null, { method: 'POST', body: JSON.stringify({ p_username: name }) });
   const row = Array.isArray(r) ? r[0] : null;
   const plays = row ? Number(row.plays) || 0 : 0;
-  const out = { plays, tier: tierOfPlays(plays), rising: !!(row && row.rising), rank: row && typeof row.rank === 'string' ? row.rank : 'none', until: Date.now() + 5 * 60_000 };
+  const out = { plays, tier: tierOfPlays(plays), rising: !!(row && row.rising), rank: row && typeof row.rank === 'string' ? row.rank : 'none', og: !!(row && row.og === true), staff: row && (row.staff === 'helper' || row.staff === 'mod') ? row.staff : null, until: Date.now() + 5 * 60_000 };
   standingCache.set(key, out);
   if (standingCache.size > 300) standingCache.clear();
   return out;
@@ -173,7 +176,7 @@ async function sendBadge(p) {
   if (!p.verified) return;
   const st = await standingOf(p.name);
   if (p.conn.closed) return;
-  p.badge = { owner: p.name.toLowerCase() === OWNER_NAME, rank: st.rank, tier: p.name.toLowerCase() === OWNER_NAME ? 'star' : st.tier };
+  p.badge = { owner: p.name.toLowerCase() === OWNER_NAME, rank: st.rank, tier: p.name.toLowerCase() === OWNER_NAME ? 'star' : st.tier, og: st.og, staff: st.staff };
   broadcast({ t: 'badge', id: p.id, ...p.badge });
 }
 
@@ -374,7 +377,7 @@ async function handleAdmin(p, msg) {
     case 'kick':
     case 'ban': {
       if (!target) return reply(`No player named ${String(msg.name || '').slice(0, 16)} on this server`);
-      if (target.id === p.id) return reply("You can't remove yourself");
+      if (target.id === p.id || (target.badge && target.badge.owner)) return reply("You can't remove that player");
       if (msg.action === 'ban') {
         const n = target.name.toLowerCase();
         if (!world.bans.includes(n)) { world.bans.push(n); worldDirty = true; saveWorld(); }
@@ -383,6 +386,22 @@ async function handleAdmin(p, msg) {
       target.conn.close(msg.action === 'ban' ? 4005 : 4004, msg.action === 'ban' ? 'You were banned by an admin' : 'You were kicked by an admin');
       return;
     }
+    case 'mute':
+    case 'unmute': {
+      if (!name) return reply(`Usage: /${msg.action} <player>`);
+      if (msg.action === 'mute') {
+        if (!target) return reply(`No player named ${String(msg.name || '').slice(0, 16)} on this server`);
+        if (target.id === p.id || (target.badge && target.badge.owner)) return reply("You can't mute that player");
+        mutes.add(target.name.toLowerCase());
+        system(`${target.name} was muted by ${p.name}`);
+        target.conn.send({ t: 'system', text: 'You were muted. Nobody can see your messages.' });
+      } else {
+        if (!mutes.delete(name)) return reply(`${String(msg.name || '').slice(0, 16)} isn't muted`);
+        system(`${String(msg.name).slice(0, 16)} can chat again`);
+      }
+      return;
+    }
+    case 'mutes': return reply(mutes.size ? `Muted here: ${[...mutes].join(', ')}` : 'Nobody is muted on this server');
     case 'gamemode': {
       if (!VALID_MODES.concat('spectator').includes(msg.mode)) return reply('Unknown game mode');
       const who = target || (name ? null : p);
@@ -549,6 +568,7 @@ function handle(p, msg) {
     case 'chat': {
       const text = typeof msg.text === 'string' ? msg.text.trim().slice(0, 256) : '';
       if (!text) return;
+      if (mutes.has(p.name.toLowerCase())) return p.conn.send({ t: 'system', text: 'You are muted.' });
       broadcast({ t: 'chat', id: p.id, name: p.name, text });
       return;
     }

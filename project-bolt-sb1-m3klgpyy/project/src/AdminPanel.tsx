@@ -9,7 +9,7 @@ import AccountPanel from './AccountPanel';
 import { ShieldCheck, Megaphone, Gavel, UserX, Ban, X, Loader2, Undo2, Crown, Sun, Moon, ShieldAlert, Tv, UserPlus } from 'lucide-react';
 import {
   postAnnouncement, banEverywhere, unbanEverywhere, listBans, getLastAnnouncement, setLastAnnouncement, isOwnerName, giveRank, rankInfo, rankPending, RANKS, RANK_LABELS, ANNOUNCE_MAX, USERNAME_RE,
-  listAdmins, setAdmin, listCheatReports, type Account, type Ban as BanRow, type RankName, type CheatReport,
+  listAdmins, setAdmin, listCheatReports, listStaff, setStaffRank, STAFF_RANKS, STAFF_LABELS, type StaffRank, type StaffRow, type Account, type Ban as BanRow, type RankName, type CheatReport,
 } from './social';
 import { adStatus } from './adEconomy';
 import { useTheme, setTheme } from './layout';
@@ -26,6 +26,10 @@ type Props = {
   /** Removes the player from this world (the panel itself adds the global ban). */
   onBan: (name: string) => void;
   onAnnounced: (text: string) => void;
+  /** Staff (HELPER / MOD) get a smaller panel: players only. Their ban covers this world, not all of VibeBlox. */
+  staffOnly?: boolean;
+  /** Stops (on = true) or allows a player to chat in this world. */
+  onMute?: (name: string, on: boolean) => void;
   onRefreshPlayers: () => void;
   onClose: () => void;
 };
@@ -44,16 +48,17 @@ const ui = {
 };
 
 type Ctx = Props & { owner: boolean; say: (ok: boolean, text: string) => void };
-type Section = { id: string; label: string; ownerOnly?: boolean; render: (c: Ctx) => ReactNode };
+type Section = { id: string; label: string; ownerOnly?: boolean; /** staff (HELPER / MOD) can see it too */ staffOk?: boolean; render: (c: Ctx) => ReactNode };
 
 // ---------------- The sections ----------------
 const SECTIONS: Section[] = [
   { id: 'announce', label: 'Announce', render: (c) => <AnnounceSection {...c} /> },
-  { id: 'players', label: 'Players', render: (c) => <PlayersSection {...c} /> },
+  { id: 'players', label: 'Players', staffOk: true, render: (c) => <PlayersSection {...c} /> },
   { id: 'bans', label: 'Bans', render: (c) => <BansSection {...c} /> },
   { id: 'anticheat', label: 'Anti-cheat', render: (c) => <AntiCheatSection {...c} /> },
   { id: 'ranks', label: 'Ranks', render: (c) => <RanksSection {...c} /> },
   { id: 'admins', label: 'Admins', ownerOnly: true, render: (c) => <AdminsSection {...c} /> },
+  { id: 'staff', label: 'Staff', ownerOnly: true, render: (c) => <StaffSection {...c} /> },
   { id: 'ads', label: 'Ads', render: () => <AdsSection /> },
   { id: 'account', label: 'My account', render: (c) => <AccountPanel summary={{ username: c.account.username, signedIn: true, isOwner: c.owner, isAdmin: true, openAdmin: () => undefined, inPanel: true }} /> },
 ];
@@ -61,7 +66,7 @@ const SECTIONS: Section[] = [
 export default function AdminPanel(props: Props) {
   const { account, onClose } = props;
   const owner = isOwnerName(account.username);
-  const sections = SECTIONS.filter((s) => !s.ownerOnly || owner);
+  const sections = SECTIONS.filter((s) => props.staffOnly ? !!s.staffOk || s.id === 'account' : !s.ownerOnly || owner);
   const [tab, setTab] = useState(sections[0].id);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const theme = useTheme();
@@ -75,8 +80,8 @@ export default function AdminPanel(props: Props) {
           <ShieldCheck className="w-6 h-6 text-[#ffd700]" />
           <div className="flex-1">
             <div className="text-white font-bold text-lg leading-tight flex items-center gap-2">
-              Admin Panel
-              {owner ? <span className="text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-md bg-[#ffd700] text-[#0a0e14]" data-testid="owner-badge">Owner</span>
+              {props.staffOnly ? 'Staff Panel' : 'Admin Panel'}
+              {props.staffOnly ? <span className="text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-md bg-[#22e6e6] text-[#0a0e14]" data-testid="staff-badge">Staff</span> : owner ? <span className="text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-md bg-[#ffd700] text-[#0a0e14]" data-testid="owner-badge">Owner</span>
                 : <span className="text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-md bg-[#00e676] text-[#0a0e14]" data-testid="admin-badge">Admin</span>}
             </div>
             <div className="text-[#5a6b80] text-xs">Signed in as {account.username}{owner ? ' · the owner of VibeBlox' : ''}</div>
@@ -132,8 +137,14 @@ function AnnounceSection({ account, onAnnounced, say }: Ctx) {
 }
 
 // ---------------- Players in the world you're in ----------------
-function PlayersSection({ account, online, players, onSetMode, onKick, onBan, onRefreshPlayers, say }: Ctx) {
+function PlayersSection({ account, online, players, onSetMode, onKick, onBan, onMute, staffOnly, onRefreshPlayers, say }: Ctx) {
   const [confirm, setConfirm] = useState<string | null>(null);
+  const [muted, setMuted] = useState<Set<string>>(new Set());
+  function toggleMute(name: string) {
+    const on = !muted.has(name.toLowerCase());
+    onMute?.(name, on);
+    setMuted((prev) => { const n = new Set(prev); if (on) n.add(name.toLowerCase()); else n.delete(name.toLowerCase()); return n; });
+  }
   useEffect(() => {
     if (!online) return;
     onRefreshPlayers();
@@ -174,7 +185,16 @@ function PlayersSection({ account, online, players, onSetMode, onKick, onBan, on
                     {MODES.map((m) => <option key={m} value={m}>{m}</option>)}
                   </select>
                   {!me && isOwnerName(p.name) && <span className="text-[10px] uppercase font-bold text-[#ffd700]">Owner</span>}
-                  {!me && !isOwnerName(p.name) && (confirm === p.name ? (
+                  {!me && !isOwnerName(p.name) && onMute && (
+                    <button onClick={() => toggleMute(p.name)} data-testid="mute-btn" className={`${ui.btn} ${muted.has(p.name.toLowerCase()) ? 'bg-[#22e6e6]/25 text-[#22e6e6]' : 'bg-[#22e6e6]/10 text-[#22e6e6] hover:bg-[#22e6e6]/25'}`}>{muted.has(p.name.toLowerCase()) ? 'Unmute' : 'Mute'}</button>
+                  )}
+                  {!me && !isOwnerName(p.name) && staffOnly && (
+                    <>
+                      <button onClick={() => onKick(p.name)} className={`${ui.btn} bg-[#ff9800]/15 text-[#ff9800] hover:bg-[#ff9800]/30`}>Kick</button>
+                      <button onClick={() => { onBan(p.name); say(true, `${p.name} is banned from this world.`); }} className={`${ui.btn} bg-[#ff5252]/15 text-[#ff5252] hover:bg-[#ff5252]/30`}>Ban</button>
+                    </>
+                  )}
+                  {!me && !isOwnerName(p.name) && !staffOnly && (confirm === p.name ? (
                     <>
                       <span className="text-xs text-[#8ea0b8]">Ban everywhere?</span>
                       <button onClick={() => banGlobal(p.name)} className={`${ui.btn} bg-[#ff5252] text-white`}>Yes, ban</button>
@@ -420,6 +440,57 @@ function AdminsSection({ say }: Ctx) {
               <span className="flex-1 text-white text-sm font-semibold">{a}</span>
               {isOwnerName(a) ? <span className="text-[10px] uppercase font-bold text-[#ffd700]">Owner</span>
                 : <button onClick={() => change(a, false)} disabled={busy} className={`${ui.btn} border border-[#243044] text-[#8ea0b8] hover:text-white`}>Remove</button>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------- Staff ranks ([HELPER], [MOD]) ----------------
+function StaffSection({ say }: Ctx) {
+  const [rows, setRows] = useState<StaffRow[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [name, setName] = useState('');
+  const [role, setRole] = useState<StaffRank>('helper');
+  const [busy, setBusy] = useState(false);
+  async function refresh() {
+    const r = await listStaff();
+    if (r.ok) { setRows(r.staff); setError(null); } else { setRows([]); setError(r.error); }
+  }
+  useEffect(() => { void refresh(); }, []);
+  async function change(n: string, to: StaffRank | 'none') {
+    if (busy) return;
+    setBusy(true);
+    const r = await setStaffRank(n, to);
+    setBusy(false);
+    if (!r.ok) { say(false, r.error); return; }
+    say(true, to === 'none' ? `${r.username} is no longer on the staff.` : `${r.username} is [${STAFF_LABELS[to]}] now. They get it the next time they sign in.`);
+    if (to !== 'none') setName('');
+    void refresh();
+  }
+  return (
+    <div className={ui.section} data-testid="admin-staff">
+      <div className={ui.h2}><ShieldCheck className="w-5 h-5 text-[#22e6e6]" />Staff ranks</div>
+      <p className="text-[#5a6b80] text-xs mb-3">[HELPER] and [MOD] get Elite's perks. In every world they can kick, ban (that world only), mute and use commands and cheats. They cannot announce, ban everywhere or give ranks.</p>
+      <div className="flex flex-wrap gap-2 mb-3">
+        <input value={name} onChange={(e) => setName(e.target.value.replace(/[^A-Za-z0-9_]/g, '').slice(0, 16))} placeholder="Username" data-testid="staff-name" className={`${ui.input} flex-1 min-w-[140px]`} />
+        <select value={role} onChange={(e) => setRole(e.target.value as StaffRank)} data-testid="staff-role" className={`${ui.input} w-auto`}>
+          {STAFF_RANKS.map((x) => <option key={x} value={x}>[{STAFF_LABELS[x]}]</option>)}
+        </select>
+        <button onClick={() => change(name, role)} disabled={!USERNAME_RE.test(name) || busy} data-testid="staff-add"
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#22e6e6] text-[#0a0e14] font-bold text-sm disabled:opacity-40 active:scale-95">{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}Give rank</button>
+      </div>
+      {error && <p className="text-[#ff9a3c] text-xs mb-2">{error}</p>}
+      {rows === null ? <p className={ui.muted}>Loading…</p> : (
+        <div className="space-y-1.5" data-testid="staff-list">
+          {!rows.length && !error && <p className={ui.muted}>Nobody is on the staff yet.</p>}
+          {rows.map((x) => (
+            <div key={x.username} className={ui.row} data-testid="staff-row">
+              <span className="flex-1 text-white text-sm font-semibold">{x.username}</span>
+              <span className="text-[10px] uppercase font-bold text-[#22e6e6]">{STAFF_LABELS[x.role]}</span>
+              <button onClick={() => change(x.username, 'none')} disabled={busy} className={`${ui.btn} border border-[#243044] text-[#8ea0b8] hover:text-white`}>Remove</button>
             </div>
           ))}
         </div>

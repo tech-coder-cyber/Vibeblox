@@ -8,7 +8,7 @@ export type NetMove = [number, number, number, number, number, number, string, n
 export type NetLook = { skin: string; cape: string; /** A Champion's own skin (a small PNG as a data: URL), when skin is 'custom' */ custom?: string };
 export type NetWeather = 'clear' | 'rain' | 'snow';
 /** What shows in front of a signed-in player's name besides a fake rank: owner, paid rank, creator tier. */
-export type NetBadge = { owner?: boolean; rank?: string; tier?: string };
+export type NetBadge = { owner?: boolean; rank?: string; tier?: string; og?: boolean; staff?: string | null };
 export type NetPlayerInfo = { id: number; name: string; x: number; y: number; z: number; yaw: number; pitch: number; mode: string; look?: NetLook; badge?: NetBadge };
 
 export type ServerSettings = { difficulty: 'peaceful' | 'easy' | 'normal' | 'hard'; keepInventory: boolean; scripts: boolean; mods: boolean; commands: boolean; pvp?: boolean };
@@ -181,7 +181,7 @@ export class MultiplayerClient {
       case 'chat': e.onChat?.(m.name as string, m.text as string); break;
       case 'title': e.onTitle?.(String(m.text ?? ''), String(m.sub ?? '')); break;
       case 'ranks': e.onRanks?.(m.ranks); break;
-      case 'badge': e.onBadge?.(m.id as number, { owner: !!m.owner, rank: String(m.rank ?? 'none'), tier: String(m.tier ?? 'none') }); break;
+      case 'badge': e.onBadge?.(m.id as number, { owner: !!m.owner, rank: String(m.rank ?? 'none'), tier: String(m.tier ?? 'none'), og: m.og === true, staff: m.staff === 'helper' || m.staff === 'mod' ? m.staff : null }); break;
       case 'system': e.onSystem?.(m.text as string); break;
       case 'time': e.onTime?.(m.time as number); break;
       case 'whisper': e.onWhisper?.(String(m.from), String(m.text)); break;
@@ -251,7 +251,7 @@ export class MultiplayerClient {
   /** You ran out of respawns (your egg broke while you were waiting to come back) */
   sendMatchOut() { this.send({ t: 'mgOut' }); }
   /** Admin panel actions. The server checks the token with Supabase before doing anything. */
-  sendAdmin(token: string, action: 'check' | 'players' | 'kick' | 'ban' | 'unban' | 'bans' | 'gamemode', extra: { name?: string; mode?: string } = {}) {
+  sendAdmin(token: string, action: 'check' | 'players' | 'kick' | 'ban' | 'unban' | 'bans' | 'gamemode' | 'mute' | 'unmute' | 'mutes', extra: { name?: string; mode?: string } = {}) {
     this.send({ t: 'admin', token, action, ...extra });
   }
 

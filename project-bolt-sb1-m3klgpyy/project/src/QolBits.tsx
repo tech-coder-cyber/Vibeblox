@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { playlist, getPlaylistStatus, subscribePlaylistStatus } from './playlist';
 import { getNowPlaying, subscribeNowPlaying } from './music';
 import { getQol, setQol, useQol, subscribeQol, type QolPrefs } from './qol';
+import { useBackground, setBackground, findDefaultBackground, fileToBackground, getBackground } from './background';
 
 /** "♪ Now Playing: <song>" slides in for a few seconds whenever a new song starts. */
 export function NowPlayingToast() {
@@ -146,6 +147,59 @@ export function BlockSoundSettings() {
       </div>
       <input type="range" min={0} max={1} step={0.01} value={prefs.blockVolume} data-testid="block-volume"
         onChange={(e) => setQol({ blockVolume: parseFloat(e.target.value) })}
+        className="w-full h-2 bg-[#0a0e14] rounded-full appearance-none cursor-pointer" />
+    </section>
+  );
+}
+
+/** Settings > Video: the picture behind the menus. Default = whatever is in public/images, or your own picture. */
+export function BackgroundSettings() {
+  const bg = useBackground();
+  const [msg, setMsg] = useState('');
+  const fileRef = useRef<HTMLInputElement>(null);
+  useEffect(() => { void findDefaultBackground(); }, []);
+  const pick = async (f: File | undefined) => {
+    if (!f) return;
+    try {
+      const url = await fileToBackground(f);
+      const kept = setBackground({ mode: 'custom', custom: url });
+      setMsg(kept ? 'Background changed.' : 'Background changed, but it was too big to remember after you close the page.');
+    } catch (e) { setMsg(e instanceof Error ? e.message : 'Could not use that picture'); }
+    if (fileRef.current) fileRef.current.value = '';
+  };
+  const modes: Array<['default' | 'custom' | 'none', string, string]> = [
+    ['default', 'Default', bg.hasDefault ? 'The picture from public/images' : 'No picture in public/images yet (add background.jpg)'],
+    ['custom', 'My picture', bg.hasCustom ? 'The picture you chose' : 'Choose a picture below'],
+    ['none', 'None', 'Plain dark background'],
+  ];
+  return (
+    <section className="bg-[#121822] rounded-2xl border border-[#243044] p-6 mt-6" data-testid="background-settings">
+      <h2 className="text-white text-sm font-medium mb-1">Menu Background</h2>
+      <p className="text-[#5a6b80] text-xs mb-4">The picture behind Home, Servers and the other menus. It only changes in your browser.</p>
+      <div className="grid grid-cols-3 gap-2">
+        {modes.map(([m, label, hint]) => (
+          <button key={m} onClick={() => { if (m === 'custom' && !bg.hasCustom) { fileRef.current?.click(); return; } setBackground({ mode: m }); setMsg(''); }}
+            data-testid={`bg-${m}`} aria-pressed={bg.mode === m}
+            className={`px-3 py-3 rounded-xl border text-left transition-all ${bg.mode === m ? 'bg-[#00e676]/10 border-[#00e676]' : 'bg-[#0a0e14] border-[#243044] hover:border-[#364860]'}`}>
+            <div className={`text-sm font-medium ${bg.mode === m ? 'text-[#00e676]' : 'text-white'}`}>{label}</div>
+            <div className="text-[#5a6b80] text-[11px] leading-snug mt-0.5">{hint}</div>
+          </button>
+        ))}
+      </div>
+      <div className="flex items-center gap-2 mt-3">
+        <button onClick={() => fileRef.current?.click()} data-testid="bg-upload"
+          className="px-3 py-2 rounded-xl bg-[#0a0e14] border border-[#243044] text-xs text-[#8ea0b8] hover:border-[#00e676] hover:text-[#00e676] transition-colors">Choose a picture…</button>
+        {bg.hasCustom && <button onClick={() => { setBackground({ custom: '', mode: 'default' }); setMsg('Your picture was removed.'); }} data-testid="bg-remove"
+          className="px-3 py-2 rounded-xl bg-[#0a0e14] border border-[#243044] text-xs text-[#8ea0b8] hover:border-[#ff6b6b] hover:text-[#ff6b6b] transition-colors">Remove my picture</button>}
+        <input ref={fileRef} type="file" accept="image/*" className="hidden" data-testid="bg-file" onChange={(e) => void pick(e.target.files?.[0])} />
+        <span className="text-xs text-[#5a6b80]" data-testid="bg-msg">{msg}</span>
+      </div>
+      <div className="flex items-center justify-between mt-4 mb-2">
+        <span className="text-white text-sm font-medium">Darkness</span>
+        <span className="font-[var(--font-display)] text-[#00e676] text-lg" data-testid="bg-dim-value">{Math.round(getBackground().dim * 100)}<span className="text-[#5a6b80] text-xs ml-1">%</span></span>
+      </div>
+      <input type="range" min={0} max={0.9} step={0.01} value={bg.dim} data-testid="bg-dim"
+        onChange={(e) => setBackground({ dim: parseFloat(e.target.value) })}
         className="w-full h-2 bg-[#0a0e14] rounded-full appearance-none cursor-pointer" />
     </section>
   );

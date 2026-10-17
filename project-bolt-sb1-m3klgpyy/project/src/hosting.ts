@@ -32,7 +32,7 @@ export type MatchView = {
 };
 type MatchMember = { team: number; out: boolean; kills: number; deaths: number };
 const LOBBY_MS = 30_000, FULL_LOBBY_MS = 5000, COUNTDOWN_MS = 5000, ROUND_COUNTDOWN_MS = 3000, OVER_MS = 10_000;
-type Badge = { owner?: boolean; rank?: string; tier?: string };
+type Badge = { owner?: boolean; rank?: string; tier?: string; og?: boolean; staff?: string | null };
 type Look = { skin: string; cape: string; custom?: string };
 
 /** One player's link to the room (the host's own loopback, or a peer's data channel). */
@@ -56,7 +56,7 @@ export type RoomServices = {
   /** Banned from all of VibeBlox (admin panel)? */
   isBanned?(name: string): Promise<boolean>;
   /** Paid rank and creator tier, for the tags in front of names. */
-  standing?(name: string): Promise<{ rank: string; tier: string }>;
+  standing?(name: string): Promise<{ rank: string; tier: string; og?: boolean; staff?: string | null }>;
   /** Is this token an admin's? (/panel actions) */
   isAdmin?(token: string): Promise<boolean>;
 };
@@ -145,6 +145,8 @@ export class HostRoom {
   private settings: Settings;
   private ranks: ReturnType<typeof cleanRanks>;
   private bans: string[];
+  /** Players the host or staff muted (lowercase names). It lasts as long as this world is open. */
+  private mutes = new Set<string>();
   private timers: Array<ReturnType<typeof setInterval>> = [];
   private stopped = false;
   privacy: Privacy;
@@ -301,12 +303,15 @@ export class HostRoom {
     this.countChanged();
   }
 
+  /** Staff (HELPER / MOD) and the owner may use cheats and commands in every world, so anti-cheat leaves them alone. */
+  private exemptFromAntiCheat(p: Player): boolean { return !!(p.badge && (p.badge.owner || p.badge.staff)); }
+
   private async sendBadge(p: Player) {
     if (!p.verified || !this.opts.services.standing) return;
     const st = await this.opts.services.standing(p.name).catch(() => null);
     if (!st || p.conn.closed) return;
     const owner = p.name.toLowerCase() === OWNER;
-    p.badge = { owner, rank: st.rank, tier: owner ? 'star' : st.tier };
+    p.badge = { owner, rank: st.rank, tier: owner ? 'star' : st.tier, og: st.og === true, staff: st.staff === 'helper' || st.staff === 'mod' ? st.staff : null };
     this.broadcast({ t: 'badge', id: p.id, ...p.badge });
   }
 
@@ -364,6 +369,25 @@ export class HostRoom {
     return true;
   }
   getBans(): string[] { return this.bans.slice(); }
+  /** The host mutes a player in this world (staff do it through the admin messages). Returns what to tell the host. */
+  mute(name: string): string {
+    const n = name.trim().toLowerCase();
+    const t = [...this.players.values()].find((o) => o.joined && o.name.toLowerCase() === n);
+    if (!t) return `No player named ${name.slice(0, 16)} here`;
+    if (t.conn.local || t.badge?.owner) return "You can't mute that player";
+    this.mutes.add(n);
+    this.system(`${t.name} was muted by the host`);
+    t.conn.send({ t: 'system', text: 'You were muted. Nobody can see your messages.' });
+    return `${t.name} is muted`;
+  }
+  unmute(name: string): string {
+    const n = name.trim().toLowerCase();
+    if (!this.mutes.delete(n)) return `${name.slice(0, 16)} isn't muted`;
+    this.system(`${name.slice(0, 16)} can chat again`);
+    return `${name.slice(0, 16)} can chat again`;
+  }
+  mutesList(): string { return this.mutes.size ? `Muted here: ${[...this.mutes].join(', ')}` : 'Nobody is muted in this world'; }
+  isMuted(name: string): boolean { return this.mutes.has(name.trim().toLowerCase()); }
 
   private kickById(by: Player, id: number, ban: boolean) {
     const target = this.players.get(id);
@@ -388,7 +412,7 @@ export class HostRoom {
       case 'kick':
       case 'ban':
         if (!target) { reply(`No player named ${String(msg.name || '').slice(0, 16)} here`); return; }
-        if (target.id === p.id || target.conn.local) { reply("You can't remove that player"); return; }
+        if (target.id === p.id || target.conn.local || target.badge?.owner) { reply("You can't remove that player"); return; }
         if (msg.action === 'ban') { const n = target.name.toLowerCase(); if (!this.bans.includes(n)) { this.bans.push(n); this.opts.onBans?.(this.bans.slice()); } }
         this.system(`${target.name} was ${msg.action === 'ban' ? 'banned' : 'kicked'} by an admin`);
         target.conn.close(msg.action === 'ban' ? 4005 : 4004, msg.action === 'ban' ? 'You were banned by an admin' : 'You were kicked by an admin');
@@ -398,6 +422,22 @@ export class HostRoom {
         reply(this.unban(name) ? `${String(msg.name).slice(0, 16)} can join this world again` : `${String(msg.name || '').slice(0, 16)} isn't banned from this world`);
         return;
       }
+      case 'mute':
+      case 'unmute': {
+        if (!name) { reply(`Usage: /${String(msg.action)} <player>`); return; }
+        if (msg.action === 'mute') {
+          if (!target) { reply(`No player named ${String(msg.name || '').slice(0, 16)} here`); return; }
+          if (target.id === p.id || target.conn.local || target.badge?.owner) { reply("You can't mute that player"); return; }
+          this.mutes.add(target.name.toLowerCase());
+          this.system(`${target.name} was muted by ${p.name}`);
+          target.conn.send({ t: 'system', text: 'You were muted. Nobody can see your messages.' });
+        } else {
+          if (!this.mutes.delete(name)) { reply(`${String(msg.name || '').slice(0, 16)} isn't muted`); return; }
+          this.system(`${String(msg.name).slice(0, 16)} can chat again`);
+        }
+        return;
+      }
+      case 'mutes': reply(this.mutes.size ? `Muted here: ${[...this.mutes].join(', ')}` : 'Nobody is muted in this world'); return;
       case 'bans': reply(this.bans.length ? `Banned here: ${this.bans.join(', ')}` : 'Nobody is banned from this world'); return;
       case 'gamemode': {
         if (!VALID_MODES.concat('spectator').includes(String(msg.mode))) { reply('Unknown game mode'); return; }
@@ -421,6 +461,7 @@ export class HostRoom {
         const text = typeof msg.text === 'string' ? msg.text.trim().slice(0, 256) : '';
         const to = typeof msg.to === 'string' ? msg.to.toLowerCase() : '';
         if (!text || !to) return;
+        if (!p.conn.local && this.mutes.has(p.name.toLowerCase())) { p.conn.send({ t: 'system', text: 'You are muted.' }); return; }
         const target = [...this.players.values()].find((o) => o.joined && o.name.toLowerCase() === to);
         if (!target || target.id === p.id) { p.conn.send({ t: 'whisperFail', to: String(msg.to).slice(0, 16) }); return; }
         target.conn.send({ t: 'whisper', from: p.name, text });
@@ -472,7 +513,7 @@ export class HostRoom {
         p.held = int(msg.held) && msg.held >= 0 && msg.held < 2000 ? msg.held : 0;
         p.act = int(msg.act) ? msg.act & 63 : 0;
         p.moved = true;
-        if (!p.conn.local) this.anticheat.onMove(p.id, p.name, p.x, p.y, p.z, p.mode);
+        if (!p.conn.local && !this.exemptFromAntiCheat(p)) this.anticheat.onMove(p.id, p.name, p.x, p.y, p.z, p.mode);
         return;
       case 'look': {
         const ok = (v: unknown): v is string => typeof v === 'string' && /^[a-z0-9_]{1,24}$/.test(v);
@@ -502,14 +543,15 @@ export class HostRoom {
           ok.push([x as number, y as number, z as number, b as number]);
         }
         if (ok.length) this.broadcast({ t: 'blocks', list: ok, id: p.id }, p.id);
-        if (ok.length && !p.conn.local) this.anticheat.onBlocks(p.id, p.name, ok.length, p.mode);
+        if (ok.length && !p.conn.local && !this.exemptFromAntiCheat(p)) this.anticheat.onBlocks(p.id, p.name, ok.length, p.mode);
         return;
       }
       case 'ping': if (num(msg.n)) p.conn.send({ t: 'pong', n: msg.n }); return;
       case 'chat': {
         const text = typeof msg.text === 'string' ? msg.text.trim().slice(0, 256) : '';
         if (!text) return;
-        if (!p.conn.local && !this.anticheat.onChat(p.id, p.name)) { p.conn.send({ t: 'system', text: 'Slow down! You are sending messages too fast.' }); return; }
+        if (!p.conn.local && this.mutes.has(p.name.toLowerCase())) { p.conn.send({ t: 'system', text: 'You are muted.' }); return; }
+        if (!p.conn.local && !this.exemptFromAntiCheat(p) && !this.anticheat.onChat(p.id, p.name)) { p.conn.send({ t: 'system', text: 'Slow down! You are sending messages too fast.' }); return; }
         this.broadcast({ t: 'chat', id: p.id, name: p.name, text });
         return;
       }
@@ -522,7 +564,7 @@ export class HostRoom {
           const a = this.match.members.get(p.id), b = this.match.members.get(target.id);
           if (this.match.phase !== 'playing' || !a || !b || a.out || b.out || a.team === b.team) return;
         } else if (!this.settings.pvp) return;
-        if (!p.conn.local && msg.bow !== true) this.anticheat.onHit(p.id, p.name, { x: p.x, y: p.y, z: p.z, yaw: p.yaw }, { x: target.x, y: target.y, z: target.z });
+        if (!p.conn.local && !this.exemptFromAntiCheat(p) && msg.bow !== true) this.anticheat.onHit(p.id, p.name, { x: p.x, y: p.y, z: p.z, yaw: p.yaw }, { x: target.x, y: target.y, z: target.z });
         const dmg = Math.max(0, Math.min(msg.bow === true ? 14 : 30, msg.dmg));
         const kx = num(msg.kx) ? Math.max(-1, Math.min(1, msg.kx)) : 0, kz = num(msg.kz) ? Math.max(-1, Math.min(1, msg.kz)) : 0;
         target.conn.send({ t: 'hurt', by: p.id, name: p.name, dmg, kx, kz });

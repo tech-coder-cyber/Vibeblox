@@ -11,7 +11,7 @@ import { cleanTags } from './worldTags';
 export const SUPABASE_URL = 'https://okhtosecqytklgwouwxv.supabase.co';
 export const SUPABASE_ANON_KEY = 'sb_publishable_kyklbTdQk64bRSdGSrEX0w_1lKAD4X0';
 
-export type Account = { userId: string; username: string; token: string; /** 'none' | 'vanguard' | 'elite' | 'champion' (set by the database, never by the player) */ rank?: string; /** When a temporary rank runs out (ISO time), or null/undefined if it lasts for good */ rankUntil?: string | null; /** When the name was last changed (you can change it once a week) */ nameChangedAt?: string | null };
+export type Account = { userId: string; username: string; token: string; /** 'none' | 'vanguard' | 'elite' | 'champion' (set by the database, never by the player) */ rank?: string; /** When a temporary rank runs out (ISO time), or null/undefined if it lasts for good */ rankUntil?: string | null; /** When the name was last changed (you can change it once a week) */ nameChangedAt?: string | null; /** An OG player (played before the OG rank ends): gets Elite's perks */ og?: boolean; /** 'helper' | 'mod' (set by the owner in the Admin panel) or null */ staff?: string | null };
 export type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string };
 
 type Config = {
@@ -140,16 +140,17 @@ async function profilesById(ids: string[]): Promise<Map<string, Profile>> {
 
 /** Makes sure the signed-in user has a profile (the database trigger normally does it) and returns their account. */
 export async function loadAccount(userId: string, token: string, wantedName: string): Promise<Account> {
-  type Full = Profile & { rank?: string; rank_until?: string | null; username_changed_at?: string | null };
+  type Full = Profile & { rank?: string; rank_until?: string | null; username_changed_at?: string | null; og?: boolean; staff?: string | null };
   const id = encodeURIComponent(userId);
   // Temporary ranks that ran out are taken away first (older databases just don't have this function)
   await rest('POST', 'rpc/expire_ranks', {}, {}, token).catch(() => undefined);
   // Older databases do not have the rank_until / rank / username_changed_at columns yet: fall back step by step
-  let r = await rest('GET', `profiles?select=id,username,rank,rank_until,username_changed_at&id=eq.${id}&limit=1`, undefined, {}, token);
+  let r = await rest('GET', `profiles?select=id,username,rank,rank_until,username_changed_at,og,staff&id=eq.${id}&limit=1`, undefined, {}, token);
+  if (!r.ok) r = await rest('GET', `profiles?select=id,username,rank,rank_until,username_changed_at&id=eq.${id}&limit=1`, undefined, {}, token);
   if (!r.ok) r = await rest('GET', `profiles?select=id,username,rank,username_changed_at&id=eq.${id}&limit=1`, undefined, {}, token);
   if (!r.ok) r = await rest('GET', `profiles?select=id,username&id=eq.${id}&limit=1`, undefined, {}, token);
   const row = r.ok ? (r.data as Full[])[0] : undefined;
-  if (row) return { userId, username: row.username, token, rank: row.rank ?? 'none', rankUntil: row.rank_until ?? null, nameChangedAt: row.username_changed_at ?? null };
+  if (row) return { userId, username: row.username, token, rank: row.rank ?? 'none', rankUntil: row.rank_until ?? null, nameChangedAt: row.username_changed_at ?? null, og: row.og === true, staff: row.staff === 'helper' || row.staff === 'mod' ? row.staff : null };
   // No profile yet (the SQL trigger was not installed, or this account is older): make one
   let name = wantedName.replace(/[^A-Za-z0-9_]/g, '').slice(0, 16);
   if (name.length < 3) name = 'Player' + Math.floor(Math.random() * 9000 + 1000);
@@ -185,15 +186,15 @@ export async function fetchLeaderboard(limit = 50): Promise<LeaderRow[] | null> 
   if (!r.ok || !Array.isArray(r.data)) return null;
   return (r.data as Array<{ username: string; plays: number | string; rank?: string; level?: number | string }>).map((x) => ({ username: x.username, plays: Number(x.plays) || 0, rank: x.rank ?? 'none', ...(x.level != null ? { level: Number(x.level) || 1 } : {}) }));
 }
-export type Standing = { plays: number; rank: string; rising: boolean };
+export type Standing = { plays: number; rank: string; rising: boolean; og?: boolean; staff?: string | null };
 /** One player's plays and rank (null if unknown). */
 export async function fetchStanding(username: string): Promise<Standing | null> {
   if (!USERNAME_RE.test(username)) return null;
   const r = await rpcPublic('player_standing', { p_username: username });
   if (!r.ok || !Array.isArray(r.data) || !r.data[0]) return null;
-  const d = r.data[0] as { plays: number | string; rank?: string; rising?: boolean };
+  const d = r.data[0] as { plays: number | string; rank?: string; rising?: boolean; og?: boolean; staff?: string | null };
   const plays = Number(d.plays) || 0;
-  return { plays, rank: d.rank ?? 'none', rising: !!d.rising || plays >= RISING_CREATOR_PLAYS };
+  return { plays, rank: d.rank ?? 'none', rising: !!d.rising || plays >= RISING_CREATOR_PLAYS, og: d.og === true, staff: d.staff === 'helper' || d.staff === 'mod' ? d.staff : null };
 }
 /** "Someone joined the game you host": counts one play for the host (the database ignores repeats and your own). */
 export async function recordPlay(hostName: string): Promise<boolean> {
@@ -344,11 +345,13 @@ export async function verifyToken(token: string): Promise<{ name: string; id: st
   if (whoCache.size > 200) whoCache.clear();
   return v;
 }
-/** Is the account behind a token an admin? */
+/** Is the account behind a token an admin or on the staff ([HELPER] / [MOD])? Staff can kick, ban, mute and use commands in every world. */
 export async function isAdminToken(token: string): Promise<boolean> {
   if (typeof token !== 'string' || token.length < 20 || token.length > 4096) return false;
-  const r = await rest('POST', 'rpc/is_admin', {}, {}, token);
-  return r.ok && r.data === true;
+  const r = await rest('POST', 'rpc/is_staff', {}, {}, token);
+  if (r.ok) return r.data === true;
+  if (r.status === 404) { const a = await rest('POST', 'rpc/is_admin', {}, {}, token); return a.ok && a.data === true; } // database without round 21
+  return false;
 }
 /** Globally banned (admin panel)? */
 export async function isBannedName(name: string): Promise<boolean> {
@@ -562,6 +565,28 @@ export async function rankInfo(username: string): Promise<{ rank: string; until:
   if (!r.ok || !Array.isArray(r.data) || !r.data[0]) return null;
   const row = r.data[0] as { rank?: string; rank_until?: string | null };
   return { rank: String(row.rank ?? 'none'), until: row.rank_until ?? null };
+}
+// ---------------- Staff ranks ([HELPER], [MOD]): the owner adds them in the Admin panel ----------------
+export const STAFF_RANKS = ['helper', 'mod'] as const;
+export type StaffRank = (typeof STAFF_RANKS)[number];
+export const STAFF_LABELS: Record<StaffRank, string> = { helper: 'HELPER', mod: 'MOD' };
+export type StaffRow = { username: string; role: StaffRank };
+/** Owner only: make a player a helper or a mod (role 'none' takes it away). Returns their name as the database spells it. */
+export async function setStaffRank(username: string, role: StaffRank | 'none'): Promise<Result<{ username: string }>> {
+  const name = username.trim();
+  if (!USERNAME_RE.test(name)) return fail('That is not a valid username');
+  if (isOwnerName(name)) return fail('The owner already has every power');
+  const r = await rest('POST', 'rpc/set_staff', { p_username: name, p_role: role });
+  if (!r.ok) return /owner only/i.test(r.error) || r.status === 403 ? fail('Only the owner can choose staff') : fail(/function|schema cache|not find/i.test(r.error) || r.status === 404 ? 'Run vibeblox_round21.sql in Supabase to add staff ranks' : r.error);
+  if (typeof r.data !== 'string' || !r.data) return fail(`Nobody is called ${name}`);
+  return { ok: true, username: r.data };
+}
+/** Everybody on the staff (admins only). */
+export async function listStaff(): Promise<Result<{ staff: StaffRow[] }>> {
+  const r = await rest('POST', 'rpc/list_staff', {});
+  if (!r.ok) return fail(/function|schema cache|not find/i.test(r.error) || r.status === 404 ? 'Run vibeblox_round21.sql in Supabase to add staff ranks' : r.error);
+  const rows = (Array.isArray(r.data) ? r.data : []) as Array<{ username?: string; role?: string }>;
+  return { ok: true, staff: rows.filter((x) => x.role === 'helper' || x.role === 'mod').map((x) => ({ username: String(x.username), role: x.role as StaffRank })) };
 }
 export async function checkAdmin(): Promise<boolean> {
   const r = await rest('POST', 'rpc/is_admin', {});

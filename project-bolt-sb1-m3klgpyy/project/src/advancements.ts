@@ -10,6 +10,11 @@ import {
   ITEM_IRON_INGOT, ITEM_DIAMOND, ITEM_EMERALD, ITEM_LAVA_BUCKET, ITEM_BLAZE_ROD, ITEM_BREAD,
   ITEM_ENDER_PEARL, ITEM_INFERNIUM_INGOT, ITEM_BED, ITEM_SPYGLASS,
   ITEM_ENCHANTED_BOOK, ARMOR, isLog, type ItemStack,
+  ITEM_BOW, ITEM_ARROW, ITEM_STRING, ITEM_REDSTONE, ITEM_LAPIS, ITEM_FISHING_ROD, ITEM_SHEARS, ITEM_WATER_BUCKET, ITEM_QUARTZ,
+  ITEM_GHAST_TEAR, ITEM_BOOK, ITEM_BOAT, ITEM_GOLD_INGOT, ITEM_DIAMOND_SWORD, ITEM_FLINT_AND_STEEL, ITEM_BONE, ITEM_STEAK,
+  BLOCK_BOOKSHELF, BLOCK_ENCHANTING_TABLE, BLOCK_ANVIL, BLOCK_PISTON, BLOCK_REDSTONE_LAMP, BLOCK_COMPARATOR, BLOCK_REPEATER,
+  BLOCK_TNT, BLOCK_CAMPFIRE, BLOCK_BLUE_ICE, BLOCK_BREWING_STAND, BLOCK_REDSTONE_BLOCK, BLOCK_LEVER, BLOCK_GLOWSTONE, BLOCK_CHEST,
+  BLOCK_DIAMOND_BLOCK, BLOCK_IRON_BLOCK, isPotionItem,
 } from './voxelGame';
 
 export type AdvancementTab = 'story' | 'nether' | 'adventure' | 'husbandry';
@@ -65,6 +70,59 @@ export const ADVANCEMENTS: Advancement[] = [
   // ---- Husbandry ----
   { id: 'husbandry', title: 'Husbandry', description: 'Eat something', icon: ITEM_BREAD, tab: 'husbandry', event: (n) => n === 'playerEat' },
   { id: 'bake_bread', title: 'Bake Bread', description: 'Turn wheat into bread', icon: ITEM_BREAD, tab: 'husbandry', item: is(ITEM_BREAD) },
+  // ---- More Minecraft ----
+  { id: 'cargo', title: 'Cargo', description: 'Craft a chest to keep your things in', icon: BLOCK_CHEST, tab: 'story', item: is(BLOCK_CHEST) },
+  { id: 'bucket_brigade', title: 'Bucket Brigade', description: 'Fill a bucket with water', icon: ITEM_WATER_BUCKET, tab: 'story', item: is(ITEM_WATER_BUCKET) },
+  { id: 'spark', title: 'Spark', description: 'Make a flint and steel', icon: ITEM_FLINT_AND_STEEL, tab: 'story', item: is(ITEM_FLINT_AND_STEEL) },
+  { id: 'diamond_edge', title: 'Diamond Edge', description: 'Craft a diamond sword', icon: ITEM_DIAMOND_SWORD, tab: 'story', item: is(ITEM_DIAMOND_SWORD) },
+  { id: 'gold_rush', title: 'Gold Rush', description: 'Smelt a gold ingot', icon: ITEM_GOLD_INGOT, tab: 'story', item: is(ITEM_GOLD_INGOT) },
+  { id: 'shiny_blocks', title: 'Shiny Blocks', description: 'Pack iron ingots into a block of iron', icon: BLOCK_IRON_BLOCK, tab: 'story', item: is(BLOCK_IRON_BLOCK) },
+  { id: 'filthy_rich', title: 'Filthy Rich', description: 'Make a whole block of diamond', icon: BLOCK_DIAMOND_BLOCK, tab: 'story', item: is(BLOCK_DIAMOND_BLOCK) },
+  { id: 'bookworm', title: 'Bookworm', description: 'Make a book', icon: ITEM_BOOK, tab: 'story', item: is(ITEM_BOOK) },
+  { id: 'library', title: 'Library', description: 'Build a bookshelf', icon: BLOCK_BOOKSHELF, tab: 'story', item: is(BLOCK_BOOKSHELF) },
+  { id: 'magic_table', title: 'Magic Table', description: 'Craft an enchanting table', icon: BLOCK_ENCHANTING_TABLE, tab: 'story', item: is(BLOCK_ENCHANTING_TABLE) },
+  { id: 'heavy_metal', title: 'Heavy Metal', description: 'Forge an anvil', icon: BLOCK_ANVIL, tab: 'story', item: is(BLOCK_ANVIL) },
+  { id: 'ice_ice_baby', title: 'Ice Ice Baby', description: 'Get your hands on blue ice', icon: BLOCK_BLUE_ICE, tab: 'story', item: is(BLOCK_BLUE_ICE) },
+  { id: 'cozy_camp', title: 'Cozy Camp', description: 'Light up a campfire', icon: BLOCK_CAMPFIRE, tab: 'story', item: is(BLOCK_CAMPFIRE) },
+  { id: 'fire_in_the_hole', title: 'Fire in the Hole', description: 'Craft some TNT', icon: BLOCK_TNT, tab: 'story', item: is(BLOCK_TNT) },
+  { id: 'sailor', title: 'Sailor', description: 'Build a boat', icon: ITEM_BOAT, tab: 'story', item: is(ITEM_BOAT) },
+
+  // ---- Redstone (it is in the Adventure tab) ----
+  { id: 'redstone_rookie', title: 'Redstone Rookie', description: 'Mine some redstone dust', icon: ITEM_REDSTONE, tab: 'adventure', item: is(ITEM_REDSTONE) },
+  { id: 'blue_gems', title: 'Blue Gems', description: 'Mine some lapis lazuli', icon: ITEM_LAPIS, tab: 'adventure', item: is(ITEM_LAPIS) },
+  { id: 'power_up', title: 'Power Up', description: 'Make a block of redstone', icon: BLOCK_REDSTONE_BLOCK, tab: 'adventure', item: is(BLOCK_REDSTONE_BLOCK) },
+  { id: 'switch_it_on', title: 'Switch It On', description: 'Craft a lever', icon: BLOCK_LEVER, tab: 'adventure', item: is(BLOCK_LEVER) },
+  { id: 'lights_on', title: 'Lights On', description: 'Craft a redstone lamp', icon: BLOCK_REDSTONE_LAMP, tab: 'adventure', item: is(BLOCK_REDSTONE_LAMP) },
+  { id: 'push_it', title: 'Push It', description: 'Build a piston', icon: BLOCK_PISTON, tab: 'adventure', item: is(BLOCK_PISTON) },
+  { id: 'on_a_timer', title: 'On a Timer', description: 'Craft a redstone repeater', icon: BLOCK_REPEATER, tab: 'adventure', item: is(BLOCK_REPEATER) },
+  { id: 'compare_and_contrast', title: 'Compare and Contrast', description: 'Craft a redstone comparator', icon: BLOCK_COMPARATOR, tab: 'adventure', item: is(BLOCK_COMPARATOR) },
+
+  // ---- Combat & hunting (Adventure) ----
+  { id: 'ranged_weapon', title: 'Ranged Weapon', description: 'Get a bow, maybe from a skeleton', icon: ITEM_BOW, tab: 'adventure', item: is(ITEM_BOW) },
+  { id: 'pointy_things', title: 'Pointy Things', description: 'Pick up an arrow', icon: ITEM_ARROW, tab: 'adventure', item: is(ITEM_ARROW) },
+  { id: 'sniper_duel', title: 'Take Aim', description: 'Draw a bow back and let an arrow fly', icon: ITEM_BOW, tab: 'adventure', event: (n) => n === 'bowShot' },
+  { id: 'spiders_silk', title: "Spider's Silk", description: 'Collect string from a spider', icon: ITEM_STRING, tab: 'adventure', item: is(ITEM_STRING) },
+  { id: 'bone_collector', title: 'Bone Collector', description: 'Collect a bone', icon: ITEM_BONE, tab: 'adventure', item: is(ITEM_BONE) },
+  { id: 'skeleton_crew', title: 'Skeleton Crew', description: 'Defeat a skeleton', icon: ITEM_BONE, tab: 'adventure', event: (n, d) => n === 'entityDeath' && d.byPlayer === true && d.type === 'skeleton' },
+  { id: 'creeper_aw_man', title: 'Creeper? Aw Man', description: 'Defeat a creeper before it goes off', icon: 117, tab: 'adventure', event: (n, d) => n === 'entityDeath' && d.byPlayer === true && d.type === 'creeper' },
+  { id: 'web_cleaner', title: 'Web Cleaner', description: 'Defeat a spider', icon: ITEM_STRING, tab: 'adventure', event: (n, d) => n === 'entityDeath' && d.byPlayer === true && d.type === 'spider' },
+  { id: 'zombie_slayer', title: 'Zombie Slayer', description: 'Defeat a zombie', icon: ITEM_WOOD_SWORD, tab: 'adventure', event: (n, d) => n === 'entityDeath' && d.byPlayer === true && d.type === 'zombie' },
+  { id: 'iron_giant', title: 'Iron Giant', description: 'Take down an iron golem', icon: ITEM_IRON_INGOT, tab: 'adventure', event: (n, d) => n === 'entityDeath' && d.byPlayer === true && d.type === 'iron_golem' },
+  { id: 'wither_away', title: 'Tyrant Slayer', description: 'Defeat the Hollow Tyrant', icon: ITEM_INFERNIUM_INGOT, tab: 'adventure', event: (n, d) => n === 'entityDeath' && d.byPlayer === true && d.type === 'hollow_tyrant' },
+
+  // ---- More Nether ----
+  { id: 'nether_crystals', title: 'Nether Crystals', description: 'Mine some nether quartz', icon: ITEM_QUARTZ, tab: 'nether', item: is(ITEM_QUARTZ) },
+  { id: 'tearful', title: 'Tearful', description: 'Get a ghast tear', icon: ITEM_GHAST_TEAR, tab: 'nether', item: is(ITEM_GHAST_TEAR) },
+  { id: 'let_there_be_light', title: 'Let There Be Light', description: 'Collect glowstone', icon: BLOCK_GLOWSTONE, tab: 'nether', item: is(BLOCK_GLOWSTONE) },
+  { id: 'local_brewery', title: 'Local Brewery', description: 'Set up a brewing stand', icon: BLOCK_BREWING_STAND, tab: 'nether', item: is(BLOCK_BREWING_STAND) },
+  { id: 'bottoms_up', title: 'Bottoms Up', description: 'Get a potion', icon: BLOCK_BREWING_STAND, tab: 'nether', item: isPotionItem },
+  { id: 'monster_of_the_nether', title: 'Bone Breaker', description: 'Defeat a Cinderbone', icon: ITEM_BONE, tab: 'nether', event: (n, d) => n === 'entityDeath' && d.byPlayer === true && d.type === 'cinderbone' },
+
+  // ---- More Husbandry ----
+  { id: 'gone_fishing', title: 'Gone Fishing', description: 'Craft a fishing rod', icon: ITEM_FISHING_ROD, tab: 'husbandry', item: is(ITEM_FISHING_ROD) },
+  { id: 'fish_on', title: 'Fish On!', description: 'Catch something with your fishing rod', icon: ITEM_FISHING_ROD, tab: 'husbandry', event: (n) => n === 'fishCaught' },
+  { id: 'shear_genius', title: 'Shear Genius', description: 'Make a pair of shears', icon: ITEM_SHEARS, tab: 'husbandry', item: is(ITEM_SHEARS) },
+  { id: 'steak_dinner', title: 'Steak Dinner', description: 'Cook a steak', icon: ITEM_STEAK, tab: 'husbandry', item: is(ITEM_STEAK) },
 ];
 
 export const ADVANCEMENT_TABS: Array<{ id: AdvancementTab; label: string }> = [
