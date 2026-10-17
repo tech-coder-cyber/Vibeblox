@@ -5204,6 +5204,19 @@ export function swingCurve(p: number): number {
   const u = (p - 0.4) / 0.6; return 1 - (u * u * (3 - 2 * u));            // recover (smoothstep)
 }
 
+/**
+ * A snappy sword swing, p = 0..1 over SWORD_SWING_DURATION (~0.18s): almost no wind-up, a fast
+ * downward-diagonal strike that peaks about halfway in, then snaps back to idle so quickly it reads
+ * as an instant reset rather than a gentle ease. Returns -0.15..1 (negative = tiny pull-back before
+ * the strike, 1 = full extension at the hit, 0 = back at the idle pose).
+ */
+export function swingSnapCurve(p: number): number {
+  if (p <= 0 || p >= 1) return 0;
+  if (p < 0.2) { const u = p / 0.2; return -0.15 * Math.sin(u * Math.PI / 2); }          // barely-there wind-up
+  if (p < 0.5) { const u = (p - 0.2) / 0.3; return -0.15 + 1.15 * (1 - (1 - u) ** 2); }  // fast downward strike
+  const u = (p - 0.5) / 0.5; return 1 - u * u;                                           // quick snap back to idle
+}
+
 /** Arms for whatever is held. pitch: where the player looks; punch: 0..1 swing bump; kick: gun recoil. */
 function poseArms(model: MobModel, o: { swing: number; punch: number; slash?: number; pitch: number; aiming: boolean; drawing: boolean; kick: number; blocking?: boolean; t?: number; crouch?: number }) {
   const [L, R] = model.arms;
@@ -8492,6 +8505,7 @@ export function createVoxelGame(
   const FIST_PUNCH_Z = -1.2;  // extended distance on punch
   let punchPhase = 0;
   const PUNCH_DURATION = 0.28;
+  const SWORD_SWING_DURATION = 0.18; // swords get a snappier strike than fists/tools, see poseSwordSwing below
 
   function makeSolidTex(top: string, bottom: string): THREE.CanvasTexture {
     const c = document.createElement('canvas');
@@ -8884,9 +8898,11 @@ export function createVoxelGame(
   // First-person pose for swords and tools, and for blocking with a sword (right-click and hold)
   const TOOL_FP = { scale: 1.15, x: 0.5, y: -0.15, z: -0.95, rx: -0.2, ry: -0.2, rz: 0.32 };
   const BLOCK_FP = { x: 0.22, y: -0.28, z: -0.85, rx: 0.1, ry: -0.9, rz: 1.2 };
-  // Swords are held like in Minecraft: the handle at the bottom right, the blade across the lower screen pointing up and to the left
-  // (worked out against a screenshot: tip near the middle of the screen, handle off the bottom right corner). Blocking raises it across the body.
-  const SWORD_FP = { scale: 0.9, x: 0.32, y: -0.5, z: -0.95, rx: -0.2, ry: -0.4, rz: 1.9 };
+  // Swords are held like in Minecraft: the handle at the bottom right, the blade across the lower-right
+  // quadrant of the screen, tilted diagonally up and forward into the world so you read it as a 3D blade
+  // (not a flat sticker) — the extra yaw (ry) reveals the flat of the blade and the pitch (rx) tips the tip
+  // away from the camera, into the depth of the scene. Blocking raises it across the body.
+  const SWORD_FP = { scale: 0.95, x: 0.42, y: -0.58, z: -0.8, rx: -0.35, ry: -0.55, rz: 1.65 };
   const SWORD_BLOCK_FP = { x: 0.1, y: -0.3, z: -0.85, rx: 0.1, ry: -0.5, rz: 1.35 };
   let swordBlocking = false;
   let blockLerp = 0;
@@ -17281,11 +17297,19 @@ export function createVoxelGame(
       const sw = punchPhase > 0 ? swingCurve(1 - punchPhase / PUNCH_DURATION) : 0;
       const draw = bowDrawing ? bowCharge() : 0;
       if (heldItem !== null && TOOLS[heldItem]?.kind === 'sword') {
-        // Sword swing: the blade lifts, then chops down and forward across the screen and recovers; blocking holds it up across the body
+        // Sword swing: a snappy downward-diagonal strike (~SWORD_SWING_DURATION, independent of the
+        // shared PUNCH_DURATION timer that everything else — hit registration, cooldowns, other mobs —
+        // still runs on), landing back on the new default idle pose rather than a slow recovery.
+        // Blocking is untouched: it still blends in through blockLerp/B() exactly as before, and `free`
+        // still damps the swing offset while the block pose is held up.
+        const swordSwingP = punchPhase > 0
+          ? Math.min(1, (1 - punchPhase / PUNCH_DURATION) * (PUNCH_DURATION / SWORD_SWING_DURATION))
+          : 0;
+        const swordSw = swingSnapCurve(swordSwingP);
         const b = blockLerp, B = (a: number, c: number) => a + (c - a) * b;
-        const free = 1 - b * 0.6;
-        heldMesh.position.set(B(SWORD_FP.x, SWORD_BLOCK_FP.x) - 0.1 * sw + hbx * free + idleX * free + 0.06 * eq, B(SWORD_FP.y, SWORD_BLOCK_FP.y) + 0.05 * sw + hby * free + idleY + spY - 0.6 * eq, B(SWORD_FP.z, SWORD_BLOCK_FP.z) - 0.15 * sw + 0.03 * sprintLerp);
-        heldMesh.rotation.set(B(SWORD_FP.rx, SWORD_BLOCK_FP.rx) - 0.45 * sw - spR * free + 0.9 * eq, B(SWORD_FP.ry, SWORD_BLOCK_FP.ry) + 0.2 * sw, B(SWORD_FP.rz, SWORD_BLOCK_FP.rz) - 0.8 * sw + idleR * free);
+        const free = 1 - b * 0.6; // when blocking, the pose holds still (unchanged)
+        heldMesh.position.set(B(SWORD_FP.x, SWORD_BLOCK_FP.x) - 0.2 * swordSw + hbx * free + idleX * free + 0.06 * eq, B(SWORD_FP.y, SWORD_BLOCK_FP.y) - 0.24 * swordSw + hby * free + idleY + spY - 0.6 * eq, B(SWORD_FP.z, SWORD_BLOCK_FP.z) - 0.12 * swordSw + 0.03 * sprintLerp);
+        heldMesh.rotation.set(B(SWORD_FP.rx, SWORD_BLOCK_FP.rx) - 0.6 * swordSw - spR * free + 0.9 * eq, B(SWORD_FP.ry, SWORD_BLOCK_FP.ry) + 0.3 * swordSw, B(SWORD_FP.rz, SWORD_BLOCK_FP.rz) - 1.05 * swordSw + idleR * free);
       } else if (heldItem !== null && TOOLS[heldItem]) {
         // Swing: wind back, then the blade arcs down toward the crosshair and recovers
         const b = blockLerp, B = (a: number, c: number) => a + (c - a) * b;
