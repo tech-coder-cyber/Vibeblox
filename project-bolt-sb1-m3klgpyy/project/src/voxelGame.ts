@@ -8902,8 +8902,10 @@ export function createVoxelGame(
   // quadrant of the screen, tilted diagonally up and forward into the world so you read it as a 3D blade
   // (not a flat sticker) — the extra yaw (ry) reveals the flat of the blade and the pitch (rx) tips the tip
   // away from the camera, into the depth of the scene. Blocking raises it across the body.
-  const SWORD_FP = { scale: 0.95, x: 0.42, y: -0.58, z: -0.8, rx: -0.35, ry: -0.55, rz: 1.65 };
-  const SWORD_BLOCK_FP = { x: 0.1, y: -0.3, z: -0.85, rx: 0.1, ry: -0.5, rz: 1.35 };
+  // Plain holding pose: low in the bottom-right corner, the blade pointing up and only leaning a little (relaxed, not raised).
+  const SWORD_FP = { scale: 0.9, x: 0.5, y: -0.62, z: -0.95, rx: -0.1, ry: -0.35, rz: 0.7 };
+  // The raised pose across the screen (blade lying diagonally toward the middle) is for BLOCKING only (hold right-click).
+  const SWORD_BLOCK_FP = { x: 0.42, y: -0.58, z: -0.8, rx: -0.35, ry: -0.55, rz: 1.65 };
   let swordBlocking = false;
   let blockLerp = 0;
   let crouchNow = false;
@@ -17309,7 +17311,7 @@ export function createVoxelGame(
         const b = blockLerp, B = (a: number, c: number) => a + (c - a) * b;
         const free = 1 - b * 0.6; // when blocking, the pose holds still (unchanged)
         heldMesh.position.set(B(SWORD_FP.x, SWORD_BLOCK_FP.x) - 0.2 * swordSw + hbx * free + idleX * free + 0.06 * eq, B(SWORD_FP.y, SWORD_BLOCK_FP.y) - 0.24 * swordSw + hby * free + idleY + spY - 0.6 * eq, B(SWORD_FP.z, SWORD_BLOCK_FP.z) - 0.12 * swordSw + 0.03 * sprintLerp);
-        heldMesh.rotation.set(B(SWORD_FP.rx, SWORD_BLOCK_FP.rx) - 0.6 * swordSw - spR * free + 0.9 * eq, B(SWORD_FP.ry, SWORD_BLOCK_FP.ry) + 0.3 * swordSw, B(SWORD_FP.rz, SWORD_BLOCK_FP.rz) - 1.05 * swordSw + idleR * free);
+        heldMesh.rotation.set(B(SWORD_FP.rx, SWORD_BLOCK_FP.rx) - 0.6 * swordSw - spR * free + 0.9 * eq, B(SWORD_FP.ry, SWORD_BLOCK_FP.ry) + 0.3 * swordSw, B(SWORD_FP.rz, SWORD_BLOCK_FP.rz) + 1.0 * swordSw + idleR * free);
       } else if (heldItem !== null && TOOLS[heldItem]) {
         // Swing: wind back, then the blade arcs down toward the crosshair and recovers
         const b = blockLerp, B = (a: number, c: number) => a + (c - a) * b;
