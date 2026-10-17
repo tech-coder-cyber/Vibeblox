@@ -52,7 +52,7 @@ export const playerCap = (tier: CreatorTier | boolean) => PLAYER_CAP[tier === tr
 
 /** The tags shown in front of a name for the things the game itself knows (owner, staff, paid rank, OG, creator tier). */
 export const OWNER_TAG = '\\crimson\\\\bold\\[OWNER]\\reset\\';
-export const OG_TAG = '\\orange\\\\shiny\\[OG]\\reset\\';
+export const OG_TAG = '\\cyan\\[OG]\\reset\\';
 export type StaffId = 'helper' | 'mod';
 export const STAFF_TAGS: Record<StaffId, string> = {
   helper: '\\mint\\\\bold\\[HELPER]\\reset\\',

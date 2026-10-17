@@ -9,7 +9,7 @@ export const KEY_ACTIONS: KeyAction[] = ['forward', 'back', 'left', 'right', 'ju
 
 /** Keys with a fixed job (menu, chat, hotbar, advancements, debug, player list): they can't be given to an action. */
 export function isReservedKey(code: string): boolean {
-  return code === 'Escape' || code === 'Enter' || code === 'NumpadEnter' || code === 'Tab' || code === 'KeyT' || code === 'KeyL' || code === 'Slash'
+  return code === 'Escape' || code === 'Enter' || code === 'NumpadEnter' || code === 'Tab' || code === 'KeyT' || code === 'KeyL' || code === 'KeyG' || code === 'Slash'
     || /^F\d{1,2}$/.test(code) || /^Digit[0-9]$/.test(code) || code.startsWith('Meta') || code === 'ContextMenu' || code === 'CapsLock';
 }
 

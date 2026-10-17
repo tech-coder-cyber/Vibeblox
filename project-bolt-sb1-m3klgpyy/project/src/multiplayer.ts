@@ -3,17 +3,21 @@
 
 /** An item thrown on the ground that every player sees. d = a tool's wear/enchantments/name as JSON. */
 export type NetDrop = { n: string; item: number; count: number; x: number; y: number; z: number; vx: number; vy: number; vz: number; d?: string };
-export const PROTOCOL_VERSION = 16; // 16: dropped items shared, host commands on other players (@a); 15: turned heads, low trapdoors, block ids 2000+ (14: /title, fake ranks, rank badges (13: sleeping vote, whispers, admin panel (12: block ids up to 1399, items 1400+ (11: weather, host sets time/weather; 10: host, kick/ban, server settings))
+export const PROTOCOL_VERSION = 17; // 17: world roles (admin / co-owner / owner), hosts hand their world over when they leave; 16: dropped items shared, host commands on other players (@a); 15: turned heads, low trapdoors, block ids 2000+ (14: /title, fake ranks, rank badges (13: sleeping vote, whispers, admin panel (12: block ids up to 1399, items 1400+ (11: weather, host sets time/weather; 10: host, kick/ban, server settings))
 
 export type NetBlock = [number, number, number, number]; // x, y, z, block id
 export type NetMove = [number, number, number, number, number, number, string, number, number]; // id, x, y, z, yaw, pitch, mode, held item, action bits
 export type NetLook = { skin: string; cape: string; /** A Champion's own skin (a small PNG as a data: URL), when skin is 'custom' */ custom?: string };
-export type NetWeather = 'clear' | 'rain' | 'snow';
+export type NetWeather = 'clear' | 'rain' | 'snow' | 'thunder';
 /** What shows in front of a signed-in player's name besides a fake rank: owner, paid rank, creator tier. */
 export type NetBadge = { owner?: boolean; rank?: string; tier?: string; og?: boolean; staff?: string | null };
 export type NetPlayerInfo = { id: number; name: string; x: number; y: number; z: number; yaw: number; pitch: number; mode: string; look?: NetLook; badge?: NetBadge };
 
-export type ServerSettings = { difficulty: 'peaceful' | 'easy' | 'normal' | 'hard'; keepInventory: boolean; scripts: boolean; mods: boolean; commands: boolean; pvp?: boolean };
+export type ServerSettings = { difficulty: 'peaceful' | 'easy' | 'normal' | 'hard'; keepInventory: boolean; scripts: boolean; mods: boolean; commands: boolean; pvp?: boolean; /** who may run scripts: 'off' | 'all' | 'admin' | 'owner' */ scriptPerm?: 'off' | 'all' | 'admin' | 'owner' };
+/** Roles in a world (lowercase name -> 'owner' | 'coowner' | 'admin') */
+export type NetRoles = Record<string, string>;
+/** A world being handed to you when its host leaves (see HostRoom.handOff in hosting.ts) */
+export type NetHandoff = Record<string, unknown> & { seed: number; owner: string; name: string };
 /** An online EggWars / Bridge Duels world (see hosting.ts). */
 export type NetGame = { kind: 'eggwars' | 'bridge'; variant: number; teams: number; teamSize: number; winScore: number };
 export type NetMatch = {
@@ -42,6 +46,10 @@ export type Welcome = {
   maxPlayers?: number;
   /** The fake ranks of this world (see fakeranks.ts). */
   ranks?: unknown;
+  /** Roles in this world (player hosted worlds) */
+  roles?: NetRoles;
+  /** Items already lying on the ground */
+  drops?: NetDrop[];
 };
 
 export type MultiplayerEvents = {
@@ -83,6 +91,15 @@ export type MultiplayerEvents = {
   onHurtFx?: (id: number) => void;
   /** Round trip time to the server, in milliseconds (measured every 2 seconds). */
   onPing?: (ms: number) => void;
+  /** Roles changed (admin / co-owner); the owner is in the list too */
+  onRoles?: (roles: NetRoles) => void;
+  /** Co-owners: the anti-cheat settings, and its alerts */
+  onAnticheat?: (settings: { enabled: boolean; autoKick: boolean; kickAt: number }) => void;
+  onCheat?: (alert: Record<string, unknown>) => void;
+  /** The host left: you are now running the world (start a room with this) */
+  onBecomeHost?: (room: string, state: NetHandoff) => void;
+  /** The host left and someone else keeps the world: reconnect to this room */
+  onMigrate?: (room: string, host: string) => void;
   onClose?: (reason: string) => void;
 };
 
@@ -207,7 +224,12 @@ export class MultiplayerClient {
       case 'mgReset': e.onMatchReset?.(Number(m.round) || 0); break;
       case 'hurt': if (typeof m.dmg === 'number') e.onHurt?.({ by: Number(m.by), name: String(m.name ?? 'Someone'), dmg: m.dmg, kx: Number(m.kx) || 0, kz: Number(m.kz) || 0 }); break;
       case 'hurtFx': e.onHurtFx?.(Number(m.id)); break;
-      case 'weather': if (m.kind === 'clear' || m.kind === 'rain' || m.kind === 'snow') e.onWeather?.(m.kind); break;
+      case 'roles': if (m.roles && typeof m.roles === 'object') e.onRoles?.(m.roles as NetRoles); break;
+      case 'acset': if (m.settings && typeof m.settings === 'object') e.onAnticheat?.(m.settings as { enabled: boolean; autoKick: boolean; kickAt: number }); break;
+      case 'cheat': if (m.alert && typeof m.alert === 'object') e.onCheat?.(m.alert as Record<string, unknown>); break;
+      case 'becomeHost': if (typeof m.room === 'string' && m.state && typeof m.state === 'object') e.onBecomeHost?.(m.room, m.state as NetHandoff); break;
+      case 'migrate': if (typeof m.room === 'string') e.onMigrate?.(m.room, String(m.host ?? 'another player')); break;
+      case 'weather': if (m.kind === 'clear' || m.kind === 'rain' || m.kind === 'snow' || m.kind === 'thunder') e.onWeather?.(m.kind); break;
       case 'pong': {
         const sent = this.pings.get(Number(m.n));
         if (sent !== undefined) { this.pings.delete(Number(m.n)); this.lastPing = Math.round(performance.now() - sent); e.onPing?.(this.lastPing); }
@@ -259,6 +281,12 @@ export class MultiplayerClient {
   sendTitle(to: string, text: string, sub = '') { this.send({ t: 'title', to, text, sub }); }
   /** Host only: send the fake ranks list (it is kept with the world and everyone gets it). */
   sendRanks(ranks: unknown) { this.send({ t: 'ranks', ranks }); }
+  /** Give a player a role in this world ('none' takes it away) */
+  sendPromote(name: string, role: 'admin' | 'coowner' | 'none') { this.send({ t: 'promote', name, role }); }
+  /** World admins: kick, ban or unban by name */
+  sendMod(action: 'kick' | 'ban' | 'unban', name: string) { this.send({ t: 'mod', action, name }); }
+  /** Co-owners: change the anti-cheat settings */
+  sendAnticheat(settings: { enabled: boolean; autoKick: boolean; kickAt: number }) { this.send({ t: 'acset', settings }); }
   /** A private message to a player on this server. */
   sendWhisper(to: string, text: string) { this.send({ t: 'whisper', to, text }); }
   /** You hit another player: dmg before their armor, k = the direction they get knocked (unit vector on the ground). */

@@ -117,7 +117,17 @@ export const RISING_CREATOR_PLAYS = 1000;
 /** You can change your username once every 7 days. */
 export const NAME_CHANGE_WAIT_MS = 7 * 24 * 3600 * 1000;
 export const isOwnerName = (name: string | null | undefined) => !!name && name.toLowerCase() === OWNER_NAME.toLowerCase();
-export const isGuestName = (name: string) => /^Guest_/i.test(name);
+// Guests get a random name like "CoolCat382": an adjective, an animal and three numbers. Accounts can't use names
+// shaped like that, so a guest is always recognised by their name alone.
+export const GUEST_ADJECTIVES = ['Cool', 'Happy', 'Swift', 'Brave', 'Lucky', 'Sneaky', 'Mighty', 'Fuzzy', 'Silly', 'Clever', 'Shiny', 'Rapid', 'Sleepy', 'Jolly', 'Cosmic', 'Epic', 'Frosty', 'Golden', 'Noble', 'Wild', 'Tiny', 'Giant', 'Fierce', 'Calm', 'Bold', 'Witty', 'Zesty', 'Funky', 'Turbo', 'Pixel'];
+export const GUEST_NOUNS = ['Cat', 'Fox', 'Panda', 'Tiger', 'Wolf', 'Otter', 'Falcon', 'Bunny', 'Dragon', 'Koala', 'Penguin', 'Shark', 'Llama', 'Moose', 'Eagle', 'Hippo', 'Gecko', 'Badger', 'Raven', 'Bear', 'Duck', 'Frog', 'Owl', 'Lion', 'Whale', 'Turtle', 'Pig', 'Cow', 'Bee', 'Creeper'];
+const GUEST_RE = new RegExp(`^(${GUEST_ADJECTIVES.join('|')})(${GUEST_NOUNS.join('|')})\\d{3}$`, 'i');
+export const isGuestName = (name: string) => /^Guest_/i.test(name) || GUEST_RE.test(name);
+/** A new guest name, e.g. "CoolCat382". */
+export function randomGuestName(rand: () => number = Math.random): string {
+  const pick = <T,>(a: T[]) => a[Math.floor(rand() * a.length) % a.length];
+  return `${pick(GUEST_ADJECTIVES)}${pick(GUEST_NOUNS)}${String(Math.floor(rand() * 1000) % 1000).padStart(3, '0')}`;
+}
 const lower = (s: string) => s.toLowerCase();
 
 // ---------------- Profiles ----------------
@@ -167,6 +177,7 @@ export async function loadAccount(userId: string, token: string, wantedName: str
 export async function changeUsername(name: string): Promise<Result<{ username: string; next: string }>> {
   const clean = name.trim();
   if (!USERNAME_RE.test(clean)) return fail('Usernames are 3-16 letters, numbers or underscores');
+  if (isGuestName(clean)) return fail('Names like that are kept for guests. Pick another one.');
   const r = await rest('POST', 'rpc/change_username', { p_new: clean });
   if (!r.ok) return fail(r.status === 404 ? 'Renaming is not set up yet (run server/supabase_social.sql again in Supabase)' : r.error);
   const d = r.data as { ok?: boolean; error?: string; username?: string; next?: string } | null;
@@ -424,6 +435,7 @@ export async function addFriend(me: Account, name: string): Promise<Result<{ mes
   const clean = name.trim();
   if (!USERNAME_RE.test(clean)) return fail('That is not a valid username');
   if (lower(clean) === lower(me.username)) return fail("You can't add yourself");
+  if (isGuestName(clean)) return fail(`${clean} is a guest. Guests can't have friends until they sign in.`);
   const found = await profileByName(clean);
   if (!found.ok) return found;
   if (!found.profile) return fail(`No player named ${clean}`);
@@ -506,6 +518,8 @@ export type Announcement = { id: number; text: string; author: string; at: strin
 type AnnRow = { id: number; body: string; author: string; created_at: string };
 const toAnn = (r: AnnRow): Announcement => ({ id: r.id, text: r.body, author: r.author, at: r.created_at });
 export const ANNOUNCE_MAX = 240;
+/** How long after it's made an announcement still shows (it is checked every few seconds; a little slack for clocks) */
+export const ANNOUNCE_LIVE_MS = 90_000;
 
 /** Announcements with an id above `afterId` (everyone, signed in or not, can read them). */
 export async function loadAnnouncements(afterId: number, token?: string | null): Promise<Result<{ items: Announcement[] }>> {
@@ -677,7 +691,7 @@ export async function banEverywhere(me: Account, username: string, reason = ''):
   if (name === lower(me.username)) return fail("You can't ban yourself");
   if (isOwnerName(name)) return fail("You can't ban the owner");
   const r = await rest('POST', 'bans', { username: name, reason: reason.slice(0, 120), banned_by: me.username }, { prefer: 'resolution=merge-duplicates,return=representation' });
-  if (!r.ok) return r.status === 403 ? fail(isOwnerName(me.username) ? NOT_ADMIN_HINT : 'Only admins can do that') : fail(r.error);
+  if (!r.ok) return r.status === 403 ? fail(isOwnerName(me.username) ? NOT_ADMIN_HINT : "You can't ban that player (staff can't ban admins or other staff; the owner must run vibeblox_indev27.sql in Supabase for staff bans)") : fail(r.error);
   return { ok: true };
 }
 export async function unbanEverywhere(username: string): Promise<Result> {
@@ -741,8 +755,8 @@ export function startPolling(account: Account | null, handlers: PollHandlers, ev
     const a = await loadAnnouncements(lastAnn, account?.token);
     if (a.ok && a.items.length) {
       setLastAnnouncement(a.items[a.items.length - 1].id);
-      // The first time ever, only show announcements from the last 10 minutes (not the whole history)
-      const fresh = lastAnn === 0 ? a.items.filter((x) => Date.now() - Date.parse(x.at) < 600_000) : a.items;
+      // Announcements are live: you only see one if you are here when it's made (not old ones when you come back later)
+      const fresh = a.items.filter((x) => Math.abs(Date.now() - Date.parse(x.at)) < ANNOUNCE_LIVE_MS);
       if (fresh.length) handlers.onAnnouncements?.(fresh);
     }
   };

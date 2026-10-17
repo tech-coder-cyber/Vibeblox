@@ -24,6 +24,11 @@ export function isTouchDevice(): boolean {
 export function touchEnabled(pref: TouchPref = loadTouchPref()): boolean {
   return pref === 'on' || (pref === 'auto' && isTouchDevice());
 }
+/** How fast dragging turns the camera (Settings > Controls). */
+export function loadLookSpeed(): number {
+  try { const v = Number(localStorage.getItem('vb-touch-look')); return v >= 0.3 && v <= 3 ? v : 1; } catch { return 1; }
+}
+export function saveLookSpeed(v: number) { try { localStorage.setItem('vb-touch-look', String(v)); } catch { /* storage blocked */ } }
 /** Phones: stop pinch-zoom and double-tap zoom so the game fills the screen. */
 export function lockViewportForTouch() {
   let m = document.querySelector('meta[name="viewport"]');
@@ -43,13 +48,16 @@ function sendKey(action: KeyAction, down: boolean) {
 
 const btn = 'pointer-events-auto select-none touch-none flex items-center justify-center rounded-full bg-black/35 border-2 border-white/30 text-white font-bold active:bg-white/30 active:scale-95 transition-transform';
 
-export default function TouchControls({ getHandle, onMenu, onChat, paused, creative }: {
+export default function TouchControls({ getHandle, onMenu, onChat, paused, creative, onPlayers, playersOn }: {
   getHandle: () => Handle | null;
   onMenu: () => void;
   onChat: () => void;
   /** a menu, the inventory or chat is open: controls hide */
   paused: boolean;
   creative: boolean;
+  /** online: show or hide the player list (there is no Tab key on a phone) */
+  onPlayers?: () => void;
+  playersOn?: boolean;
 }) {
   // ---- the joystick ----
   const stickRef = useRef<HTMLDivElement>(null);
@@ -80,11 +88,21 @@ export default function TouchControls({ getHandle, onMenu, onChat, paused, creat
   }
 
   // ---- looking around (and tap to use, hold to break) ----
-  const look = useRef<{ id: number; x: number; y: number; sx: number; sy: number; t: number; moved: boolean; breaking: boolean; timer: number } | null>(null);
+  const look = useRef<{ id: number; x: number; y: number; sx: number; sy: number; t: number; last: number; moved: boolean; breaking: boolean; timer: number } | null>(null);
+  const lookSpeed = loadLookSpeed();
+  function endLook(st: NonNullable<typeof look.current>, asTap: boolean) {
+    window.clearTimeout(st.timer);
+    if (look.current === st) look.current = null;
+    const h = getHandle();
+    if (st.breaking) h?.touchPress(0, false);
+    else if (asTap && !st.moved && performance.now() - st.t < 280) { h?.touchPress(2, true); window.setTimeout(() => getHandle()?.touchPress(2, false), 60); } // a tap: place / use
+  }
   function lookDown(e: ReactPointerEvent) {
-    if (look.current) return;
+    // a finger whose "up" got lost (the browser took it for a gesture, a call came in...) must never freeze the camera:
+    // a new finger on the look area always takes over
+    if (look.current) { if (look.current.id === e.pointerId || performance.now() - look.current.last > 250) endLook(look.current, false); else return; }
     capture(e);
-    const st = { id: e.pointerId, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, t: performance.now(), moved: false, breaking: false, timer: 0 };
+    const st = { id: e.pointerId, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, t: performance.now(), last: performance.now(), moved: false, breaking: false, timer: 0 };
     // hold your finger still to break the block (or hit the mob) you're looking at
     st.timer = window.setTimeout(() => {
       if (look.current === st && !st.moved) { st.breaking = true; getHandle()?.touchPress(0, true); }
@@ -95,19 +113,27 @@ export default function TouchControls({ getHandle, onMenu, onChat, paused, creat
     const st = look.current;
     if (!st || st.id !== e.pointerId) return;
     const dx = e.clientX - st.x, dy = e.clientY - st.y;
-    st.x = e.clientX; st.y = e.clientY;
+    st.x = e.clientX; st.y = e.clientY; st.last = performance.now();
     if (Math.hypot(e.clientX - st.sx, e.clientY - st.sy) > 10) st.moved = true;
-    getHandle()?.touchLook(dx, dy);
+    getHandle()?.touchLook(dx * lookSpeed, dy * lookSpeed);
   }
   function lookUp(e: ReactPointerEvent) {
     const st = look.current;
     if (!st || st.id !== e.pointerId) return;
-    window.clearTimeout(st.timer);
-    look.current = null;
-    const h = getHandle();
-    if (st.breaking) h?.touchPress(0, false);
-    else if (!st.moved && performance.now() - st.t < 280) { h?.touchPress(2, true); window.setTimeout(() => getHandle()?.touchPress(2, false), 60); } // a tap: place / use
+    endLook(st, e.type === 'pointerup');
   }
+  // A finger lifted anywhere (even off the look area, or after the browser stole it) lets go of looking and the joystick
+  useEffect(() => {
+    const up = (e: PointerEvent) => {
+      const st = look.current;
+      if (st && st.id === e.pointerId) endLook(st, e.type === 'pointerup');
+      if (stickId.current === e.pointerId) { stickId.current = null; releaseMove(); }
+    };
+    addEventListener('pointerup', up, true);
+    addEventListener('pointercancel', up, true);
+    return () => { removeEventListener('pointerup', up, true); removeEventListener('pointercancel', up, true); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ---- buttons that are held (attack, use, jump, crouch) ----
   const holdMouse = (button: 0 | 2) => ({
@@ -148,13 +174,14 @@ export default function TouchControls({ getHandle, onMenu, onChat, paused, creat
       <div className="absolute top-3 right-3 flex gap-2">
         <button className={`${btn} w-11 h-11 text-[10px]`} onClick={tapKey('inventory')} data-testid="touch-inventory" aria-label="Inventory">BAG</button>
         <button className={`${btn} w-11 h-11 text-[10px]`} onClick={tapKey('drop')} data-testid="touch-drop" aria-label="Drop">DROP</button>
+        {onPlayers && <button className={`${btn} w-11 h-11 text-[10px] ${playersOn ? 'bg-white/40' : ''}`} onClick={onPlayers} data-testid="touch-players" aria-label="Players">{playersOn ? 'HIDE' : 'LIST'}</button>}
         <button className={`${btn} w-11 h-11 text-xs`} onClick={onChat} data-testid="touch-chat" aria-label="Chat">💬</button>
         <button className={`${btn} w-11 h-11 text-lg`} onClick={onMenu} data-testid="touch-menu" aria-label="Menu">❚❚</button>
       </div>
 
       {/* Left: the joystick */}
       <div ref={stickRef} className="absolute left-6 bottom-8 w-36 h-36 rounded-full bg-black/25 border-2 border-white/25 pointer-events-auto touch-none" data-testid="touch-stick"
-        onPointerDown={(e) => { stickId.current = e.pointerId; capture(e); moveStick(e); }}
+        onPointerDown={(e) => { if (stickId.current !== null && stickId.current !== e.pointerId) releaseMove(); stickId.current = e.pointerId; capture(e); moveStick(e); }}
         onPointerMove={(e) => { if (stickId.current === e.pointerId) moveStick(e); }}
         onPointerUp={(e) => { if (stickId.current === e.pointerId) { stickId.current = null; releaseMove(); } }}
         onPointerCancel={() => { stickId.current = null; releaseMove(); }}>
@@ -179,18 +206,24 @@ export default function TouchControls({ getHandle, onMenu, onChat, paused, creat
   );
 }
 
-/** Phones held upright: ask to turn sideways (the controls need the width). */
+/** Phones held upright can't play: the controls need the width. Turn the phone sideways to carry on. */
 export function RotateHint() {
   const [portrait, setPortrait] = useState(() => typeof innerHeight === 'number' && innerHeight > innerWidth);
   useEffect(() => {
     const f = () => setPortrait(innerHeight > innerWidth);
     addEventListener('resize', f);
-    return () => removeEventListener('resize', f);
+    addEventListener('orientationchange', f);
+    // ask the browser to turn the game sideways where it can (Android, in full screen); iPhones need the player to turn it
+    try { (screen.orientation as unknown as { lock?: (o: string) => Promise<void> }).lock?.('landscape').catch(() => {}); } catch { /* not supported */ }
+    return () => { removeEventListener('resize', f); removeEventListener('orientationchange', f); };
   }, []);
   if (!portrait) return null;
   return (
-    <div className="absolute top-14 left-1/2 -translate-x-1/2 z-[26] px-4 py-2 rounded-xl bg-black/70 text-white text-xs text-center pointer-events-none" data-testid="rotate-hint">
-      Turn your phone sideways for the best view
+    <div className="absolute inset-0 z-[90] bg-[#0a0e14] flex flex-col items-center justify-center gap-4 px-8 text-center text-white" data-testid="rotate-hint"
+      onPointerDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>
+      <div className="w-16 h-24 rounded-xl border-4 border-white/80 relative vb-rotate-phone"><div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 w-4 h-1 rounded bg-white/60" /></div>
+      <div className="font-[var(--font-retro)] text-sm">Rotate your device</div>
+      <div className="text-xs text-white/60 max-w-[260px]">VibeBlox is played sideways on phones. Turn your phone to landscape to keep playing.</div>
     </div>
   );
 }

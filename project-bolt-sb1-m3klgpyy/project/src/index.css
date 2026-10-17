@@ -81,3 +81,13 @@ html.vb-light .vb-themed .placeholder-\[\#364860\]::placeholder, html.vb-light .
 html.vb-light .vb-themed .placeholder\:text-\[\#5a6b80\]::placeholder, html.vb-light .vb-themed.placeholder\:text-\[\#5a6b80\]::placeholder { color: #9aa5b1 !important; }
 html.vb-light .vb-themed .hover\:bg-\[\#1a2230\]:hover, html.vb-light .vb-themed.hover\:bg-\[\#1a2230\]:hover { background-color: #e4e9ef !important; }
 html.vb-light .vb-themed .hover\:text-white:hover, html.vb-light .vb-themed.hover\:text-white:hover { color: #000000 !important; }
+
+/* ---------------- Phones ----------------
+   Short landscape screens (a phone turned sideways): everything sized in rem gets smaller, so menus fit. */
+@media (pointer: coarse) and (max-height: 500px), (max-height: 430px) and (max-width: 1000px) {
+  html { font-size: 12px; }
+}
+/* Menus scroll with a finger (and don't drag the whole page with them) */
+.vb-scroll, .overflow-y-auto { -webkit-overflow-scrolling: touch; touch-action: pan-y; }
+@keyframes vb-rotate-phone { 0%, 30% { transform: rotate(0deg); } 60%, 100% { transform: rotate(-90deg); } }
+.vb-rotate-phone { animation: vb-rotate-phone 1.8s ease-in-out infinite alternate; }

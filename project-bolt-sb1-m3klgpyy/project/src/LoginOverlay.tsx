@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { Mail, Lock, User, Gamepad2, Chrome, Loader2, X } from 'lucide-react';
+import { randomGuestName, isGuestName } from './social';
 import { signInWithGoogle, registerWithEmail, signInWithEmail, sendPasswordReset, initializeGuestAccount } from './auth/supabaseAuth';
 
 type LoginOverlayProps = {
@@ -45,6 +46,10 @@ export default function LoginOverlay({ onGuest, onClose, onSignedIn }: LoginOver
       setError('Usernames are 3-16 letters, numbers or underscores, with no spaces.');
       return;
     }
+    if (isGuestName(username)) {
+      setError('Names like that (e.g. CoolCat382) are kept for guests. Pick another one.');
+      return;
+    }
     setLoading(true);
     const { error: err } = await registerWithEmail(email.trim(), password, username.trim());
     setLoading(false);
@@ -87,11 +92,12 @@ export default function LoginOverlay({ onGuest, onClose, onSignedIn }: LoginOver
 
   function handleGuest() {
     const { guestId } = initializeGuestAccount();
-    onGuest('Guest_' + guestId.replace(/^guest-/, '').replace(/[^A-Za-z0-9]/g, '').slice(0, 8));
+    void guestId;
+    onGuest(randomGuestName()); // e.g. CoolCat382
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-md overflow-y-auto py-4">
+    <div className="fixed inset-0 z-[60] flex justify-center bg-black/80 backdrop-blur-md overflow-y-auto overscroll-contain py-4">
       <div className="relative w-full max-w-md mx-4 my-auto bg-[#121822] rounded-2xl border border-[#243044] shadow-2xl overflow-hidden">
         {onClose && (
           <button onClick={onClose} aria-label="Close" className="absolute right-3 top-3 w-8 h-8 rounded-lg flex items-center justify-center text-[#5a6b80] hover:text-white hover:bg-[#1a2230]">

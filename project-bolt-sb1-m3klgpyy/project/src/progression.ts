@@ -32,6 +32,8 @@ export const BOOSTER_CLAIM_COOLDOWN_MS = 15 * 60 * 1000;
 /** Shop prices (coins) */
 export const FREEZE_PRICE = 150;
 export const BOOSTER_PRICE = 120;
+/** Lootboxes in the Shop: one, or a pack of five for a little less */
+export const LOOTBOX_PRICE = 150, LOOTBOX_PACK_PRICE = 650;
 export const MAX_FREEZES = 10;
 
 export function levelForXp(xp: number): number { return Math.floor(Math.sqrt(Math.max(0, xp) / 50)) + 1; }
@@ -310,7 +312,13 @@ export function openLootbox(rng: () => number = Math.random): LootResult | null 
   return res;
 }
 /** Shop: a streak freeze, or an XP booster (15 minutes of play counting double). */
-export function buyShopItem(item: 'freeze' | 'booster'): 'ok' | 'poor' | 'full' {
+export function buyShopItem(item: 'freeze' | 'booster' | 'lootbox' | 'lootbox5'): 'ok' | 'poor' | 'full' {
+  if (item === 'lootbox' || item === 'lootbox5') {
+    const price = item === 'lootbox' ? LOOTBOX_PRICE : LOOTBOX_PACK_PRICE, n = item === 'lootbox' ? 1 : 5;
+    if (state.coins < price) return 'poor';
+    commit({ ...state, coins: state.coins - price, lootboxes: (state.lootboxes ?? 0) + n });
+    return 'ok';
+  }
   if (item === 'freeze') {
     if ((state.freezes ?? 0) >= MAX_FREEZES) return 'full';
     if (state.coins < FREEZE_PRICE) return 'poor';

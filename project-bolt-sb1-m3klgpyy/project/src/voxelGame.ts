@@ -1,3 +1,4 @@
+import { DEFAULT_SHADERS, cleanShaders, NEUTRAL_GRADE, type ShaderPrefs } from './shaderPrefs';
 import { loadVideo, cleanVideo, type VideoPrefs } from './videoPrefs';
 import type { NetDrop } from './multiplayer';
 import { SKINS, CAPES, cleanLook, DEFAULT_LOOK, type PlayerLook } from './cosmetics';
@@ -376,7 +377,17 @@ function customSkinFromImage(img: CanvasImageSource): SkinCanvases {
     RAW_SKIN_CANVASES.add(c);
     return c;
   };
-  return { face: crop(8, 8, 8, 8), side: crop(0, 8, 8, 8), top: crop(8, 0, 8, 8), body: crop(20, 20, 8, 12), arms: crop(44, 20, 4, 12), legs: crop(4, 20, 4, 12) };
+  // 64x64 skins have a second layer (sleeves, jackets, gloves, trousers): it goes on top of the first
+  const tall = ((img as { height?: number }).height ?? 64) >= 64;
+  const layered = (sx: number, sy: number, sw: number, sh: number, oy: number) => {
+    const c = crop(sx, sy, sw, sh);
+    if (tall) { const ctx = c.getContext('2d')!; ctx.imageSmoothingEnabled = false; ctx.drawImage(img, sx, sy + oy, sw, sh, 0, 0, sw, sh); }
+    return c;
+  };
+  const out = { face: crop(8, 8, 8, 8), side: crop(0, 8, 8, 8), top: crop(8, 0, 8, 8), body: layered(20, 20, 8, 12, 16), arms: layered(44, 20, 4, 12, 16), legs: layered(4, 20, 4, 12, 16) };
+  // the bottom of the right arm is the hand: a glove or a bare hand, shown on the end of your first-person arm
+  (out as SkinCanvases & { hand?: HTMLCanvasElement }).hand = layered(48, 16, 4, 4, 16);
+  return out;
 }
 /** Decodes a custom skin (once); resolves to null if the picture can't be read. */
 function loadCustomSkin(dataUrl: string): Promise<SkinCanvases | null> {
@@ -1719,6 +1730,52 @@ function drawFlowerCanvas(kind: 'dandelion' | 'poppy' | 'cornflower'): HTMLCanva
   ctx.fillStyle = mid; ctx.fillRect(7, 5, 2, 2);
   return c;
 }
+/** Indev 27 flowers: allium (a purple ball), tulips, and the oxeye daisy. */
+function drawNewFlowerCanvas(kind: 'allium' | 'orangeTulip' | 'pinkTulip' | 'oxeyeDaisy'): HTMLCanvasElement {
+  const c = makeCanvas(16, 16), ctx = c.getContext('2d')!;
+  const px = (x: number, y: number, w: number, h: number, col: string) => { ctx.fillStyle = col; ctx.fillRect(x, y, w, h); };
+  px(7, 7, 2, 9, '#3f8a2a'); px(5, 12, 2, 1, '#56a83a'); px(9, 10, 2, 1, '#56a83a'); px(4, 11, 1, 1, '#56a83a');
+  if (kind === 'allium') {
+    px(5, 1, 6, 6, '#a24ad8'); px(4, 2, 8, 4, '#a24ad8'); px(6, 2, 2, 2, '#d8a0ff'); px(9, 4, 2, 2, '#7a2aa8'); px(5, 5, 2, 1, '#7a2aa8');
+  } else if (kind === 'oxeyeDaisy') {
+    px(5, 2, 6, 6, '#f4f4f4'); px(4, 3, 8, 4, '#f4f4f4'); px(6, 1, 4, 8, '#f4f4f4'); px(7, 4, 2, 2, '#f2c230'); px(4, 6, 1, 1, '#cfcfcf'); px(11, 3, 1, 1, '#cfcfcf');
+  } else {
+    const [a, b2] = kind === 'orangeTulip' ? ['#f9801d', '#c25a10'] : ['#f6a8c8', '#d8708f'];
+    px(5, 3, 6, 5, a); px(5, 2, 1, 2, a); px(7, 1, 2, 2, a); px(10, 2, 1, 2, a); px(6, 6, 4, 2, b2); px(7, 3, 1, 3, b2);
+  }
+  return c;
+}
+/** A cobweb: white threads from the corners and the middle, see-through between them. */
+function drawCobwebCanvas(): HTMLCanvasElement {
+  const c = makeCanvas(16, 16), ctx = c.getContext('2d')!;
+  ctx.fillStyle = 'rgba(236,236,236,0.95)';
+  for (let i = 0; i < 16; i++) { ctx.fillRect(i, i, 1, 1); ctx.fillRect(15 - i, i, 1, 1); ctx.fillRect(7, i, 1, 1); ctx.fillRect(i, 8, 1, 1); }
+  ctx.fillStyle = 'rgba(220,220,220,0.85)';
+  for (const r of [3, 6]) { ctx.fillRect(7 - r, 8 - r, 2 * r + 1, 1); ctx.fillRect(7 - r, 8 + r, 2 * r + 1, 1); ctx.fillRect(7 - r, 8 - r, 1, 2 * r + 1); ctx.fillRect(7 + r, 8 - r, 1, 2 * r + 1); }
+  ctx.clearRect(0, 0, 2, 2); ctx.clearRect(14, 14, 2, 2); ctx.clearRect(14, 0, 2, 1); ctx.clearRect(0, 15, 1, 1);
+  return c;
+}
+/** Cinderwood, the Nether's trees: dark red bark with glowing cracks, red planks and ember leaves. */
+function drawCinderCanvas(part: 'log' | 'logTop' | 'planks' | 'leaves'): HTMLCanvasElement {
+  if (part === 'leaves') return withLeafHoles(speckleCanvas('#b8341c', ['#7a1a10', '#e8602a', '#ff9a3a', '#8a2414'], 110));
+  const c = makeCanvas(16, 16), ctx = c.getContext('2d')!;
+  const px = (x: number, y: number, w: number, h: number, col: string) => { ctx.fillStyle = col; ctx.fillRect(x, y, w, h); };
+  if (part === 'log') {
+    px(0, 0, 16, 16, '#4a1418');
+    for (let x = 0; x < 16; x += 3) { px(x, 0, 1, 16, '#32090c'); px(x + 1, (x * 5) % 13, 1, 3, '#62202a'); }
+    for (const [x, y, h] of [[2, 3, 3], [8, 9, 4], [13, 1, 3], [5, 12, 2]]) px(x, y, 1, h, '#ff6a2a'); // glowing cracks
+  } else if (part === 'logTop') {
+    px(0, 0, 16, 16, '#4a1418'); px(1, 1, 14, 14, '#8a2a24');
+    for (const r of [2, 4, 6]) { px(r, r, 16 - 2 * r, 1, '#6a1c1a'); px(r, 15 - r, 16 - 2 * r, 1, '#6a1c1a'); px(r, r, 1, 16 - 2 * r, '#6a1c1a'); px(15 - r, r, 1, 16 - 2 * r, '#6a1c1a'); }
+    px(7, 7, 2, 2, '#ff7a2a');
+  } else {
+    px(0, 0, 16, 16, '#7a2a24');
+    for (let y = 3; y < 16; y += 4) px(0, y, 16, 1, '#5a1a18');
+    px(5, 0, 1, 3, '#5a1a18'); px(11, 4, 1, 3, '#5a1a18'); px(3, 8, 1, 3, '#5a1a18'); px(9, 12, 1, 3, '#5a1a18');
+    px(1, 1, 2, 1, '#94382e'); px(8, 5, 3, 1, '#94382e'); px(12, 9, 2, 1, '#94382e'); px(4, 13, 3, 1, '#94382e');
+  }
+  return c;
+}
 function drawSugarCaneCanvas(): HTMLCanvasElement {
   const c = makeCanvas(16, 16), ctx = c.getContext('2d')!;
   for (const x of [3, 8, 12]) {
@@ -2201,6 +2258,8 @@ function drawNewFaces(): Record<string, HTMLCanvasElement> {
     brewBase: drawBrewingStandCanvas('base'), brewRod: drawBrewingStandCanvas('rod'),
     spawner: drawSpawnerCanvas(),
     ...Object.fromEntries(TERRA_DYED.map((t) => [`tc_${t.key}`, terracottaCanvas(t.color)])),
+    cobweb: drawCobwebCanvas(), cinderLog: drawCinderCanvas('log'), cinderLogTop: drawCinderCanvas('logTop'), cinderPlanks: drawCinderCanvas('planks'), cinderLeaves: drawCinderCanvas('leaves'),
+    allium: drawNewFlowerCanvas('allium'), orangeTulip: drawNewFlowerCanvas('orangeTulip'), pinkTulip: drawNewFlowerCanvas('pinkTulip'), oxeyeDaisy: drawNewFlowerCanvas('oxeyeDaisy'),
   };
   for (let k = 0; k < HEAD_KINDS; k++) for (const part of ['face', 'side', 'top'] as const) out[`head${k}${part}`] = headFaceCanvas(k, part);
   TEAM_COLORS.forEach((t, i) => { out[`egg${i}`] = drawEggCanvas(t.color); });
@@ -2624,6 +2683,9 @@ export function blockFaces(id: number): FaceSet | null {
   if (isMineralBlock(id)) return all(f[MINERAL_TEX[id]]);
   if (id === BLOCK_SPAWNER) return all(f.spawner);
   if (isDyedTerracotta(id)) return all(f[`tc_${TERRA_DYED[id - TERRA_DYED_FIRST].key}`]);
+  if (id === BLOCK_CINDER_LOG) return { top: f.cinderLogTop, side: f.cinderLog, bottom: f.cinderLogTop };
+  if (id === BLOCK_CINDER_PLANKS) return all(f.cinderPlanks);
+  if (id === BLOCK_CINDER_LEAVES) return all(f.cinderLeaves);
   if (isPiston(id)) return { top: f[isStickyPiston(id) ? 'pistonStickyFront' : 'pistonFront'], side: f.pistonSide, bottom: f.pistonBack };
   if (id === BLOCK_ICE) return all(f.ice);
   if (id === BLOCK_PACKED_ICE) return all(f.packedIce);
@@ -2770,6 +2832,11 @@ function itemCanvasBase(id: number): HTMLCanvasElement | null {
     case BLOCK_DANDELION: return drawFlowerCanvas('dandelion');
     case BLOCK_POPPY: return drawFlowerCanvas('poppy');
     case BLOCK_CORNFLOWER: return drawFlowerCanvas('cornflower');
+    case BLOCK_ALLIUM: return drawNewFlowerCanvas('allium');
+    case BLOCK_ORANGE_TULIP: return drawNewFlowerCanvas('orangeTulip');
+    case BLOCK_PINK_TULIP: return drawNewFlowerCanvas('pinkTulip');
+    case BLOCK_OXEYE_DAISY: return drawNewFlowerCanvas('oxeyeDaisy');
+    case BLOCK_COBWEB: return drawCobwebCanvas();
     case BLOCK_SUGAR_CANE: return drawSugarCaneCanvas();
     case ITEM_LAPIS: return drawGemCanvas('#6a8cff', '#2a4fb8', '#142a6a');
     case ITEM_REDSTONE: return drawRedstoneDustIcon();
@@ -3140,6 +3207,7 @@ export const LIGHT_UNIFORM = { value: 1 };
 /** 1 on Low graphics: no lighting at all, every block fully bright. */
 export const FLAT_UNIFORM = { value: 0 };
 const MOON_TINT = new THREE.Color(0.62, 0.72, 1);
+const GI_BOUNCE = new THREE.Color(0.86, 0.95, 0.78); // the soft green-gold of light bounced off grass and dirt
 const WARM_FILL = new THREE.Color(1, 0.72, 0.5);
 const PUDDLE_DARK = new THREE.Color(0.18, 0.24, 0.32);
 export const LIGHT_MARGIN = 14; // light reaches this far into a chunk from its neighbours
@@ -3358,7 +3426,12 @@ export function rotateBlockId(b: number, quarters: number): number {
 export function mirrorBlockId(b: number, axis: 'x' | 'z'): number {
   return mapFacing(b, (d) => (axis === 'x' ? (d === 1 ? 3 : d === 3 ? 1 : d) : (d === 0 ? 2 : d === 2 ? 0 : d)));
 }
-export const LAST_BUILTIN_BLOCK = TERRA_DYED_FIRST + TERRA_DYED.length - 1; // 1352
+// Indev 27: cobwebs, Cinderwood (the Nether's own trees) and more flowers
+export const BLOCK_COBWEB = 1353;
+export const BLOCK_CINDER_LOG = 1354, BLOCK_CINDER_PLANKS = 1355, BLOCK_CINDER_LEAVES = 1356;
+export const BLOCK_ALLIUM = 1357, BLOCK_ORANGE_TULIP = 1358, BLOCK_PINK_TULIP = 1359, BLOCK_OXEYE_DAISY = 1360;
+export const NEW_FLOWERS = [BLOCK_ALLIUM, BLOCK_ORANGE_TULIP, BLOCK_PINK_TULIP, BLOCK_OXEYE_DAISY] as const;
+export const LAST_BUILTIN_BLOCK = BLOCK_OXEYE_DAISY; // 1360
 export const isMineralBlock = (b: number) => b >= BLOCK_DIAMOND_BLOCK && b <= BLOCK_INFERNIUM_BLOCK;
 /** New items of round 10 */
 export const ITEM_GLASS_BOTTLE = 1480, ITEM_BLAZE_POWDER = 1481, ITEM_NAME_TAG = 1482;
@@ -3403,7 +3476,7 @@ export function concreteForDye(i: number): number {
 }
 export const isDye = (id: number) => id >= ITEM_DYE_FIRST && id < ITEM_DYE_FIRST + 12;
 export const isWool = (b: number) => b >= BLOCK_WOOL_FIRST && b < BLOCK_WOOL_FIRST + 12;
-export const isFlower = (b: number) => b >= BLOCK_DANDELION && b <= BLOCK_CORNFLOWER;
+export const isFlower = (b: number) => (b >= BLOCK_DANDELION && b <= BLOCK_CORNFLOWER) || (b >= BLOCK_ALLIUM && b <= BLOCK_OXEYE_DAISY);
 export const isAnvil = (b: number) => b === BLOCK_ANVIL || b === BLOCK_ANVIL + 1;
 export const isItemFrame = (b: number) => b >= BLOCK_ITEM_FRAME && b <= BLOCK_ITEM_FRAME + 5;
 export const isWire = (b: number) => b >= BLOCK_REDSTONE_WIRE && b <= BLOCK_REDSTONE_WIRE + 15;
@@ -3447,9 +3520,9 @@ export const ITEM_FLINT = 182;
 export const ITEM_CHARCOAL = 183;
 export const ITEM_BED = 184;
 export const ITEM_IRON_DOOR = 185;
-export function isLog(b: number): boolean { return b === BLOCK_WOOD || (b >= 1010 && b <= 1013); }
-export function isPlanks(b: number): boolean { return b === ITEM_PLANKS || (b >= 1020 && b <= 1023); }
-export function isLeaves(b: number): boolean { return b === BLOCK_LEAVES || (b >= 1030 && b <= 1033); }
+export function isLog(b: number): boolean { return b === BLOCK_WOOD || (b >= 1010 && b <= 1013) || b === BLOCK_CINDER_LOG; }
+export function isPlanks(b: number): boolean { return b === ITEM_PLANKS || (b >= 1020 && b <= 1023) || b === BLOCK_CINDER_PLANKS; }
+export function isLeaves(b: number): boolean { return b === BLOCK_LEAVES || (b >= 1030 && b <= 1033) || b === BLOCK_CINDER_LEAVES; }
 export function isBed(b: number): boolean { return b >= 1040 && b <= 1047; }
 export function isIronDoor(b: number): boolean { return b >= 1050 && b <= 1055; }
 /** Any kind of planks counts as planks in recipes (logs stay specific, so each log makes its own planks). */
@@ -3905,6 +3978,9 @@ function newBlockKind(b: number): 'cube' | 'see' | 'pass' | null {
   if (isTorch(b)) return 'pass';
   if (isHead(b) || isEgg(b)) return 'see';
   if (b === BLOCK_REDSTONE_BLOCK || isMineralBlock(b) || b === BLOCK_SPAWNER || isDyedTerracotta(b)) return 'cube';
+  if (b === BLOCK_CINDER_LOG || b === BLOCK_CINDER_PLANKS) return 'cube';
+  if (b === BLOCK_CINDER_LEAVES) return 'see'; // like leaves: solid, see-through
+  if (b === BLOCK_COBWEB || isFlower(b)) return 'pass'; // you walk into a cobweb (and get stuck in it)
   if (b === BLOCK_BREWING_STAND) return 'see';
   if (isPistonHead(b)) return 'see';
   if (isPiston(b)) return pistonExtended(b) ? 'see' : 'cube';
@@ -4325,6 +4401,14 @@ Object.assign(ITEM_INFO, {
   [BLOCK_DANDELION]: { name: 'Dandelion', color: '#f3d23a' },
   [BLOCK_POPPY]: { name: 'Poppy', color: '#c4271e' },
   [BLOCK_CORNFLOWER]: { name: 'Cornflower', color: '#4a6ee0' },
+  [BLOCK_ALLIUM]: { name: 'Allium', color: '#a24ad8', lore: ['Makes purple dye.'] },
+  [BLOCK_ORANGE_TULIP]: { name: 'Orange Tulip', color: '#f9801d', lore: ['Makes orange dye.'] },
+  [BLOCK_PINK_TULIP]: { name: 'Pink Tulip', color: '#f6a8c8', lore: ['Makes pink dye.'] },
+  [BLOCK_OXEYE_DAISY]: { name: 'Oxeye Daisy', color: '#f4f4f4', lore: ['Makes white dye.'] },
+  [BLOCK_COBWEB]: { name: 'Cobweb', color: '#e8e8e8', lore: ['Slows down anything that walks into it.', 'A sword cuts it fast (and drops string).', 'Shears keep it whole.'] },
+  [BLOCK_CINDER_LOG]: { name: 'Cinderwood Log', color: '#4a1418', lore: ['Grows only in the Nether. It never burns.'] },
+  [BLOCK_CINDER_PLANKS]: { name: 'Cinderwood Planks', color: '#7a2a24', lore: ['Works like any planks.'] },
+  [BLOCK_CINDER_LEAVES]: { name: 'Cinderwood Leaves', color: '#b8341c' },
   [BLOCK_SUGAR_CANE]: { name: 'Sugar Cane', color: '#8fcf5a', lore: ['Grows next to water. Plant it on sand, dirt or grass by water.'] },
   [ITEM_PAPER]: { name: 'Paper', color: '#f2f2ec' },
   [ITEM_BOOK]: { name: 'Book', color: '#8a4a22', lore: ['Enchant it to get an enchanted book for the anvil.'] },
@@ -4728,6 +4812,7 @@ RECIPES.push(
   { id: 'bread', name: 'Bread', pattern: [ITEM_WHEAT, ITEM_WHEAT, ITEM_WHEAT], width: 3, height: 1, output: { id: ITEM_BREAD, count: 1 }, needsTable: false },
 );
 // Phase 2: wood types, torches, TNT, beds, iron doors, flint
+RECIPES.push({ id: 'cinder_planks', name: 'cinderwood planks', pattern: [BLOCK_CINDER_LOG], width: 1, height: 1, output: { id: BLOCK_CINDER_PLANKS, count: 4 }, needsTable: false });
 WOOD_TYPES.forEach((t, i) => RECIPES.push({ id: `${t}_planks`, name: `${t.replace('_', ' ')} planks`, pattern: [LOG_ID(i)], width: 1, height: 1, output: { id: PLANKS_ID(i), count: 4 }, needsTable: false }));
 RECIPES.push(
   { id: 'sandstone', name: 'Sandstone', pattern: [BLOCK_SAND, BLOCK_SAND, BLOCK_SAND, BLOCK_SAND], width: 2, height: 2, output: { id: BLOCK_SANDSTONE, count: 1 }, needsTable: false },
@@ -4831,6 +4916,10 @@ for (const b of [BLOCK_COAL_ORE, BLOCK_DIAMOND_ORE, BLOCK_EMERALD_ORE, BLOCK_QUA
     sl('dye_dandelion', 'Yellow Dye', [BLOCK_DANDELION], D('yellow')),
     sl('dye_poppy', 'Red Dye', [BLOCK_POPPY], D('red')),
     sl('dye_cornflower', 'Blue Dye', [BLOCK_CORNFLOWER], D('blue')),
+    sl('dye_allium', 'Purple Dye', [BLOCK_ALLIUM], D('purple')),
+    sl('dye_orange_tulip', 'Orange Dye', [BLOCK_ORANGE_TULIP], D('orange')),
+    sl('dye_pink_tulip', 'Pink Dye', [BLOCK_PINK_TULIP], D('pink')),
+    sl('dye_oxeye_daisy', 'White Dye', [BLOCK_OXEYE_DAISY], D('white')),
     sl('dye_lapis', 'Blue Dye', [ITEM_LAPIS], D('blue')),
     sl('dye_bone', 'White Dye', [ITEM_BONE], D('white'), 3),
     sl('dye_coal', 'Black Dye', [ITEM_COAL], D('black')),
@@ -5262,6 +5351,7 @@ const LIMB_PHASE_PER_BLOCK = 2.2;
 function poseArms(model: MobModel, o: { swing: number; punch: number; slash?: number; pitch: number; aiming: boolean; drawing: boolean; kick: number; blocking?: boolean; t?: number; crouch?: number }) {
   const [L, R] = model.arms;
   if (!L || !R) return;
+  L.rotation.order = 'XYZ'; R.rotation.order = 'XYZ'; // (a drawn bow turns the arms inward: see below)
   const style = (model.root.userData as { heldStyle?: HeldStyle | null }).heldStyle ?? null;
   const s = o.swing, up = Math.PI / 2 + o.pitch * 0.92 - o.kick * 0.22; // pointing where you look
   L.rotation.set(-s, 0, 0);
@@ -5295,10 +5385,33 @@ function poseArms(model: MobModel, o: { swing: number; punch: number; slash?: nu
   // Something in the off-hand: carry it a little forward (unless both hands are busy)
   if ((model.root.userData as { offMesh?: THREE.Mesh | null }).offMesh && style !== 'gun2' && style !== 'bow') L.rotation.set(0.42 - s * 0.15, 0, 0.04);
   if (style === 'bow') {
-    L.rotation.set(up, 0, 0.08);
-    if (o.drawing) R.rotation.set(up - 0.2, 0, -0.95);
-    else R.rotation.set(s, 0, 0);
+    if (o.drawing) {
+      // Drawn, like Minecraft: both arms up at eye level. The bow arm (right) points straight ahead, a little inward;
+      // the left hand comes across in front of the face, holding the string back.
+      R.rotation.order = 'YXZ'; L.rotation.order = 'YXZ';
+      R.rotation.set(up, 0.12, 0);
+      L.rotation.set(up + 0.04, -0.62, 0);
+    } else {
+      R.rotation.set(0.45 + s * 0.15, 0, 0); // just carried, held a little forward
+      L.rotation.set(-s, 0, 0.03);
+    }
   }
+}
+
+/** How far a swimmer tips forward (radians): almost flat in the water. */
+const SWIM_LEAN = 1.25;
+/**
+ * Swimming: arms sweep in big strokes and the legs flutter. s: 0 (not swimming) .. 1; t: a running clock.
+ * Call it after poseArms (it takes over the arms while swimming).
+ */
+function swimPose(model: MobModel, s: number, t: number) {
+  const [L, R] = model.arms;
+  if (!L || !R || model.legs.length !== 2) return;
+  const stroke = (p: number) => Math.PI * 0.9 + Math.sin(p) * 1.1; // overhead, then down past the hips
+  L.rotation.x = L.rotation.x * (1 - s) + stroke(t) * s; L.rotation.z = (L.rotation.z * (1 - s)) - 0.25 * s;
+  R.rotation.x = R.rotation.x * (1 - s) + stroke(t + Math.PI) * s; R.rotation.z = (R.rotation.z * (1 - s)) + 0.25 * s;
+  model.legs[0].rotation.x = model.legs[0].rotation.x * (1 - s) + Math.sin(t * 2.2) * 0.45 * s;
+  model.legs[1].rotation.x = model.legs[1].rotation.x * (1 - s) - Math.sin(t * 2.2) * 0.45 * s;
 }
 
 /**
@@ -5345,17 +5458,20 @@ const NEW_FACE_KEYS: string[] = [
   'rsBlock', 'pistonFront', 'pistonStickyFront', 'pistonBack', 'pistonSide', 'pistonInner', 'pistonHeadSide', 'pistonRod',
   'mDiamond', 'mGold', 'mCoal', 'mEmerald', 'mLapis', 'mInfernium', 'brewBase', 'brewRod',
   'spawner', ...TERRA_DYED.map((t) => `tc_${t.key}`),
+  'cobweb', 'cinderLog', 'cinderLogTop', 'cinderPlanks', 'cinderLeaves', 'allium', 'orangeTulip', 'pinkTulip', 'oxeyeDaisy',
 ];
 const MINERAL_TEX: Record<number, string> = {}; // filled right below (the block ids are defined above)
 MINERAL_TEX[BLOCK_DIAMOND_BLOCK] = 'mDiamond'; MINERAL_TEX[BLOCK_GOLD_BLOCK] = 'mGold'; MINERAL_TEX[BLOCK_COAL_BLOCK] = 'mCoal';
 MINERAL_TEX[BLOCK_EMERALD_BLOCK] = 'mEmerald'; MINERAL_TEX[BLOCK_LAPIS_BLOCK] = 'mLapis'; MINERAL_TEX[BLOCK_INFERNIUM_BLOCK] = 'mInfernium';
 /** The material slot of a newer block texture. */
 function NF(key: string): number { const i = NEW_FACE_KEYS.indexOf(key); if (i < 0) throw new Error(`no texture ${key}`); return NEW_FACE_START + i; }
-const NEW_SEE_THROUGH = new Set(['dandelion', 'poppy', 'cornflower', 'sugarCane', 'rtorchOn', 'rtorchOff', 'rs0', 'rs1', 'rs2', 'rs3', 'torchWall', 'torchHang', ...Array.from({ length: HEAD_KINDS }, (_, k) => [`head${k}face`, `head${k}side`, `head${k}top`]).flat()].map(NF));
+const NEW_SEE_THROUGH = new Set(['dandelion', 'poppy', 'cornflower', 'sugarCane', 'cobweb', 'cinderLeaves', 'allium', 'orangeTulip', 'pinkTulip', 'oxeyeDaisy', 'rtorchOn', 'rtorchOff', 'rs0', 'rs1', 'rs2', 'rs3', 'torchWall', 'torchHang', ...Array.from({ length: HEAD_KINDS }, (_, k) => [`head${k}face`, `head${k}side`, `head${k}top`]).flat()].map(NF));
 CROSS_MAT[BLOCK_DANDELION] = NF('dandelion');
 CROSS_MAT[BLOCK_POPPY] = NF('poppy');
 CROSS_MAT[BLOCK_CORNFLOWER] = NF('cornflower');
 CROSS_MAT[BLOCK_SUGAR_CANE] = NF('sugarCane');
+CROSS_MAT[BLOCK_COBWEB] = NF('cobweb');
+CROSS_MAT[BLOCK_ALLIUM] = NF('allium'); CROSS_MAT[BLOCK_ORANGE_TULIP] = NF('orangeTulip'); CROSS_MAT[BLOCK_PINK_TULIP] = NF('pinkTulip'); CROSS_MAT[BLOCK_OXEYE_DAISY] = NF('oxeyeDaisy');
 const dustTex = (b: number) => NF(`rs${wirePower(b) === 0 ? 0 : wirePower(b) <= 5 ? 1 : wirePower(b) <= 10 ? 2 : 3}`);
 
 const DIAG_COS = Math.SQRT1_2, DIAG_SIN = -Math.SQRT1_2; // -45 degrees: a head facing north ends up facing north-east
@@ -5389,6 +5505,10 @@ function matIndexFor(block: number, f: number): number {
     if (block === BLOCK_BREWING_STAND) return NF('brewBase');
     if (block === BLOCK_SPAWNER) return NF('spawner');
     if (isDyedTerracotta(block)) return NF(`tc_${TERRA_DYED[block - TERRA_DYED_FIRST].key}`);
+    if (block === BLOCK_CINDER_LOG) return top || bottom ? NF('cinderLogTop') : NF('cinderLog');
+    if (block === BLOCK_CINDER_PLANKS) return NF('cinderPlanks');
+    if (block === BLOCK_CINDER_LEAVES) return NF('cinderLeaves');
+    if (block === BLOCK_COBWEB) return NF('cobweb');
     if (isPiston(block) || isPistonHead(block)) {
       const head = isPistonHead(block), d = head ? pistonHeadFacing(block) : pistonFacing(block), sticky = head ? pistonHeadSticky(block) : isStickyPiston(block);
       const front = f === [5, 0, 4, 1, 2, 3][d], back = f === [4, 1, 5, 0, 3, 2][d];
@@ -5960,7 +6080,7 @@ class World {
     if (y < 22 && this.hash3(cx, cy, cz, 17) < 0.005) return BLOCK_GOLD_ORE;
     if (y < 40 && this.hash3(cx, cy, cz, 19) < 0.016) return BLOCK_IRON_ORE;
     if (y < 54 && this.hash3(cx, cy, cz, 23) < 0.035) return BLOCK_COAL_ORE;
-    if (y < 22 && this.hash3(cx, cy, cz, 29) < 0.028) return BLOCK_REDSTONE_ORE; // plenty of redstone
+    if (y < 32 && this.hash3(cx, cy, cz, 29) < 0.03) return BLOCK_REDSTONE_ORE; // plenty of redstone, often showing on cave walls
     if (y < 30 && this.hash3(cx, cy, cz, 37) < 0.004) return BLOCK_LAPIS_ORE;
     return this.stoneAt(wx, y, wz);
   }
@@ -6079,6 +6199,7 @@ class World {
 
     if (this.kind === 'nether') {
       this.generateCaverns(chunk, BLOCK_NETHERRACK, BLOCK_NETHERRACK, BLOCK_LAVA, true);
+      this.placeCinderTrees(chunk);
       this.placeStructures(chunk); // Nether fortresses
       chunk.generated = true;
       return;
@@ -6137,6 +6258,8 @@ class World {
             const caveNoise = this.noise.noise3d(wx * 0.05, y * 0.08, wz * 0.05);
             if (caveNoise > 0.45 && y > 3) {
               if (y <= LAVA_LEVEL) chunk.set(x, y, z, BLOCK_LAVA); // deep caves hold lava lakes
+              // the odd cobweb hangs under a cave roof
+              else if (y < height - 6 && this.hash3(wx, y, wz, 83) < 0.012 && this.noise.noise3d(wx * 0.05, (y + 1) * 0.08, wz * 0.05) <= 0.45) chunk.set(x, y, z, BLOCK_COBWEB);
               continue; // otherwise leave as air
             }
             b = this.oreAt(wx, y, wz, biome);
@@ -6205,7 +6328,9 @@ class World {
           const r = this.hash3(wx, 8, wz, 63);
           if (r < fl) {
             const k = this.hash3(wx, 9, wz, 64);
-            chunk.set(x, h + 1, z, k < 0.45 ? BLOCK_DANDELION : k < 0.9 || (biome !== 'plains' && biome !== 'forest') ? BLOCK_POPPY : BLOCK_CORNFLOWER);
+            const k2 = this.hash3(wx, 10, wz, 65);
+            if (k2 < 0.3 && (biome === 'plains' || biome === 'forest' || biome === 'birch_forest' || biome === 'savanna')) chunk.set(x, h + 1, z, NEW_FLOWERS[Math.floor(this.hash3(wx, 11, wz, 66) * NEW_FLOWERS.length) % NEW_FLOWERS.length]);
+            else chunk.set(x, h + 1, z, k < 0.45 ? BLOCK_DANDELION : k < 0.9 || (biome !== 'plains' && biome !== 'forest') ? BLOCK_POPPY : BLOCK_CORNFLOWER);
           }
         }
       }
@@ -6752,6 +6877,36 @@ class World {
       if (best && best.distance <= r * R) break;
     }
     return best;
+  }
+
+  /** Cinderwood trees grow on open Nether floors, in groves (each tree stays inside its own chunk). */
+  placeCinderTrees(chunk: Chunk) {
+    const baseX = chunk.cx * CHUNK_SIZE, baseZ = chunk.cz * CHUNK_SIZE;
+    if (this.noise.noise3d(chunk.cx * 0.35, 3.3, chunk.cz * 0.35) < 0.05) return; // groves, not everywhere
+    for (let x = 2; x < CHUNK_SIZE - 2; x++) {
+      for (let z = 2; z < CHUNK_SIZE - 2; z++) {
+        const wx = baseX + x, wz = baseZ + z;
+        if (this.hash3(wx, 5, wz, 91) > 0.018) continue;
+        for (let y = NETHER_LAVA_LEVEL + 2; y < 40; y++) {
+          const g = chunk.get(x, y, z);
+          if (g !== BLOCK_NETHERRACK && g !== BLOCK_SOUL_SOIL) continue;
+          let room = true;
+          for (let k = 1; k <= 8 && room; k++) if (chunk.get(x, y + k, z) !== BLOCK_AIR) room = false;
+          if (!room) continue;
+          const tall = 4 + Math.floor(this.hash3(wx, y, wz, 92) * 3);
+          for (let k = 1; k <= tall; k++) chunk.set(x, y + k, z, BLOCK_CINDER_LOG);
+          const top = y + tall;
+          for (let dy = -1; dy <= 2; dy++) {
+            const r = dy >= 1 ? 1 : 2;
+            for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) {
+              if (Math.abs(dx) === r && Math.abs(dz) === r && this.hash3(wx + dx, top + dy, wz + dz, 93) < 0.6) continue; // ragged corners
+              if (chunk.get(x + dx, top + dy, z + dz) === BLOCK_AIR) chunk.set(x + dx, top + dy, z + dz, BLOCK_CINDER_LEAVES);
+            }
+          }
+          break;
+        }
+      }
+    }
   }
 
   // Nether-style caverns: 3D noise, more solid near the floor and the roof,
@@ -7505,6 +7660,8 @@ export type OneBlockView = {
 };
 
 /** Everything needed to put a player back exactly where they left off. */
+/** You, without the world (a joined world's server keeps the world; your things are kept on your device). */
+export type PlayerSave = { v: 1; x: number; y: number; z: number; yaw: number; pitch: number; health: number; hunger: number; selected: number; slots: Array<ItemStack | null>; offhand: ItemStack | null; armor: Array<ItemStack | null>; xp: { level: number; progress: number }; dimension?: string };
 export type SaveData = {
   v: 1;
   player: { x: number; y: number; z: number; yaw: number; pitch: number; health: number; hunger: number; mode: PlayMode; selected: number; offhand?: ItemStack | null; armor?: Slots };
@@ -7534,7 +7691,8 @@ export type SaveData = {
   oneblock?: { count: number };
 };
 /** clear, rain or snow ('rain' still turns to snow in cold biomes). */
-export type WeatherKind = 'clear' | 'rain' | 'snow';
+/** 'thunder': a thunderstorm (rain with lightning and thunder) */
+export type WeatherKind = 'clear' | 'rain' | 'snow' | 'thunder';
 
 export type DebugInfo = {
   x: number; y: number; z: number;
@@ -7690,6 +7848,10 @@ export type GameHandle = {
   /** Clouds, stars, fast render, frame cap, bobbing and dynamic FOV. */
   setVideoPrefs: (p: Partial<VideoPrefs>) => void;
   getVideoPrefs: () => VideoPrefs;
+  /** Settings > Shaders */
+  setShaderPrefs: (p: ShaderPrefs) => void;
+  /** (tests) is the shader pipeline running, the current eye-adaptation exposure, the hand light, a broken pack GLSL */
+  getShaderInfo: () => { post: boolean; exposure: number; handLight: boolean; glslBroken: boolean };
   getFov: () => number;
   getInventory: () => Slots;
   getHealth: () => number;
@@ -7746,6 +7908,9 @@ export type GameHandle = {
   onHint: (cb: (text: string) => void) => void;
   getSaveData: () => SaveData;
   loadSaveData: (data: SaveData) => void;
+  /** Just you: inventory, position, health, hunger, XP (kept for worlds you join) */
+  getPlayerSave: () => PlayerSave;
+  loadPlayerSave: (data: PlayerSave) => void;
   isCreative: () => boolean;
   dropItems: (items: ItemStack[]) => void;
   quickCraft: (recipeId: string, hasTable: boolean) => boolean;
@@ -7990,6 +8155,22 @@ export function createVoxelGame(
   let cloudDrift = 0;
   // Video settings (clouds, stars, fast render, frame cap, bobbing, dynamic FOV)
   let video: VideoPrefs = loadVideo();
+  /** Settings > Shaders (only used once the player changed something: until then the graphics quality decides) */
+  let shader: ShaderPrefs = { ...DEFAULT_SHADERS };
+  const S = (): ShaderPrefs | null => (shader.custom ? shader : null);
+  /** Does the shader pipeline (the one Max uses) run? Max always; other levels when a shader effect is switched on. */
+  function wantPost(): boolean {
+    if (video.fastRender || postFailed) return false;
+    if (graphicsQuality === 'max') return true;
+    const sp = S();
+    return !!sp && (sp.bloom > 0 || sp.godRays !== 'off' || sp.globalIllumination !== 'off' || sp.eyeAdaptation > 0 || sp.volumetricFog || sp.motionBlur || !!sp.pack?.grade || !!sp.pack?.glsl);
+  }
+  let exposureNow = 1, exposureTarget = 1, exposureClock = 0;
+  let lastTurnYaw = 0, lastTurnPitch = 0;
+  const blurDir = { x: 0, y: 0 };
+  let customGlslBroken = false;
+  const handLight = new THREE.PointLight(0xffc477, 0, 11, 1.6);
+  let handLightOn = false;
   let frameInterval = video.maxFps > 0 ? 1000 / video.maxFps : 0;
   let lastFrameAt = 0;
   const cloudsWanted = () => (dimension === 'overworld' || !!dimensionSpecs.get(dimension)?.clouds) && video.clouds !== 'none';
@@ -8061,17 +8242,19 @@ export function createVoxelGame(
     skyHorizon.copy(NIGHT_HORIZON).lerp(DAY_HORIZON, dayAmt).lerp(SUNSET, glow * 0.55);
     skyTop.copy(NIGHT_TOP).lerp(DAY_TOP, dayAmt);
     if (weatherAmt > 0) {
-      // rain and snow: a grey, dimmer sky
-      stormGrey.setRGB(0.44, 0.47, 0.52).multiplyScalar(0.18 + 0.82 * dayAmt);
-      skyHorizon.lerp(stormGrey, weatherAmt * 0.7);
-      skyTop.lerp(stormGrey, weatherAmt * 0.75);
+      // rain and snow: a grey, dimmer sky (a thunderstorm is darker still)
+      const dark = weather === 'thunder' ? 0.62 : 1;
+      stormGrey.setRGB(0.44, 0.47, 0.52).multiplyScalar((0.18 + 0.82 * dayAmt) * dark);
+      skyHorizon.lerp(stormGrey, weatherAmt * (weather === 'thunder' ? 0.85 : 0.7));
+      skyTop.lerp(stormGrey, weatherAmt * (weather === 'thunder' ? 0.9 : 0.75));
     }
+    if (flashAmt > 0) { skyHorizon.lerp(FLASH_COLOR, flashAmt * 0.75); skyTop.lerp(FLASH_COLOR, flashAmt * 0.6); } // lightning
     paintSky();
     fogColor.copy(skyHorizon);
     if (scene.fog) (scene.fog as THREE.Fog).color.copy(skyHorizon);
     if (scene.background instanceof THREE.Color) scene.background.copy(skyHorizon);
-    ambientLight.intensity = (0.24 + 0.46 * dayAmt) * (1 - 0.18 * weatherAmt);
-    dirLight.intensity = (0.12 + 0.68 * dayAmt) * (1 - 0.6 * weatherAmt);
+    ambientLight.intensity = (0.24 + 0.46 * dayAmt) * (1 - (weather === 'thunder' ? 0.3 : 0.18) * weatherAmt) + flashAmt * 0.9;
+    dirLight.intensity = (0.12 + 0.68 * dayAmt) * (1 - (weather === 'thunder' ? 0.75 : 0.6) * weatherAmt);
     LIGHT_UNIFORM.value = dayAmt * (1 - 0.3 * weatherAmt);
     starMat.opacity = (1 - dayAmt) * (1 - weatherAmt);
     stars.position.copy(camera.position);
@@ -8097,13 +8280,17 @@ export function createVoxelGame(
       LIGHT_UNIFORM.value = 1;
       return;
     }
-    if (graphicsQuality === 'high' || graphicsQuality === 'epic' || graphicsQuality === 'max') {
+    const sp = S();
+    const fancy = sp ? sp.lighting !== 'fast' : graphicsQuality === 'high' || graphicsQuality === 'epic' || graphicsQuality === 'max';
+    if (fancy) {
       const warm = Math.min(1, glow * 1.4) * (1 - 0.7 * weatherAmt);
       dirLight.color.setRGB(1, 1 - 0.28 * warm, 1 - 0.6 * warm);
       if (dayAmt < 0.5) dirLight.color.lerp(MOON_TINT, 1 - dayAmt * 2); // moonlight is cool and blue
       ambientLight.color.setRGB(1, 1, 1).lerp(skyTop, 0.28); // sky-coloured fill, like a hemisphere light
       ambientLight.color.lerp(WARM_FILL, warm * 0.25);
       dirLight.intensity *= 1.12;
+      if (sp?.lighting === 'realistic') { dirLight.intensity *= 1.18; ambientLight.intensity *= 0.82; } // deeper shade, stronger sun
+      if (sp && sp.globalIllumination !== 'off') { ambientLight.intensity *= sp.globalIllumination === 'high' ? 1.12 : 1.05; ambientLight.color.lerp(GI_BOUNCE, sp.globalIllumination === 'high' ? 0.12 : 0.06); } // light bounced off the ground
     } else {
       dirLight.color.setRGB(1, 1, 1); ambientLight.color.setRGB(1, 1, 1);
     }
@@ -8125,7 +8312,70 @@ export function createVoxelGame(
   let weatherTimer = 420 + Math.random() * 600; // seconds until it changes by itself
   let weatherClock = 0;
   let weatherCallback: ((w: WeatherKind) => void) | null = null;
-  const WEATHER_DROPS = 1400, WEATHER_R = 18, WEATHER_H = 24;
+  const WEATHER_DROPS = 2400, WEATHER_R = 18, WEATHER_H = 24;
+  /** How many drops fall at once: more on better graphics, and a thunderstorm pours */
+  const dropBudget = () => Math.min(WEATHER_DROPS, (graphicsQuality === 'max' || graphicsQuality === 'epic' ? 2200 : graphicsQuality === 'high' ? 1700 : graphicsQuality === 'low' ? 700 : 1100) * (weather === 'thunder' ? 1.15 : 1));
+  // High and up: raindrops are real streaks (two thin quads facing you), not 1-pixel lines that vanish on sharp screens
+  const streakPos = new Float32Array(WEATHER_DROPS * 18);
+  const streakGeo = new THREE.BufferGeometry();
+  streakGeo.setAttribute('position', new THREE.BufferAttribute(streakPos, 3));
+  const streakMat = new THREE.MeshBasicMaterial({ color: 0xb4c8e0, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide, fog: true });
+  const rainStreaks = new THREE.Mesh(streakGeo, streakMat);
+  rainStreaks.frustumCulled = false;
+  rainStreaks.visible = false;
+  scene.add(rainStreaks);
+  // Thunderstorms: lightning flashes the sky, a bolt strikes the ground somewhere near, and the thunder rolls a moment later
+  const FLASH_COLOR = new THREE.Color(0.86, 0.9, 1);
+  let flashAmt = 0, nextBolt = 8, flashT = 0;
+  const boltPos = new Float32Array(16 * 18);
+  const boltGeo = new THREE.BufferGeometry();
+  boltGeo.setAttribute('position', new THREE.BufferAttribute(boltPos, 3));
+  const boltMat = new THREE.MeshBasicMaterial({ color: 0xf2f6ff, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide, fog: false });
+  const boltMesh = new THREE.Mesh(boltGeo, boltMat);
+  boltMesh.frustumCulled = false; boltMesh.visible = false; boltMesh.renderOrder = 4;
+  scene.add(boltMesh);
+  let boltLife = 0;
+  /** A jagged bolt from the clouds down to (x, y, z), as thin quads that face you. */
+  function buildBolt(x: number, y: number, z: number) {
+    const top = Math.min(CHUNK_HEIGHT + 60, y + 70);
+    const pts: Array<[number, number, number]> = [];
+    let px = x + (Math.random() - 0.5) * 6, pz = z + (Math.random() - 0.5) * 6;
+    for (let i = 0; i <= 15; i++) {
+      const k = i / 15;
+      pts.push([px, top + (y - top) * k, pz]);
+      px += (Math.random() - 0.5) * 3.2 + (x - px) * 0.18; pz += (Math.random() - 0.5) * 3.2 + (z - pz) * 0.18;
+    }
+    pts[15] = [x, y, z];
+    const dx = camera.position.x - x, dz = camera.position.z - z, l = Math.hypot(dx, dz) || 1;
+    const ox = (-dz / l) * 0.35, oz = (dx / l) * 0.35; // sideways, so the quads face the camera
+    for (let i = 0; i < 15; i++) {
+      const [ax, ay, az] = pts[i], [bx, by, bz] = pts[i + 1], o = i * 18;
+      boltPos.set([ax - ox, ay, az - oz, ax + ox, ay, az + oz, bx + ox, by, bz + oz, ax - ox, ay, az - oz, bx + ox, by, bz + oz, bx - ox, by, bz - oz], o);
+    }
+    boltGeo.attributes.position.needsUpdate = true;
+  }
+  function thunderSound(delay: number, near: boolean) {
+    noiseHit(null, 'lowpass', near ? 900 : 380, 60, near ? 2.6 : 3.4, near ? 0.9 : 0.55, delay, 0.7, 0.02);
+    noiseHit(null, 'lowpass', 160, 40, 3.8, near ? 0.7 : 0.45, delay + 0.25, 0.5, 0.3);
+    if (near) noiseHit(null, 'highpass', 2600, 900, 0.25, 0.5, delay, 1, 0.002); // the crack of a close strike
+  }
+  function updateLightning(dt: number) {
+    flashAmt = Math.max(0, flashAmt - dt * 4.5);
+    if (flashT > 0) { flashT -= dt; if (flashT <= 0) flashAmt = 0.85; } // the second flicker
+    if (boltLife > 0) { boltLife -= dt; boltMat.opacity = Math.max(0, Math.min(1, boltLife * 4)) * (0.7 + Math.random() * 0.3); if (boltLife <= 0) boltMesh.visible = false; }
+    if (weather !== 'thunder' || weatherAmt < 0.6 || dimension !== 'overworld') return;
+    nextBolt -= dt;
+    if (nextBolt > 0) return;
+    nextBolt = 5 + Math.random() * 16;
+    flashAmt = 1; flashT = 0.12 + Math.random() * 0.1;
+    const a = Math.random() * Math.PI * 2, r = 18 + Math.random() * 60;
+    const x = camera.position.x + Math.cos(a) * r, z = camera.position.z + Math.sin(a) * r;
+    const col = precipColumn(Math.floor(x), Math.floor(z));
+    const groundY = col.top >= 0 ? col.top + 1 : camera.position.y - 10;
+    const fancy = !video.fastRender && graphicsQuality !== 'low';
+    if (fancy && col.kind === 1) { buildBolt(x, groundY, z); boltMesh.visible = true; boltLife = 0.35; }
+    thunderSound(r / 120 + Math.random() * 0.4, r < 35);
+  }
   const dropX = new Float32Array(WEATHER_DROPS), dropY = new Float32Array(WEATHER_DROPS), dropZ = new Float32Array(WEATHER_DROPS);
   const dropSpd = new Float32Array(WEATHER_DROPS), dropSeed = new Float32Array(WEATHER_DROPS);
   let dropsPlaced = false;
@@ -8191,11 +8441,11 @@ export function createVoxelGame(
       rainSrc.start();
     }
     const t = ctx.currentTime;
-    rainGainNode!.gain.setTargetAtTime(level * (indoors ? 0.07 : 0.16), t, 0.4);
+    rainGainNode!.gain.setTargetAtTime(level * (indoors ? 0.07 : 0.16) * (weather === 'thunder' ? 1.5 : 1), t, 0.4);
     rainFilter!.frequency.setTargetAtTime(indoors ? 420 : 1700, t, 0.4);
   }
   function setWeather(kind: WeatherKind, seconds?: number) {
-    if (kind !== 'clear' && kind !== 'rain' && kind !== 'snow') return;
+    if (kind !== 'clear' && kind !== 'rain' && kind !== 'snow' && kind !== 'thunder') return;
     const changed = kind !== weather;
     weather = kind;
     weatherTimer = seconds && seconds > 0 ? seconds : kind === 'clear' ? 420 + Math.random() * 600 : 180 + Math.random() * 240;
@@ -8205,25 +8455,33 @@ export function createVoxelGame(
     weatherClock += dt;
     if (weatherAuto) {
       weatherTimer -= dt;
-      if (weatherTimer <= 0) setWeather(weather === 'clear' ? 'rain' : 'clear'); // snow only comes from cold biomes or a command
+      if (weatherTimer <= 0) setWeather(weather === 'clear' ? (Math.random() < 0.25 ? 'thunder' : 'rain') : 'clear'); // snow only comes from cold biomes or a command; one rain in four is a thunderstorm
     }
     if (dimension !== 'overworld') weatherAmt = 0; // no weather in the Nether or custom dimensions
     else {
       const target = weather === 'clear' ? 0 : 1;
       weatherAmt += Math.sign(target - weatherAmt) * Math.min(Math.abs(target - weatherAmt), dt / 5);
     }
+    updateLightning(dt);
     const show = weatherAmt > 0.01;
-    rainLines.visible = snowPts.visible = show;
+    const streaks = graphicsQuality === 'high' || graphicsQuality === 'epic' || graphicsQuality === 'max';
+    rainLines.visible = show && !streaks; rainStreaks.visible = show && streaks;
+    snowPts.visible = show;
     if (!show) { dropsPlaced = false; updateRainSound(0, false, true); return; }
     const cx = camera.position.x, cy = camera.position.y, cz = camera.position.z;
     if (!dropsPlaced) { for (let i = 0; i < WEATHER_DROPS; i++) placeDrop(i, cx, cy, cz, true); dropsPlaced = true; }
-    const active = Math.floor(WEATHER_DROPS * weatherAmt);
+    const active = Math.floor(dropBudget() * weatherAmt);
+    // the rain slants a little in a storm
+    const slant = weather === 'thunder' ? 0.22 : 0.04;
+    const fwd = new THREE.Vector3(); camera.getWorldDirection(fwd);
+    const fl = Math.hypot(fwd.x, fwd.z) || 1, sx = (-fwd.z / fl) * 0.022, sz = (fwd.x / fl) * 0.022; // streak half-width, across the view
     const HIDE = -10000;
     let rainCount = 0, shown = 0;
     for (let i = 0; i < WEATHER_DROPS; i++) {
       const col = precipColumn(Math.floor(dropX[i]), Math.floor(dropZ[i]));
       const kind = col.kind === 1 && weather === 'snow' ? 2 : col.kind;
-      dropY[i] -= (kind === 2 ? 1.7 : 15) * dropSpd[i] * dt;
+      dropY[i] -= (kind === 2 ? 1.7 : weather === 'thunder' ? 19 : 15) * dropSpd[i] * dt;
+      if (kind !== 2 && slant > 0.05) dropX[i] -= slant * 15 * dt;
       if (kind === 2) dropX[i] += Math.sin(weatherClock * 1.3 + dropSeed[i]) * dt * 0.5;
       const far = Math.abs(dropX[i] - cx) > WEATHER_R + 2 || Math.abs(dropZ[i] - cz) > WEATHER_R + 2;
       if (far || dropY[i] < cy - WEATHER_H / 2 || dropY[i] < col.top + 1) {
@@ -8233,21 +8491,29 @@ export function createVoxelGame(
       const col2 = precipColumn(Math.floor(dropX[i]), Math.floor(dropZ[i]));
       const kind2 = col2.kind === 1 && weather === 'snow' ? 2 : col2.kind;
       const visible = i < active && kind2 !== 0 && dropY[i] >= col2.top + 1;
-      const r6 = i * 6, s3 = i * 3;
+      const r6 = i * 6, s3 = i * 3, q = i * 18;
       if (visible && kind2 === 1) {
-        rainPos[r6] = dropX[i]; rainPos[r6 + 1] = dropY[i] + 0.6; rainPos[r6 + 2] = dropZ[i];
+        const len = weather === 'thunder' ? 0.95 : 0.7, top = dropY[i] + len, tx = dropX[i] + slant * len;
+        rainPos[r6] = tx; rainPos[r6 + 1] = top; rainPos[r6 + 2] = dropZ[i];
         rainPos[r6 + 3] = dropX[i] - 0.04; rainPos[r6 + 4] = dropY[i]; rainPos[r6 + 5] = dropZ[i];
+        if (streaks) {
+          const x0 = dropX[i], y0 = dropY[i], z0 = dropZ[i];
+          streakPos.set([tx - sx, top, z0 - sz, tx + sx, top, z0 + sz, x0 + sx, y0, z0 + sz, tx - sx, top, z0 - sz, x0 + sx, y0, z0 + sz, x0 - sx, y0, z0 - sz], q);
+        }
         rainCount++;
       } else {
         rainPos[r6 + 1] = HIDE; rainPos[r6 + 4] = HIDE;
+        if (streaks) { streakPos[q + 1] = HIDE; streakPos[q + 4] = HIDE; streakPos[q + 7] = HIDE; streakPos[q + 10] = HIDE; streakPos[q + 13] = HIDE; streakPos[q + 16] = HIDE; }
       }
       if (visible && kind2 === 2) { snowPos[s3] = dropX[i]; snowPos[s3 + 1] = dropY[i]; snowPos[s3 + 2] = dropZ[i]; }
       else snowPos[s3 + 1] = HIDE;
       if (visible) shown++;
     }
     rainGeo.attributes.position.needsUpdate = true;
+    if (streaks) streakGeo.attributes.position.needsUpdate = true;
     snowGeo.attributes.position.needsUpdate = true;
     rainMat.opacity = 0.55 * weatherAmt;
+    streakMat.opacity = (weather === 'thunder' ? 0.5 : 0.42) * weatherAmt;
     snowMat.opacity = 0.9 * weatherAmt;
     const here = precipColumn(Math.floor(cx), Math.floor(cz));
     const indoors = here.top + 1 > cy;
@@ -8317,7 +8583,7 @@ export function createVoxelGame(
   }
   function updateRainEffects(dt: number) {
     const top = graphicsQuality === 'high' || graphicsQuality === 'epic' || graphicsQuality === 'max';
-    const raining = weather === 'rain' && weatherAmt > 0.05 && dimension === 'overworld' && top && !video.fastRender;
+    const raining = (weather === 'rain' || weather === 'thunder') && weatherAmt > 0.05 && dimension === 'overworld' && top && !video.fastRender;
     const max = (graphicsQuality === 'max' || graphicsQuality === 'epic') && !video.fastRender;
     const cx = camera.position.x, cz = camera.position.z;
     // spawn ripples
@@ -8349,7 +8615,7 @@ export function createVoxelGame(
     }
     // puddles (Max)
     if (dimension !== 'overworld') groundWet = 0;
-    else if (weather === 'rain' && max) groundWet = Math.min(1, groundWet + dt / 18 * weatherAmt);
+    else if ((weather === 'rain' || weather === 'thunder') && max) groundWet = Math.min(1, groundWet + dt / (weather === 'thunder' ? 10 : 18) * weatherAmt);
     else groundWet = Math.max(0, groundWet - dt / (max ? 70 : 5));
     const showPuddles = max && groundWet > 0.02;
     if (showPuddles && Math.hypot(cx - puddleScanX, cz - puddleScanZ) > 3) scanPuddles(cx, cz);
@@ -8604,19 +8870,26 @@ export function createVoxelGame(
         gl_FragColor = vec4(mix(col, uFogColor, fog), alpha);
       }`,
   });
-  const lavaCanvas = (() => {
-    const c = document.createElement('canvas');
-    c.width = 16; c.height = 16;
-    const ctx = c.getContext('2d')!;
-    ctx.fillStyle = '#e8590c';
-    ctx.fillRect(0, 0, 16, 16);
-    const tones = ['#ff8f1f', '#ffb347', '#c2410c', '#ffd166'];
-    for (let i = 0; i < 70; i++) {
-      ctx.fillStyle = tones[Math.floor(Math.random() * tones.length)];
-      ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 2, 1);
+  // Lava moves: hot bright veins drift and bubble across a dark-orange surface (redrawn a few times a second; it tiles)
+  const LAVA_PX = 16;
+  const LAVA_PAL = ['#8a1c06', '#b8320a', '#d84a0c', '#ee6210', '#ff7f1a', '#ff9a24', '#ffb83a', '#ffd25a', '#ffe88a'];
+  const lavaCanvas = (() => { const c = document.createElement('canvas'); c.width = LAVA_PX; c.height = LAVA_PX; return c; })();
+  const lavaSeed = Array.from({ length: LAVA_PX * LAVA_PX }, () => Math.random());
+  function drawLavaFrame(t: number) {
+    const ctx = lavaCanvas.getContext('2d');
+    if (!ctx) return;
+    const k = (Math.PI * 2) / LAVA_PX; // whole waves across the tile, so it repeats without seams
+    for (let y = 0; y < LAVA_PX; y++) for (let x = 0; x < LAVA_PX; x++) {
+      const v = Math.sin(x * k * 2 + t * 0.9) + Math.sin(y * k * 3 - t * 0.7 + Math.sin(x * k + t * 0.3) * 1.6)
+        + Math.sin((x + y) * k * 1 + t * 0.55) * 0.8 + Math.sin((x - 2 * y) * k + t * 1.2) * 0.5;
+      const bubble = Math.max(0, Math.sin(t * 2.4 + lavaSeed[y * LAVA_PX + x] * 40)) ** 12 * 2.2; // a few spots pop bright now and then
+      const n = (v + 3.1) / 6.2 + bubble * 0.35 + (lavaSeed[y * LAVA_PX + x] - 0.5) * 0.12;
+      ctx.fillStyle = LAVA_PAL[Math.max(0, Math.min(LAVA_PAL.length - 1, Math.floor(n * LAVA_PAL.length)))];
+      ctx.fillRect(x, y, 1, 1);
     }
-    return c;
-  })();
+  }
+  drawLavaFrame(0);
+  let lavaClock = 0, lavaFrameAt = 0;
   const lavaTex = new THREE.CanvasTexture(lavaCanvas);
   lavaTex.magFilter = THREE.NearestFilter;
   lavaTex.minFilter = THREE.NearestFilter;
@@ -8797,7 +9070,17 @@ export function createVoxelGame(
       const botC = (() => { const { cv, cx } = mk(W, H); cx.drawImage(c.arms, 0, 0); return cv; })();
       let tone = '#a8734f';
       try { const d = c.face.getContext('2d')!.getImageData(0, 5, 1, 1).data; if (d[3] > 0) tone = `rgb(${d[0]},${d[1]},${d[2]})`; } catch { /* keep the default tone */ }
-      const cap = (() => { const { cv, cx } = mk(8, 8); cx.fillStyle = tone; cx.fillRect(0, 0, 8, 8); return cv; })();
+      // The fist wears what the skin's hand wears: a custom skin's hand (gloves, second layer and all), or the colour at the
+      // bottom of the sleeve (bare skin, or a glove on skins like the knight or the astronaut)
+      const hand = (c as { hand?: HTMLCanvasElement }).hand;
+      let handTone = tone;
+      try { const d = c.arms.getContext('2d')!.getImageData(Math.floor(W / 2), H - 1, 1, 1).data; if (d[3] > 0) handTone = `rgb(${d[0]},${d[1]},${d[2]})`; } catch { /* keep the skin tone */ }
+      const cap = (() => {
+        const { cv, cx } = mk(8, 8);
+        if (hand) cx.drawImage(hand, 0, 0, 8, 8);
+        else { cx.fillStyle = handTone; cx.fillRect(0, 0, 8, 8); cx.fillStyle = 'rgba(0,0,0,0.14)'; cx.fillRect(0, 6, 8, 2); cx.fillRect(5, 0, 1, 6); } // knuckle shading
+        return cv;
+      })();
       const back = (() => { const { cv, cx } = mk(8, 8); cx.fillStyle = tone; cx.fillRect(0, 0, 8, 8); return cv; })();
       [sideR, sideL, topC, botC, back, cap].forEach((cv, i) => {
         const t = new THREE.CanvasTexture(cv);
@@ -8844,6 +9127,8 @@ export function createVoxelGame(
     ...Object.fromEntries(CONCRETE_EXTRA.map((c) => [c.id, 1.8])),
     ...Object.fromEntries(DYE_COLORS.map((_, i) => [woolId(i), 0.8])),
     [BLOCK_DANDELION]: 0, [BLOCK_POPPY]: 0, [BLOCK_CORNFLOWER]: 0, [BLOCK_SUGAR_CANE]: 0,
+    [BLOCK_ALLIUM]: 0, [BLOCK_ORANGE_TULIP]: 0, [BLOCK_PINK_TULIP]: 0, [BLOCK_OXEYE_DAISY]: 0,
+    [BLOCK_COBWEB]: 4, [BLOCK_CINDER_LOG]: 0.75, [BLOCK_CINDER_PLANKS]: 0.75, [BLOCK_CINDER_LEAVES]: 0.2,
     [BLOCK_LAPIS_ORE]: 3, [BLOCK_REDSTONE_ORE]: 3, [BLOCK_IRON_BLOCK]: 5, [BLOCK_BOOKSHELF]: 1.5, [BLOCK_ENCHANTING_TABLE]: 5,
     [BLOCK_ANVIL]: 5, [BLOCK_ANVIL + 1]: 5,
     ...Object.fromEntries(Array.from({ length: 6 }, (_, i) => [BLOCK_ITEM_FRAME + i, 0.2])),
@@ -8905,9 +9190,10 @@ export function createVoxelGame(
   }
   function baseToolSpeed(block: number): number {
     block = stepBase(block) ?? block; // a stair or slab is dug like the block it is made of
-    if (heldItem === ITEM_SHEARS) return isLeaves(block) || block === BLOCK_TALL_GRASS || block === BLOCK_DEAD_BUSH ? 8 : isWool(block) ? 5 : 1;
+    if (heldItem === ITEM_SHEARS) return block === BLOCK_COBWEB ? 15 : isLeaves(block) || block === BLOCK_TALL_GRASS || block === BLOCK_DEAD_BUSH ? 8 : isWool(block) ? 5 : 1;
     const t = heldTool();
     if (!t) return 1;
+    if (t.kind === 'sword' && block === BLOCK_COBWEB) return 15; // a sword cuts through webs
     if (t.kind === 'pickaxe' && requiredTier(block) > 0) return t.speed;
     if (t.kind === 'axe' && (isLog(block) || isPlanks(block) || block === BLOCK_CRAFTING_TABLE || block === BLOCK_CHEST || isBed(block) || (isDoor(block) && !isIronDoor(block)) || (block >= BLOCK_TRAPDOOR && block <= BLOCK_CAMPFIRE) || isTrapdoorLow(block) || block === BLOCK_BOOKSHELF)) return t.speed;
     if (t.kind === 'sword' && isLeaves(block)) return 1.5;
@@ -8966,12 +9252,14 @@ export function createVoxelGame(
   }
   function dropsFor(block: number, tooWeak: boolean, tool: ItemStack | null = null): Array<[number, number]> {
     if (tooWeak) return [];
-    if (tool?.id === ITEM_SHEARS && (isLeaves(block) || block === BLOCK_TALL_GRASS || block === BLOCK_DEAD_BUSH)) return [[block, 1]]; // shears keep leaves and grass whole
+    if (tool?.id === ITEM_SHEARS && (isLeaves(block) || block === BLOCK_TALL_GRASS || block === BLOCK_DEAD_BUSH || block === BLOCK_COBWEB)) return [[block, 1]]; // shears keep leaves, grass and cobwebs whole (like Silk Touch)
+    if (block === BLOCK_COBWEB) return TOOLS[tool?.id ?? -1]?.kind === 'sword' || enchLevel(tool, 'silk_touch') > 0 ? (enchLevel(tool, 'silk_touch') > 0 ? [[BLOCK_COBWEB, 1]] : [[ITEM_STRING, 1]]) : []; // string with a sword; nothing by hand
     if (enchLevel(tool, 'silk_touch') > 0 && silkable(block)) return [[block, 1]];
     if (isLeaves(block)) {
       const out: Array<[number, number]> = [];
       if (Math.random() < 0.06) out.push([ITEM_STICK, Math.random() < 0.3 ? 2 : 1]);
       if ((block === BLOCK_LEAVES || block === 1032) && Math.random() < 0.025) out.push([ITEM_APPLE, 1]); // oak and dark oak
+      if (block === BLOCK_CINDER_LEAVES && Math.random() < 0.03) out.push([ITEM_BLAZE_POWDER, 1]); // embers
       return out;
     }
     if (block === BLOCK_GRAVEL) return Math.random() < 0.1 ? [[ITEM_FLINT, 1]] : [[BLOCK_GRAVEL, 1]];
@@ -9153,6 +9441,10 @@ export function createVoxelGame(
   let swordBlocking = false;
   let blockLerp = 0;
   let crouchNow = false;
+  let inWeb = false;
+  /** In water and moving: the body leans forward and the arms stroke (you in F5, and other players see it) */
+  let swimming = false;
+  let swimLerp = 0;
   let equipLerp = 0; // 1 right after switching items, falls to 0 as the new item rises into view
   let sprintLerp = 0;
   let idleT = 0;
@@ -9177,6 +9469,44 @@ export function createVoxelGame(
     offMesh = m;
   }
 
+  /** The enchantment shine on the item in your hand: a copy of its shape, lit by moving purple bands. */
+  function makeGlint(src: THREE.Mesh): THREE.Mesh {
+    const g = src.geometry.clone();
+    const pos = g.getAttribute('position');
+    g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(Math.max(0, pos.count) * 3), 3));
+    const mat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    const m = new THREE.Mesh(g, mat);
+    m.renderOrder = 1000;
+    m.frustumCulled = false;
+    m.userData.glintSrc = src.geometry;
+    return m;
+  }
+  /** Moves the shine along: two soft bands sweep diagonally across the item, like Minecraft's glint. */
+  function tickGlint(m: THREE.Mesh, t: number) {
+    const pos = m.geometry.getAttribute('position'), col = m.geometry.getAttribute('color') as THREE.BufferAttribute;
+    if (!pos || !col || !col.array) return;
+    const a = col.array as Float32Array;
+    for (let i = 0; i < pos.count; i++) {
+      const v = pos.getX(i) * 1.6 + pos.getY(i) * 1.1 - t * 0.9;
+      const band = Math.max(0, 1 - Math.abs(((v % 1.4) + 1.4) % 1.4 - 0.7) * 3.2);
+      const band2 = Math.max(0, 1 - Math.abs(((v * 0.6 + 0.35) % 1.1 + 1.1) % 1.1 - 0.55) * 4);
+      const k = 0.16 + 0.75 * band + 0.35 * band2;
+      a[i * 3] = 0.55 * k; a[i * 3 + 1] = 0.2 * k; a[i * 3 + 2] = 1.0 * k;
+    }
+    col.needsUpdate = true;
+  }
+  let glintMesh: THREE.Mesh | null = null;
+  function updateHeldGlint(t: number) {
+    const st = slots[selectedSlot];
+    const want = !!heldMesh && !!st && !!st.ench && Object.keys(st.ench).length > 0 && perspective === 0;
+    if (glintMesh && (!want || glintMesh.parent !== heldMesh || glintMesh.userData.glintSrc !== heldMesh!.geometry)) {
+      glintMesh.parent?.remove(glintMesh); glintMesh.geometry.dispose(); (glintMesh.material as THREE.Material).dispose(); glintMesh = null;
+    }
+    if (!want || !heldMesh) return;
+    if (!glintMesh) { glintMesh = makeGlint(heldMesh); heldMesh.add(glintMesh); }
+    tickGlint(glintMesh, t);
+  }
+
   function updateHeldMesh() {
     if (heldMeshId === heldItem) return;
     equipLerp = 1; // the new item rises up from below
@@ -9198,9 +9528,9 @@ export function createVoxelGame(
       heldBase.set(0.52, -0.46, -0.82);
       m.rotation.set(0.1, Math.PI / 4, 0);
     } else if (heldItem === ITEM_BOW) {
-      m.scale.setScalar(0.8);
-      heldBase.set(0.42, -0.3, -0.85);
-      m.rotation.set(0, -0.35, Math.PI / 4);
+      m.scale.setScalar(0.92);
+      heldBase.set(0.4, -0.28, -0.82);
+      m.rotation.set(0.05, -0.55, 0.5);
     } else if (TOOLS[heldItem]?.kind === 'sword') {
       m.scale.setScalar(SWORD_FP.scale);
       heldBase.set(SWORD_FP.x, SWORD_FP.y, SWORD_FP.z);
@@ -9262,6 +9592,15 @@ export function createVoxelGame(
       dropThrownCb({ n: net, item: st.id, count: st.count, x: +pos.x.toFixed(2), y: +pos.y.toFixed(2), z: +pos.z.toFixed(2), vx: +vel.x.toFixed(2), vy: +vel.y.toFixed(2), vz: +vel.z.toFixed(2), ...(Object.keys(extra).length ? { d: JSON.stringify(extra) } : {}) });
     }
     spawnDroppedItem(st.id, st.count, pos, vel, 1.5, st, net);
+  }
+  /** A drop everyone online should see (a block you broke): shared like a thrown item, or just here when playing alone. */
+  function spawnSharedDrop(id: number, count: number, pos: THREE.Vector3, vel: THREE.Vector3, pickupDelay: number) {
+    let net: string | undefined;
+    if (netEnabled && dropThrownCb) {
+      net = Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-5);
+      dropThrownCb({ n: net, item: id, count, x: +pos.x.toFixed(2), y: +pos.y.toFixed(2), z: +pos.z.toFixed(2), vx: +vel.x.toFixed(2), vy: +vel.y.toFixed(2), vz: +vel.z.toFixed(2) });
+    }
+    spawnDroppedItem(id, count, pos, vel, pickupDelay, undefined, net);
   }
 
   /** Online: somebody else threw an item. */
@@ -9480,21 +9819,53 @@ export function createVoxelGame(
     if (action === 'step' ? !blockSoundPrefs.footsteps : action === 'place' ? !blockSoundPrefs.placing : !blockSoundPrefs.breaking) return;
     if (blockSoundPrefs.volume <= 0) return;
     block = stepBase(block) ?? block;
-    const kind = block === BLOCK_STONE || block === BLOCK_BEDROCK || block === BLOCK_OBSIDIAN || isConcrete(block) || block === BLOCK_SPAWNER || (block >= BLOCK_COAL_ORE && block <= BLOCK_EMERALD_ORE) ? 'stone'
-      : block === BLOCK_WOOD || block === BLOCK_CRAFTING_TABLE || block === ITEM_PLANKS || (block >= BLOCK_TRAPDOOR && block <= BLOCK_CAMPFIRE) || isTrapdoorLow(block) ? 'wood'
-      : block === BLOCK_SAND || block === BLOCK_RED_SAND ? 'sand'
-      : isTerracotta(block) || (block >= BLOCK_LAPIS_ORE && block <= BLOCK_ENCHANTING_TABLE && block !== BLOCK_BOOKSHELF) || isAnvil(block) || isLamp(block) || (block >= 1094 && block <= 1097) ? 'stone'
-      : isWool(block) ? 'snow'
-      : block === BLOCK_BOOKSHELF || isItemFrame(block) ? 'wood'
-      : block === BLOCK_SNOW ? 'snow'
-      : 'grass';
+    const kind = blockSoundKind(block);
     const vol = (action === 'break' ? 0.9 : action === 'place' ? 0.75 : action === 'dig' ? 0.35 : 0.22) * blockSoundPrefs.volume;
     const dur = action === 'break' ? 0.22 : action === 'place' ? 0.14 : action === 'dig' ? 0.07 : 0.09;
-    if (kind === 'stone') noiseHit(pos, 'bandpass', 2200, 900, dur, vol, 0, 1.2);
-    else if (kind === 'wood') { noiseHit(pos, 'bandpass', 700, 400, dur, vol, 0, 2.5); tone(pos, 'triangle', 220, 140, dur * 0.8, vol * 0.35); }
-    else if (kind === 'sand') noiseHit(pos, 'highpass', 3000, 2000, dur * 1.2, vol * 0.8);
-    else if (kind === 'snow') noiseHit(pos, 'lowpass', 2500, 1200, dur * 1.2, vol * 0.7);
-    else noiseHit(pos, 'lowpass', 1400, 500, dur, vol);
+    const v = 0.9 + Math.random() * 0.2; // a little different every time
+    switch (kind) {
+      case 'stone': noiseHit(pos, 'bandpass', 2200 * v, 900, dur, vol, 0, 1.2); break;
+      case 'nether': noiseHit(pos, 'bandpass', 1300 * v, 500, dur, vol, 0, 1.6); tone(pos, 'triangle', 160, 90, dur * 0.6, vol * 0.18); break; // netherrack: duller, deeper
+      case 'wood': noiseHit(pos, 'bandpass', 700 * v, 400, dur, vol, 0, 2.5); tone(pos, 'triangle', 220 * v, 140, dur * 0.8, vol * 0.35); break;
+      case 'sand': noiseHit(pos, 'highpass', 3000 * v, 2000, dur * 1.2, vol * 0.8); break;
+      case 'gravel': noiseHit(pos, 'bandpass', 1600 * v, 700, dur * 1.3, vol * 0.95, 0, 0.7); noiseHit(pos, 'highpass', 2600, 1800, dur * 0.8, vol * 0.4, 0.03); break; // crunchy
+      case 'dirt': noiseHit(pos, 'lowpass', 1100 * v, 380, dur * 1.1, vol * 0.95); break;
+      case 'leaves': noiseHit(pos, 'highpass', 2200 * v, 3800, dur * 1.6, vol * 0.55); break; // a rustle
+      case 'glass': noiseHit(pos, 'highpass', 4200 * v, 3000, dur * 0.8, vol * 0.7); tone(pos, 'sine', 2600 * v, 2200, dur * 0.6, vol * 0.2); break;
+      case 'metal': noiseHit(pos, 'bandpass', 3200 * v, 2400, dur, vol * 0.7, 0, 3); tone(pos, 'square', 520 * v, 480, dur * 1.2, vol * 0.12); break;
+      case 'soul': noiseHit(pos, 'lowpass', 700 * v, 250, dur * 1.5, vol * 0.9); tone(pos, 'sine', 90, 60, dur, vol * 0.12); break; // soul sand: soft and hollow
+      case 'wool': noiseHit(pos, 'lowpass', 900 * v, 500, dur * 1.3, vol * 0.5); break;
+      case 'snow': noiseHit(pos, 'lowpass', 2500 * v, 1200, dur * 1.2, vol * 0.7); break;
+      default: noiseHit(pos, 'lowpass', 1400 * v, 500, dur, vol); // grass
+    }
+  }
+  /** What a block sounds like under your feet and when it breaks. */
+  function blockSoundKind(block: number): 'stone' | 'nether' | 'wood' | 'sand' | 'gravel' | 'dirt' | 'leaves' | 'glass' | 'metal' | 'soul' | 'wool' | 'snow' | 'grass' {
+    if (block === BLOCK_NETHERRACK || block === BLOCK_QUARTZ_ORE || block === BLOCK_MAGMA || block === BLOCK_INFERNIUM_ORE) return 'nether';
+    if (block === BLOCK_SOUL_SAND || block === BLOCK_SOUL_SOIL) return 'soul';
+    if (block === BLOCK_GRAVEL) return 'gravel';
+    if (block === BLOCK_DIRT || block === BLOCK_FARMLAND) return 'dirt';
+    if (isLeaves(block) || block === BLOCK_TALL_GRASS || isFlower(block) || block === BLOCK_COBWEB) return 'leaves';
+    if (block === BLOCK_GLASS || block === BLOCK_GLASS_PANE || isIce(block) || block === BLOCK_GLOWSTONE) return 'glass';
+    if (block === BLOCK_IRON_BLOCK || block === BLOCK_GOLD_BLOCK || block === BLOCK_DIAMOND_BLOCK || block === BLOCK_EMERALD_BLOCK || block === BLOCK_LAPIS_BLOCK || block === BLOCK_INFERNIUM_BLOCK || block === BLOCK_REDSTONE_BLOCK || isAnvil(block) || isIronDoor(block)) return 'metal';
+    if (isWool(block)) return 'wool';
+    if (block === BLOCK_SNOW) return 'snow';
+    if (block === BLOCK_SAND || block === BLOCK_RED_SAND) return 'sand';
+    if (isLog(block) || isPlanks(block) || block === BLOCK_WOOD || block === BLOCK_CRAFTING_TABLE || block === BLOCK_CHEST || block === BLOCK_BOOKSHELF || isItemFrame(block) || isDoor(block) || isBed(block) || (block >= BLOCK_TRAPDOOR && block <= BLOCK_CAMPFIRE) || isTrapdoorLow(block)) return 'wood';
+    if (block === BLOCK_GRASS) return 'grass';
+    if (block === BLOCK_STONE || block === BLOCK_BEDROCK || block === BLOCK_OBSIDIAN || isConcrete(block) || block === BLOCK_SPAWNER || (block >= BLOCK_COAL_ORE && block <= BLOCK_EMERALD_ORE)
+      || isTerracotta(block) || (block >= BLOCK_LAPIS_ORE && block <= BLOCK_ENCHANTING_TABLE) || isLamp(block) || (block >= 1094 && block <= 1097)
+      || block === BLOCK_GRANITE || block === BLOCK_DIORITE || block === BLOCK_ANDESITE || block === BLOCK_FURNACE || block === BLOCK_DIAMOND_ORE || block === BLOCK_CACTUS) return 'stone';
+    return isSolid(block) ? 'stone' : 'grass';
+  }
+  /** Water: a stroke when you swim, a slosh when you wade, a plunge when you jump in. */
+  function playWaterSound(kind: 'swim' | 'wade' | 'enter' | 'exit', pos: THREE.Vector3 | null) {
+    if (!blockSoundPrefs.footsteps || blockSoundPrefs.volume <= 0) return;
+    const vol = blockSoundPrefs.volume, v = 0.85 + Math.random() * 0.3;
+    if (kind === 'swim') { noiseHit(pos, 'lowpass', 1200 * v, 380, 0.28, 0.32 * vol); tone(pos, 'sine', 300 * v, 520 * v, 0.08, 0.05 * vol, 0.04); }
+    else if (kind === 'wade') { noiseHit(pos, 'bandpass', 900 * v, 500, 0.16, 0.26 * vol, 0, 1.4); }
+    else if (kind === 'enter') { noiseHit(pos, 'lowpass', 2200, 300, 0.55, 0.6 * vol); for (let i = 0; i < 3; i++) tone(pos, 'sine', 400 + Math.random() * 400, 900 + Math.random() * 500, 0.07, 0.05 * vol, 0.08 + i * 0.06); }
+    else { noiseHit(pos, 'lowpass', 1600, 600, 0.25, 0.3 * vol); }
   }
 
   function playMobSound(kind: MobKind, pos: THREE.Vector3, hurt: boolean) {
@@ -9979,7 +10350,8 @@ export function createVoxelGame(
     if (kind === 'sheep') {
       // mostly white, sometimes gray, black or pink, like Minecraft
       const r = Math.random();
-      variant = opts.color ?? (r < 0.82 ? 0 : r < 0.88 ? 2 : r < 0.94 ? 1 : r < 0.97 ? 11 : 4);
+      // mostly white; sometimes gray or black, and now and then a bright one
+      variant = opts.color ?? (r < 0.7 ? 0 : r < 0.8 ? 2 : r < 0.88 ? 1 : r < 0.91 ? 11 : r < 0.935 ? 4 : r < 0.955 ? 5 : r < 0.97 ? 9 : r < 0.98 ? 10 : r < 0.99 ? 6 : 3);
     }
     if (kind === 'cinderbone') variant = opts.color ?? (Math.random() < 0.2 ? 1 : 0); // 1 in 5 carries a bow, the rest a stone sword
     if (kind === 'bot') variant = opts.color ?? 0; // team color
@@ -12109,6 +12481,27 @@ export function createVoxelGame(
   const arrowShaftMat = new THREE.MeshLambertMaterial({ color: 0x8a6a3c });
   const arrowTipMat = new THREE.MeshLambertMaterial({ color: 0x9a9a9a });
   const arrowFlameMat = new THREE.MeshLambertMaterial({ color: 0xff8a1a, emissive: 0xc04a00 });
+  const arrowFeatherGeoA = new THREE.BoxGeometry(0.17, 0.008, 0.16), arrowFeatherGeoB = new THREE.BoxGeometry(0.008, 0.17, 0.16);
+  const arrowFeatherMat = new THREE.MeshLambertMaterial({ color: 0xf2f2f2 });
+  const arrowHeadGeo = new THREE.BoxGeometry(0.11, 0.11, 0.05);
+  /** A real 3D arrow (the point is at +z): a wooden shaft, a stone head, and two crossed feathers at the back. */
+  function buildArrow(flame = false): { mesh: THREE.Group; tip: THREE.Mesh } {
+    const mesh = new THREE.Group();
+    mesh.add(new THREE.Mesh(arrowShaftGeo, arrowShaftMat));
+    const tip = new THREE.Mesh(arrowTipGeo, flame ? arrowFlameMat : arrowTipMat);
+    tip.position.z = 0.32;
+    tip.rotation.z = Math.PI / 4; // a diamond point
+    mesh.add(tip);
+    const barb = new THREE.Mesh(arrowHeadGeo, flame ? arrowFlameMat : arrowTipMat);
+    barb.position.z = 0.27; barb.rotation.z = Math.PI / 4;
+    mesh.add(barb);
+    for (const g of [arrowFeatherGeoA, arrowFeatherGeoB]) {
+      const f = new THREE.Mesh(g, arrowFeatherMat);
+      f.position.z = -0.24;
+      mesh.add(f);
+    }
+    return { mesh, tip };
+  }
   // The arrow nocked on the bow while you draw it (first person): it slides back with the string, then flies off
   const nockMesh = new THREE.Group();
   {
@@ -12138,11 +12531,7 @@ export function createVoxelGame(
     vel.z += (Math.random() - 0.5) * 1.2;
     from.x += (d.x / dh) * 0.6;
     from.z += (d.z / dh) * 0.6;
-    const mesh = new THREE.Group();
-    mesh.add(new THREE.Mesh(arrowShaftGeo, arrowShaftMat));
-    const tip = new THREE.Mesh(arrowTipGeo, arrowTipMat);
-    tip.position.z = 0.32;
-    mesh.add(tip);
+    const { mesh } = buildArrow(!!o.flame);
     mesh.position.copy(from);
     scene.add(mesh);
     arrows.push({ mesh, pos: from, vel, life: 0, stuck: false, owner: 'mob', damage: o.damage ?? 3, cause: o.cause, blight: o.blight, flame: o.flame });
@@ -12812,18 +13201,32 @@ export function createVoxelGame(
   // ---- Footsteps ----
   const lastStepPos = new THREE.Vector3();
   let stepAccum = 0;
+  let feetWetBefore = false;
   function updateFootsteps() {
     const dx = camera.position.x - lastStepPos.x, dz = camera.position.z - lastStepPos.z;
     lastStepPos.copy(camera.position);
-    if (!wasGrounded || isFlying || mode === 'spectator') return;
+    if (isFlying || mode === 'spectator') return;
+    const f = playerFeet();
+    const feetWet = isWater(world.getWorldBlock(Math.floor(f.x), Math.floor(f.y + 0.2), Math.floor(f.z)));
+    // jumping in (falling into it fast) or climbing out of the water
+    if (feetWet && !feetWetBefore && velocityY < -4) playWaterSound('enter', null);
+    else if (!feetWet && feetWetBefore && wasGrounded) playWaterSound('exit', null);
+    feetWetBefore = feetWet;
     const moved = Math.hypot(dx, dz);
     if (moved > 2) return; // teleported
+    if (feetWet && (swimming || !wasGrounded)) {
+      stepAccum += moved;
+      if (stepAccum > 1.4) { stepAccum = 0; playWaterSound('swim', null); }
+      return;
+    }
+    if (!wasGrounded) return;
     stepAccum += moved;
     if (stepAccum > 1.6) {
       stepAccum = 0;
-      const f = playerFeet();
+      if (feetWet) { playWaterSound('wade', null); return; } // walking through shallow water
       const b = world.getWorldBlock(Math.floor(f.x), Math.floor(f.y - 0.1), Math.floor(f.z));
       if (isSolid(b)) playBlockSound(b, null, 'step');
+      else if (b === BLOCK_COBWEB || isFlower(b) || b === BLOCK_TALL_GRASS) playBlockSound(b, null, 'step');
     }
   }
 
@@ -12888,8 +13291,9 @@ export function createVoxelGame(
     const swing = entityAnimOff ? 0 : Math.sin(playerWalkPhase) * Math.min(1, moved / (dt * 3 + 1e-6)) * 0.7;
     playerModel.root.position.copy(sleeping ? sleepBodyPos(sleeping) : feet);
     playerModel.root.rotation.y = sleeping ? sleeping.lieYaw : yaw;
-    playerModel.root.rotation.x = sleeping ? Math.PI / 2 : 0;
-    playerModel.head.rotation.x = sleeping ? 0 : pitch;
+    swimLerp += ((swimming && !sleeping && !entityAnimOff ? 1 : 0) - swimLerp) * Math.min(1, dt * 6);
+    playerModel.root.rotation.x = sleeping ? Math.PI / 2 : -SWIM_LEAN * swimLerp;
+    playerModel.head.rotation.x = sleeping ? 0 : pitch + SWIM_LEAN * 0.85 * swimLerp;
     playerModel.legs[0].rotation.x = sleeping ? 0 : swing;
     playerModel.legs[1].rotation.x = sleeping ? 0 : -swing;
     holdOnModel(playerModel, ghostOn ? null : heldItem);
@@ -12901,6 +13305,7 @@ export function createVoxelGame(
       t: entityAnimOff ? 0 : performance.now() / 1000,
     });
     crouchPose(playerModel, sleeping || entityAnimOff ? 0 : crouchLerp); // sneaking: lean forward, sink a little
+    if (swimLerp > 0.02) swimPose(playerModel, swimLerp, playerWalkPhase + performance.now() / 260);
 
     // Pull the camera in if a wall is in the way
     const dir = new THREE.Vector3();
@@ -13065,13 +13470,13 @@ export function createVoxelGame(
       const b = sleepBodyPos(sleeping);
       return { x: b.x, y: b.y, z: b.z, yaw: sleeping.lieYaw, pitch: 0, mode, held: 0, act: 16 };
     }
-    return { x: camera.position.x, y: camera.position.y - PLAYER_EYE, z: camera.position.z, yaw, pitch, mode, held: heldItem ?? 0, act: (punchPhase > 0 || isMining ? 1 : 0) | (gunAiming ? 2 : 0) | (bowDrawing ? 4 : 0) | (swordBlocking ? 8 : 0) | (crouchNow ? 32 : 0) };
+    return { x: camera.position.x, y: camera.position.y - PLAYER_EYE, z: camera.position.z, yaw, pitch, mode, held: heldItem ?? 0, act: (punchPhase > 0 || isMining ? 1 : 0) | (gunAiming ? 2 : 0) | (bowDrawing ? 4 : 0) | (swordBlocking ? 8 : 0) | (crouchNow ? 32 : 0) | (swimming ? 64 : 0) };
   }
 
   type RemotePlayer = {
     model: MobModel; tag: THREE.Sprite; tagTex: THREE.Texture; nt?: NameTag;
     pos: THREE.Vector3; target: THREE.Vector3; yaw: number; targetYaw: number; pitch: number;
-    mode: string; walkPhase: number; held: number; act: number; punchClock: number; crouch: number; hurtFlash?: number; name?: string;
+    mode: string; walkPhase: number; held: number; act: number; punchClock: number; crouch: number; hurtFlash?: number; name?: string; swim?: number;
   };
   const remotePlayers = new Map<number, RemotePlayer>();
 
@@ -13183,8 +13588,10 @@ export function createVoxelGame(
       m.root.position.copy(rp.pos);
       m.root.rotation.y = rp.yaw;
       const lying = (rp.act & 16) !== 0;
-      m.root.rotation.x = lying ? Math.PI / 2 : 0;
-      m.head.rotation.x = lying ? 0 : rp.pitch;
+      const swim = !lying && !entityAnimOff && (rp.act & 64) !== 0;
+      rp.swim = (rp.swim ?? 0) + ((swim ? 1 : 0) - (rp.swim ?? 0)) * Math.min(1, dt * 6);
+      m.root.rotation.x = lying ? Math.PI / 2 : -SWIM_LEAN * rp.swim;
+      m.head.rotation.x = lying ? 0 : rp.pitch + SWIM_LEAN * 0.85 * rp.swim; // the head stays up, looking ahead
       m.legs[0].rotation.x = lying ? 0 : swing;
       m.legs[1].rotation.x = lying ? 0 : -swing;
       holdOnModel(m, rp.held > 0 ? rp.held : null);
@@ -13196,6 +13603,7 @@ export function createVoxelGame(
       });
       rp.crouch += (((rp.act & 32) !== 0 && !lying ? 1 : 0) - rp.crouch) * Math.min(1, dt * 14);
       crouchPose(m, entityAnimOff ? 0 : rp.crouch);
+      if (rp.swim > 0.02) swimPose(m, rp.swim, rp.walkPhase + performance.now() / 260);
       if (rp.hurtFlash !== undefined) { // hit: a red flash, like mobs
         rp.hurtFlash -= dt;
         const on = rp.hurtFlash > 0;
@@ -14548,17 +14956,12 @@ export function createVoxelGame(
     camera.getWorldDirection(dir);
     const from = camera.position.clone().addScaledVector(dir, 0.6);
     from.y -= 0.1;
-    const mesh = new THREE.Group();
-    mesh.add(new THREE.Mesh(arrowShaftGeo, arrowShaftMat));
-    const tip = new THREE.Mesh(arrowTipGeo, arrowTipMat);
-    tip.position.z = 0.32;
-    mesh.add(tip);
-    mesh.position.copy(from);
-    scene.add(mesh);
     // Full draw = fast and hard-hitting (up to 9 damage), like Minecraft
     const power = enchLevel(slots[selectedSlot], 'power');
     const flame = enchLevel(slots[selectedSlot], 'flame') > 0, punch = enchLevel(slots[selectedSlot], 'punch');
-    if (flame) tip.material = arrowFlameMat; // a flaming arrow glows orange
+    const { mesh } = buildArrow(flame); // a flaming arrow glows orange
+    mesh.position.copy(from);
+    scene.add(mesh);
     arrows.push({ mesh, pos: from, vel: dir.multiplyScalar(12 + 28 * charge), life: 0, stuck: false, owner: 'player', damage: Math.round((2 + 7 * charge) * (power ? 1 + 0.25 * (power + 1) : 1)), flame, punch, free: infinite });
     playSfx('bow', null);
     if (heldItem === ITEM_BOW) wearHeld(1);
@@ -15251,6 +15654,8 @@ export function createVoxelGame(
     waterUniforms.uDay.value = currentDayAmt;
     foliageUniforms.uTime.value += dt;
     lavaTex.offset.x = (lavaTex.offset.x + dt * 0.03) % 1;
+    lavaClock += dt;
+    if (lavaClock - lavaFrameAt > (entityAnimOff ? 1e9 : 0.11)) { lavaFrameAt = lavaClock; drawLavaFrame(lavaClock); lavaTex.needsUpdate = true; } // (Low graphics: still)
     portalTex.offset.y = (portalTex.offset.y + dt * 0.25) % 1;
     portalTex.offset.x = Math.sin(waterUniforms.uTime.value * 0.7) * 0.1;
   }
@@ -15367,6 +15772,32 @@ export function createVoxelGame(
       if (d.dimension === 'nether') switchDimension('nether', pos.x, pos.y, pos.z);
       else pendingDimRestore = pos; // a mod's dimension: go back once the mod creates it again
     }
+  }
+
+  /** Just you (not the world): what you carry, where you are, health, hunger and XP. Kept for worlds you join. */
+  function getPlayerSave(): PlayerSave {
+    return {
+      v: 1, x: camera.position.x, y: camera.position.y, z: camera.position.z, yaw, pitch, health, hunger, selected: selectedSlot,
+      slots: slots.map((st) => (st ? { ...st } : null)), offhand: offhand ? { ...offhand } : null, armor: armor.map((st) => (st ? { ...st } : null)),
+      xp: { level: xpLevel, progress: xpProgress }, dimension,
+    };
+  }
+  function loadPlayerSave(d: PlayerSave) {
+    if (!d || d.v !== 1) return;
+    for (let i = 0; i < INVENTORY_SIZE; i++) slots[i] = cleanStack(d.slots?.[i] ?? null);
+    offhand = cleanStack(d.offhand ?? null);
+    for (let i = 0; i < 4; i++) armor[i] = cleanStack(d.armor?.[i] ?? null);
+    selectedSlot = Number.isInteger(d.selected) && d.selected >= 0 && d.selected < 9 ? d.selected : 0;
+    if ([d.x, d.y, d.z].every(Number.isFinite) && (d.dimension ?? 'overworld') === dimension) {
+      camera.position.set(d.x, d.y, d.z);
+      if (Number.isFinite(d.yaw)) yaw = d.yaw;
+      if (Number.isFinite(d.pitch)) pitch = d.pitch;
+      velocityY = 0; wasGrounded = true; fallPeakY = camera.position.y;
+      currentChunkX = Infinity;
+    }
+    setStats(d.health > 0 ? Math.min(20, d.health) : 20, Math.max(0, Math.min(20, Number(d.hunger) || 20)));
+    if (d.xp && Number.isFinite(d.xp.level)) setXp(d.xp.level, Number(d.xp.progress) || 0);
+    notifyInventory();
   }
 
   // =================================================================
@@ -16322,11 +16753,14 @@ export function createVoxelGame(
       }
       gl_FragColor = vec4(vec3(acc / 56.0 * uStrength), 1.0);
     }`;
-  const POST_FINAL = `
+  const POST_FINAL_HEAD = `
     uniform sampler2D tScene; uniform sampler2D tAO; uniform sampler2D tB0; uniform sampler2D tB1; uniform sampler2D tB2; uniform sampler2D tB3; uniform sampler2D tRays;
     uniform vec2 uTexel; uniform vec2 uAoTexel; uniform vec3 uSunColor; uniform vec2 uSun; uniform float uSunGlow;
     uniform float uBloom; uniform float uAO; uniform float uExposure; uniform float uVignette; uniform float uTime; uniform float uUnder; uniform float uAspect;
-    varying vec2 vUv;
+    uniform sampler2D tDepth; uniform float uNear; uniform float uFar; uniform float uFog; uniform vec3 uFogColor; uniform vec2 uBlurDir;
+    uniform float uSat; uniform float uCon; uniform float uBri; uniform float uWarm;
+    varying vec2 vUv;`;
+  const POST_FINAL = POST_FINAL_HEAD + `
     float luma(vec3 c){ return dot(c, vec3(0.299, 0.587, 0.114)); }
     float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
     vec3 aces(vec3 x){ return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
@@ -16334,6 +16768,12 @@ export function createVoxelGame(
       vec2 cen = vUv - 0.5;
       vec2 ca = cen * 0.0018;
       vec3 c = vec3(texture2D(tScene, vUv + ca).r, texture2D(tScene, vUv).g, texture2D(tScene, vUv - ca).b);
+      // motion blur: smear along the way the camera is turning
+      if (dot(uBlurDir, uBlurDir) > 1e-8) {
+        vec3 acc = c;
+        for (int i = 1; i < 8; i++) { float k = float(i) / 7.0 - 0.5; acc += texture2D(tScene, vUv + uBlurDir * k).rgb; }
+        c = acc / 8.0;
+      }
       vec3 n = texture2D(tScene, vUv + vec2(0.0, uTexel.y)).rgb;
       vec3 s = texture2D(tScene, vUv - vec2(0.0, uTexel.y)).rgb;
       vec3 e = texture2D(tScene, vUv + vec2(uTexel.x, 0.0)).rgb;
@@ -16358,23 +16798,46 @@ export function createVoxelGame(
       float sdist = length(sd);
       c += uSunColor * (exp(-sdist * sdist * 40.0) * 0.35 + exp(-sdist * 3.5) * 0.06) * uSunGlow;
       c += uSunColor * texture2D(tRays, vUv).rgb * 0.9;
+      // volumetric fog: thicker with distance, glowing in the sun's colour when you look towards it
+      if (uFog > 0.0) {
+        float dz = texture2D(tDepth, vUv).x;
+        float zl = 2.0 * uNear * uFar / (uFar + uNear - (dz * 2.0 - 1.0) * (uFar - uNear));
+        float fa = (1.0 - exp(-zl * 0.012)) * uFog;
+        vec3 fc = uFogColor + uSunColor * exp(-sdist * 2.2) * 0.35 * uSunGlow;
+        c = mix(c, fc, clamp(fa, 0.0, 0.85));
+      }
       c = mix(c, c * vec3(0.55, 0.8, 1.0), uUnder);
       c *= uExposure;
       c = aces(c);
       float g = luma(c);
       c = mix(vec3(g), c, 1.12);
       c = c * c * (3.0 - 2.0 * c) * 0.35 + c * 0.65;
+      // shader pack colour grade
+      c *= uBri;
+      c = (c - 0.5) * uCon + 0.5;
+      c = mix(vec3(luma(c)), c, uSat);
+      c *= vec3(1.0 + 0.12 * uWarm, 1.0 + 0.02 * uWarm, 1.0 - 0.14 * uWarm);
+      c = clamp(c, 0.0, 1.0);
+      CUSTOM_CALL
       c *= clamp(1.0 - dot(cen, cen) * uVignette, 0.0, 1.0);
       c += (hash(gl_FragCoord.xy + uTime) - 0.5) / 255.0;
       gl_FragColor = vec4(c, 1.0);
       gl_FragColor = linearToOutputTexel(gl_FragColor);
     }`;
+  /** The final pass, with a shader pack's own GLSL function (if it has one) run last on every pixel. */
+  function finalShader(glsl: string | undefined): string {
+    if (!glsl) return POST_FINAL.replace('CUSTOM_CALL', '');
+    const at = POST_FINAL.indexOf('void main(){');
+    return POST_FINAL.slice(0, at) + '\n' + glsl + '\n' + POST_FINAL.slice(at).replace('CUSTOM_CALL', 'c = clamp(customGrade(c, vUv, uTime), 0.0, 1.0);');
+  }
 
   type PostRig = {
     w: number; h: number;
     scene: any; ao: any; rays: any;
     a: any[]; b: any[]; // bloom levels: ping / pong
     mats: Record<'ao' | 'bright' | 'blur' | 'rays' | 'final', any>;
+    /** the shader pack GLSL this rig was built with */
+    glsl?: string;
   };
   let post: PostRig | null = null;
   let postFailed = false;
@@ -16424,22 +16887,25 @@ export function createVoxelGame(
         bright: mk(POST_BRIGHT, { tScene: { value: scene.texture }, uThreshold: { value: 0.85 } }),
         blur: mk(POST_BLUR, { tSrc: { value: null }, uDir: { value: V2() } }),
         rays: mk(POST_RAYS, { tDepth: { value: scene.depthTexture }, uSun: { value: V2() }, uStrength: { value: 0 }, uAspect: { value: 1 } }),
-        final: mk(POST_FINAL, {
+        final: mk(finalShader(customGlslBroken ? undefined : shader.custom ? shader.pack?.glsl : undefined), {
           tScene: { value: scene.texture }, tAO: { value: ao.texture }, tB0: { value: a[0].texture }, tB1: { value: a[1].texture },
           tB2: { value: a[2].texture }, tB3: { value: a[3].texture }, tRays: { value: rays.texture },
           uTexel: { value: new T.Vector2(1 / scene.width, 1 / scene.height) }, uAoTexel: { value: new T.Vector2(1 / ao.width, 1 / ao.height) },
           uSunColor: { value: new T.Vector3(1, 0.9, 0.7) }, uSun: { value: V2() }, uSunGlow: { value: 0 },
           uBloom: { value: 0.55 }, uAO: { value: 0.9 }, uExposure: { value: 1.12 }, uVignette: { value: 0.55 },
           uTime: { value: 0 }, uUnder: { value: 0 }, uAspect: { value: 1 },
+          tDepth: { value: scene.depthTexture }, uNear: { value: 0.1 }, uFar: { value: 1000 }, uFog: { value: 0 }, uFogColor: { value: new T.Vector3(0.7, 0.8, 0.9) }, uBlurDir: { value: V2() },
+          uSat: { value: 1 }, uCon: { value: 1 }, uBri: { value: 1 }, uWarm: { value: 0 },
         }),
       };
       if (!postShaderHooked) {
         // Any shader the GPU refuses switches Max off (back to Epic) instead of showing a black screen
         const dbg = (renderer as any).debug;
-        if (dbg) { dbg.checkShaderErrors = true; dbg.onShaderError = () => { postFailed = true; }; }
+        // (a shader pack's own GLSL that won't compile only switches that GLSL off)
+        if (dbg) { dbg.checkShaderErrors = true; dbg.onShaderError = () => { if (shader.custom && shader.pack?.glsl && !customGlslBroken) { customGlslBroken = true; disposePost(); engineEvent('shaderError', { pack: shader.pack.name }); } else postFailed = true; }; }
         postShaderHooked = true;
       }
-      return { w, h, scene, ao, rays, a, b, mats };
+      return { w, h, scene, ao, rays, a, b, mats, glsl: customGlslBroken ? undefined : shader.custom ? shader.pack?.glsl : undefined };
     } catch {
       return null;
     }
@@ -16457,7 +16923,8 @@ export function createVoxelGame(
     const dpr = window.devicePixelRatio || 1;
     const scale = Math.min(2, Math.max(1.25, dpr)); // always supersampled
     const w = Math.round(postSize.x * scale), h = Math.round(postSize.y * scale);
-    if (post && (post.w !== w || post.h !== h)) disposePost();
+    const glslNow = customGlslBroken ? undefined : shader.custom ? shader.pack?.glsl : undefined;
+    if (post && (post.w !== w || post.h !== h || post.glsl !== glslNow)) disposePost();
     if (!post) {
       post = makePost(w, h);
       if (!post) { postFailed = true; return false; }
@@ -16502,7 +16969,9 @@ export function createVoxelGame(
     }
 
     // 4. sun rays through gaps in trees, clouds and hills
-    M.rays.uniforms.uSun.value.set(sx, sy); M.rays.uniforms.uStrength.value = sunOn * 0.9; M.rays.uniforms.uAspect.value = cam.aspect;
+    const sp = S();
+    const rayK = sp ? ({ off: 0, low: 0.45, high: 1 } as const)[sp.godRays] : 1;
+    M.rays.uniforms.uSun.value.set(sx, sy); M.rays.uniforms.uStrength.value = sunOn * 0.9 * rayK; M.rays.uniforms.uAspect.value = cam.aspect;
     postPass(M.rays, p.rays);
 
     // 5. everything together, onto the screen
@@ -16510,7 +16979,17 @@ export function createVoxelGame(
     F.uSun.value.set(sx, sy); F.uSunGlow.value = sunOn; F.uAspect.value = cam.aspect; F.uTime.value = time % 10;
     F.uSunColor.value.set(1.0, 0.62 + 0.32 * warm, 0.35 + 0.45 * warm);
     F.uUnder.value = under;
-    F.uBloom.value = under ? 0.3 : 0.55;
+    const bloomK = sp ? sp.bloom / 100 : 0.55;
+    F.uBloom.value = under ? bloomK * 0.55 : bloomK;
+    F.uAO.value = sp ? ({ off: 0, low: 0.9, high: 1.25 } as const)[sp.globalIllumination] : 0.9;
+    F.uExposure.value = 1.12 * exposureNow;
+    F.uNear.value = cam.near; F.uFar.value = cam.far;
+    F.uFog.value = sp?.volumetricFog && dimension === 'overworld' ? 0.55 + 0.35 * weatherAmt : 0;
+    F.uFogColor.value.set(skyHorizon.r, skyHorizon.g, skyHorizon.b);
+    F.uBlurDir.value.set(blurDir.x, blurDir.y);
+    const g = sp?.pack?.grade ? { ...NEUTRAL_GRADE, ...sp.pack.grade } : NEUTRAL_GRADE;
+    F.uSat.value = g.saturation; F.uCon.value = g.contrast; F.uBri.value = g.brightness; F.uWarm.value = g.warmth;
+    F.uVignette.value = 0.55 + g.vignette;
     postPass(M.final, null);
     renderer.setRenderTarget(null);
     return true;
@@ -16538,15 +17017,16 @@ export function createVoxelGame(
     renderer.setPixelRatio(fast ? 1 : pixelRatioByTier[q]);
 
     // Shadows — off at Low, progressively higher-res & softer above that
-    const shadowsOn = q !== 'low' && !fast;
+    const sp = S();
+    const shadowsOn = (sp ? sp.shadows !== 'none' : q !== 'low') && !fast;
     renderer.shadowMap.enabled = shadowsOn;
     renderer.shadowMap.type = q === 'medium' ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
     dirLight.castShadow = shadowsOn;
     const shadowMapSizeByTier: Record<GraphicsQuality, number> = { low: 512, medium: 1024, high: 2048, epic: 4096, max: 4096 };
-    const size = shadowMapSizeByTier[q];
+    const size = sp ? ({ none: 512, low: 1024, medium: 2048, high: 4096, ultra: 4096 } as const)[sp.shadows] : shadowMapSizeByTier[q];
     dirLight.shadow.mapSize.set(size, size);
     const frustumByTier: Record<GraphicsQuality, number> = { low: 30, medium: 40, high: 55, epic: 70, max: 80 };
-    const f = frustumByTier[q];
+    const f = sp ? ({ none: 30, low: 40, medium: 55, high: 70, ultra: 90 } as const)[sp.shadows] : frustumByTier[q];
     dirLight.shadow.camera.left = -f;
     dirLight.shadow.camera.right = f;
     dirLight.shadow.camera.top = f;
@@ -16571,10 +17051,11 @@ export function createVoxelGame(
     // plus animated shader water instead.
     motionBlurEnabled = false;
     const top = q === 'epic' || q === 'max';
-    foliageUniforms.uWave.value = fast ? 0 : top ? 1 : q === 'high' ? 0.6 : 0;
-    waterUniforms.uWaves.value = fast ? 0 : top ? 1 : q === 'high' ? 0.7 : 0;
-    waterUniforms.uDetail.value = fast ? 0 : top ? 1 : 0;
-    if (q !== 'max' || fast) disposePost(); // the shader effects only run on Max
+    foliageUniforms.uWave.value = fast ? 0 : sp ? (sp.grassWave ? 1 : 0) : top ? 1 : q === 'high' ? 0.6 : 0;
+    waterUniforms.uWaves.value = fast ? 0 : sp ? (sp.waterShaders ? 1 : 0) : top ? 1 : q === 'high' ? 0.7 : 0;
+    waterUniforms.uDetail.value = fast ? 0 : sp ? (sp.waterShaders ? 1 : 0) : top ? 1 : 0;
+    if (!wantPost()) disposePost(); // the shader effects run on Max (or when a shader effect is switched on)
+    updateDynamicLight(true);
     // Low: no lighting and one still pose for every mob and player (items and the sky keep moving)
     entityAnimOff = q === 'low';
     flatLight = q === 'low';
@@ -17273,6 +17754,7 @@ export function createVoxelGame(
     updateBoats(delta); // before you move: in a boat, you go where the boat goes
     // Movement
     const noclip = mode === 'spectator';
+    swimming = false;
     const inFluidNow = noclip ? null : playerInFluid();
     // No sprinting at 3 hunger bars (6 points) or less, like Minecraft
     // No sprinting backwards, and none at 3 hunger bars (6 points) or less
@@ -17293,7 +17775,10 @@ export function createVoxelGame(
     // While flying, the crouch key (Left Alt) descends and the sprint key (Shift) flies faster
     const flySprint = isFlying && down('sprint');
     const onSoulSand = world.getWorldBlock(Math.floor(camera.position.x), Math.floor(camera.position.y - PLAYER_EYE - 0.1), Math.floor(camera.position.z)) === BLOCK_SOUL_SAND;
-    const fluidSlow = (inFluidNow === 'water' ? 0.6 : inFluidNow === 'lava' ? 0.45 : 1) * (onSoulSand ? 0.55 : 1);
+    // Cobwebs: you crawl through them (and fall slowly), until you cut them away
+    const webX = Math.floor(camera.position.x), webZ = Math.floor(camera.position.z);
+    inWeb = !noclip && !isFlying && (world.getWorldBlock(webX, Math.floor(camera.position.y - PLAYER_EYE + 0.1), webZ) === BLOCK_COBWEB || world.getWorldBlock(webX, Math.floor(camera.position.y - 0.2), webZ) === BLOCK_COBWEB);
+    const fluidSlow = (inFluidNow === 'water' ? 0.6 : inFluidNow === 'lava' ? 0.45 : 1) * (onSoulSand ? 0.55 : 1) * (inWeb ? 0.18 : 1);
     const speed = isFlying ? FLY_BASE_SPEED * (noclip ? 2.6 : 2.2) * (flySprint ? FLY_SPRINT_MULT : 1) : walkSpeed * fluidSlow;
     const forward = new THREE.Vector3();
     const right = new THREE.Vector3();
@@ -17309,6 +17794,9 @@ export function createVoxelGame(
       if (down('right')) moveVec.add(right);
       if (down('left')) moveVec.sub(right);
     }
+    // Swimming: moving through water deep enough to cover your body (you see it in F5, and so does everyone else)
+    swimming = inFluidNow === 'water' && !isFlying && moveVec.lengthSq() > 0
+      && isWater(world.getWorldBlock(Math.floor(camera.position.x), Math.floor(camera.position.y - 0.6), Math.floor(camera.position.z)));
 
     // Horizontal collision — check a small square footprint at feet and
     // head height so the player can't walk through block sides. Axes are
@@ -17450,6 +17938,7 @@ export function createVoxelGame(
       const slowFall = effectLevel('slow_falling') > 0 && velocityY < 0;
       velocityY += GRAVITY * delta * (slowFall ? 0.12 : 1) * dimGravity();
       if (slowFall) { velocityY = Math.max(velocityY, -2.5); fallPeakY = camera.position.y; }
+      if (inWeb) { velocityY = Math.max(-1.2, Math.min(velocityY, 1.5)); fallPeakY = camera.position.y; } // stuck in a web: a slow slide, no fall damage
     }
     if (velocityY < -45) velocityY = -45; // terminal velocity
     // Stairs and slabs: walking into one lifts you onto it (no jumping needed)
@@ -17670,7 +18159,7 @@ export function createVoxelGame(
       } else {
         const eatBob = Math.sin(eatTimer * 22) * 0.03 * eatLerp; // the food comes up to your mouth and jiggles as you chew
         heldMesh.position.set(heldBase.x - 0.12 * sw - 0.12 * draw - 0.3 * eatLerp + hbx + idleX + 0.05 * eq, heldBase.y + 0.05 * sw + 0.32 * eatLerp + eatBob + hby + idleY + spY - 0.6 * eq, heldBase.z - 0.25 * sw + 0.12 * draw + 0.28 * eatLerp + 0.03 * sprintLerp);
-        const rest = heldItem === ITEM_BOW ? [0, -0.35, Math.PI / 4] : blockFaces(heldItem!) ? [0.1, Math.PI / 4, 0] : [-0.25, -0.6, 1.0];
+        const rest = heldItem === ITEM_BOW ? [0.05 + 0.08 * draw, -0.55 + 0.1 * draw, 0.5] : blockFaces(heldItem!) ? [0.1, Math.PI / 4, 0] : [-0.25, -0.6, 1.0];
         heldMesh.rotation.set(rest[0] - 0.35 * sw - 0.5 * spR + 0.9 * eq - 0.5 * eatLerp, rest[1] + 0.15 * sw + 0.4 * eatLerp, rest[2] + idleR);
       }
     }
@@ -17702,6 +18191,7 @@ export function createVoxelGame(
       fistMesh.rotation.z += idleR;
     }
     updateOffhandMesh();
+    updateHeldGlint(idleT);
     // In third person the view-model (the floating hand/item/off-hand that hangs off the camera) must not show
     if (perspective !== 0) {
       fistMesh.visible = false; leftArm.visible = false;
@@ -17827,10 +18317,10 @@ export function createVoxelGame(
             for (const [dropId, n0] of dropsFor(brokenType, weakAtBreak, slots[selectedSlot])) {
               // Fortune: ores can drop 2x, 3x... their usual amount
               const n = fortune && FORTUNE_ORES.has(brokenType) ? n0 * (1 + Math.max(0, Math.floor(Math.random() * (fortune + 2)) - 1)) : n0;
-              spawnDroppedItem(
+              spawnSharedDrop( // online, the other players see what the block dropped (and the first to reach it gets it)
                 dropId, n,
                 new THREE.Vector3(bx + 0.5, by + 0.5, bz + 0.5),
-                new THREE.Vector3((Math.random() - 0.5) * 2, 3, (Math.random() - 0.5) * 2),
+                new THREE.Vector3(+((Math.random() - 0.5) * 2).toFixed(2), 3, +((Math.random() - 0.5) * 2).toFixed(2)),
                 0.3,
               );
             }
@@ -17895,6 +18385,7 @@ export function createVoxelGame(
     }
     crouchLerp += ((crouchNow ? 1 : 0) - crouchLerp) * Math.min(1, delta * 14);
     const renderCam = updateViewCamera(delta);
+    updateShaderFrame(delta);
     bobSaved.copy(camera.position);
     if (crouchLerp > 0.01) { camera.position.y -= 0.3 * crouchLerp; camera.updateMatrixWorld(); }
     if (perspective === 0 && bobAmount > 0.01) {
@@ -17905,7 +18396,7 @@ export function createVoxelGame(
       camera.updateMatrixWorld();
     }
 
-    if (graphicsQuality === 'max' && !video.fastRender && !postFailed && renderMax(renderCam)) {
+    if (wantPost() && renderMax(renderCam)) {
       // drawn by the Max shader chain (scene -> bloom, ambient shading, sun rays -> screen)
     } else if (motionBlurEnabled) {
       // Cheap frame-persistence motion blur: fade the previous frame with a
@@ -18020,6 +18511,7 @@ export function createVoxelGame(
     for (const a of arrows) scene.remove(a.mesh);
     arrows.length = 0;
     arrowShaftGeo.dispose(); arrowTipGeo.dispose(); arrowShaftMat.dispose(); arrowTipMat.dispose(); arrowFlameMat.dispose();
+    arrowFeatherGeoA.dispose(); arrowFeatherGeoB.dispose(); arrowFeatherMat.dispose(); arrowHeadGeo.dispose();
     for (const p of particles) scene.remove(p.mesh);
     particles.length = 0;
     particleGeo.dispose();
@@ -18093,6 +18585,61 @@ export function createVoxelGame(
 
   function getGraphicsQuality() {
     return graphicsQuality;
+  }
+
+  // ---- Settings > Shaders, every frame: eye adaptation, motion blur, a light in your hand ----
+  /** How bright it is around your eyes (1 = open sky; low deep in a cave without torches). */
+  function cameraBrightness(): number {
+    if (dimension !== 'overworld') return 0.7;
+    const x = Math.floor(camera.position.x), y = Math.floor(camera.position.y), z = Math.floor(camera.position.z);
+    let open = true;
+    for (let yy = y + 1; yy < CHUNK_HEIGHT; yy++) if (isOpaque(world.getWorldBlock(x, yy, z))) { open = false; break; }
+    if (open) return 0.35 + 0.65 * currentDayAmt;
+    let lvl = 0;
+    for (let dx = -5; dx <= 5; dx++) for (let dz = -5; dz <= 5; dz++) for (let dy = -2; dy <= 2; dy++) {
+      const e = lightEmitted(world.getWorldBlock(x + dx, y + dy, z + dz));
+      if (e > 0) lvl = Math.max(lvl, e - Math.abs(dx) - Math.abs(dy) - Math.abs(dz));
+    }
+    return Math.max(0.12, lightCurve(Math.max(0, lvl)) * 0.9);
+  }
+  /** Dynamic lighting: holding a torch, glowstone, a lantern or a lava bucket lights up what's around you. */
+  function updateDynamicLight(force = false) {
+    const want = !!S()?.dynamicLighting && graphicsQuality !== 'low';
+    if (want !== handLightOn || force) {
+      if (want && !handLightOn) camera.add(handLight); // (adding the light changes the shaders once)
+      if (!want && handLightOn) camera.remove(handLight);
+      handLightOn = want;
+    }
+    if (!handLightOn) return;
+    const glow = heldItem === null ? 0 : heldItem === ITEM_LAVA_BUCKET ? 15 : lightEmitted(heldItem) || lightEmitted(offhand?.id ?? 0);
+    const target = glow > 0 ? 1.4 * (glow / 15) : 0;
+    handLight.intensity += (target - handLight.intensity) * 0.2;
+    handLight.position.set(0.3, -0.2, -0.4);
+  }
+  function updateShaderFrame(dt: number) {
+    const sp = S();
+    // eye adaptation: slowly brighten in the dark and settle back in daylight
+    exposureClock += dt;
+    if (exposureClock > 0.4) { exposureClock = 0; const amt = sp ? sp.eyeAdaptation / 100 : 0; exposureTarget = amt > 0 ? 1 + amt * Math.max(-0.12, Math.min(0.9, 0.62 / Math.max(0.2, cameraBrightness()) - 0.85)) : 1; }
+    exposureNow += (exposureTarget - exposureNow) * Math.min(1, dt * (exposureTarget > exposureNow ? 0.6 : 1.4));
+    // motion blur: how fast the view turns, as a smear across the screen
+    const dyaw = angleDiff(yaw, lastTurnYaw), dpit = pitch - lastTurnPitch;
+    lastTurnYaw = yaw; lastTurnPitch = pitch;
+    if (sp?.motionBlur && dt > 0) {
+      const k = Math.min(0.04, 0.045 / Math.max(dt * 60, 0.5));
+      blurDir.x += (Math.max(-0.05, Math.min(0.05, -dyaw * k * 6)) - blurDir.x) * 0.5;
+      blurDir.y += (Math.max(-0.05, Math.min(0.05, dpit * k * 6)) - blurDir.y) * 0.5;
+      if (Math.abs(blurDir.x) < 0.0008) blurDir.x = 0;
+      if (Math.abs(blurDir.y) < 0.0008) blurDir.y = 0;
+    } else { blurDir.x = 0; blurDir.y = 0; }
+    updateDynamicLight();
+  }
+  function setShaderPrefs(p: ShaderPrefs) {
+    const before = shader;
+    shader = cleanShaders(p);
+    if (before.pack?.glsl !== shader.pack?.glsl) customGlslBroken = false;
+    applyGraphicsQuality(graphicsQuality);
+    applyQualityLighting(currentDayAmt, 0);
   }
 
   function setVideoPrefs(p: Partial<VideoPrefs>) {
@@ -18338,6 +18885,8 @@ export function createVoxelGame(
     setFov,
     setVideoPrefs,
     getVideoPrefs: () => ({ ...video }),
+    setShaderPrefs,
+    getShaderInfo: () => ({ post: !!post, exposure: exposureNow, handLight: handLightOn, glslBroken: customGlslBroken }),
     getFov,
     getInventory,
     getHealth,
@@ -18381,6 +18930,8 @@ export function createVoxelGame(
     onHint: (cb: (text: string) => void) => { hintCallback = cb; },
     getSaveData,
     loadSaveData,
+    getPlayerSave,
+    loadPlayerSave,
     isCreative,
     dropItems,
     quickCraft,

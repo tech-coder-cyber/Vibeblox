@@ -4,7 +4,7 @@ import { SKINS, CAPES, CUSTOM_SKIN_ID, isCustomSkinData, type PlayerLook } from 
 import { CAN_LINK_OUT, CAN_SELL_RANKS, ADS_POSSIBLE, PLATFORM, initAds, triggerRewardedAd, setGameplayActive, reportLoadingFinished, setAdsBlocked, maybeInterstitial, lastAdResult } from '@/adEconomy';
 import {
   getProgress, subscribeProgress, onLevelUp, setCustomSkin, addActiveSeconds, rewardAdCoins, rewardAdBooster, claimCoins, claimBooster, claimStatus, COIN_CLAIMS_PER_HOUR, buyCosmetic, equipCosmetic, currentLook, reloadProgress, progressForAccount, mergeAccountProgress,
-  dailyStatus, claimDaily, openLootbox, buyShopItem, FREEZE_PRICE, BOOSTER_PRICE, MAX_FREEZES, DAILY_COINS, DAILY_LOOTBOX_DAYS, WEEKLY_FALLBACK_COINS, type DailyGrant, type LootResult,
+  dailyStatus, claimDaily, openLootbox, buyShopItem, FREEZE_PRICE, BOOSTER_PRICE, LOOTBOX_PRICE, LOOTBOX_PACK_PRICE, MAX_FREEZES, DAILY_COINS, DAILY_LOOTBOX_DAYS, WEEKLY_FALLBACK_COINS, type DailyGrant, type LootResult,
   xpForLevel, DISCORD_INVITE_URL, TEBEX_STORE_URL, AD_COINS, LEVEL_UP_COINS, XP_PER_PERIOD, SECONDS_PER_PERIOD, BOOSTER_SECONDS, IDLE_AFTER_SECONDS,
 } from '@/progression';
 import { ModBuilder } from '@/ModBuilder';
@@ -53,7 +53,7 @@ import Tutorial, { tutorialDone } from './Tutorial';
 import { LOYALTY_RANKS, isYearMilestone, loyaltyLabel, pendingMilestones, nextMilestone, type LoyaltyRank } from './loyalty';
 import { fetchLoyalty, claimLoyalty, type LoyaltyInfo } from './social';
 import { WORLD_TAGS, MAX_WORLD_TAGS, cleanTags, toggleTag, tagInfo } from './worldTags';
-import { setWorldLike, saveProgressToAccount, loadProgressFromAccount, fetchLevelLeaderboard, reportCheat, cleanWorldImage, type LevelRow, addFriend, unfriendByName, loadFriends, sendDM, startPolling, isGuestName, reportActivity, fetchPlayingCounts, fetchLeaderboard, fetchStanding, recordPlay, setServerPresence, isOwnerName, listHostedWorlds, publishHostedWorld, unpublishHostedWorld, verifyToken, isFriendOf, isBannedName, isAdminToken, type DM, type Activity, type Friend, type LeaderRow, type Standing, type HostedWorld } from './social';
+import { setWorldLike, saveProgressToAccount, loadProgressFromAccount, fetchLevelLeaderboard, reportCheat, cleanWorldImage, type LevelRow, addFriend, unfriendByName, loadFriends, sendDM, startPolling, isGuestName, reportActivity, fetchPlayingCounts, fetchLeaderboard, fetchStanding, recordPlay, setServerPresence, isOwnerName, listHostedWorlds, publishHostedWorld, unpublishHostedWorld, verifyToken, isFriendOf, isBannedName, isAdminToken, banEverywhere, unbanEverywhere, type DM, type Activity, type Friend, type LeaderRow, type Standing, type HostedWorld } from './social';
 
 // Multiplayer is optional: Vite only includes src/multiplayer.ts if the file
 // exists, so deleting it (or the server folder) never breaks the game.
@@ -72,7 +72,7 @@ const PRIVACY_INFO: Record<WorldPrivacy, { label: string; hint: string }> = {
 };
 const PRIVACY_ORDER: WorldPrivacy[] = ['public', 'accounts', 'friends', 'private'];
 type AntiCheatLike = { settings: AcSettings };
-type HostRoomLike = { count: number; full: boolean; setPrivacy(p: WorldPrivacy): void; stop(reason?: string): void; anticheat?: AntiCheatLike };
+type HostRoomLike = { count: number; full: boolean; setPrivacy(p: WorldPrivacy): void; stop(reason?: string): void; anticheat?: AntiCheatLike; handOff?(newRoomId: string): string | null; setRole?(byRole: ServerRole | null, byName: string, name: string, to: 'admin' | 'coowner' | 'none'): string; getRoles?(): Record<string, 'admin' | 'coowner'>; owner?: string };
 /** Anti-cheat (anticheat.ts): an alert about a player in the world you host, and its switches. */
 type CheatAlertLike = { at: number; id: number; player: string; kind: string; detail: string; points: number };
 type AcSettings = { enabled: boolean; autoKick: boolean; kickAt: number };
@@ -103,7 +103,7 @@ type HostingMod = {
 };
 function loadHosting(): Promise<HostingMod | null> {
   const l = Object.values(hostingModules)[0];
-  return l ? l().then((m) => m as HostingMod).catch(() => null) : Promise.resolve(null);
+  return l ? l().then((m) => m as unknown as HostingMod).catch(() => null) : Promise.resolve(null);
 }
 /** How players find each other: a Supabase Realtime channel (tests put their own in window.__vbSignaling). */
 function signalingFor(h: HostingMod): unknown {
@@ -134,10 +134,14 @@ function listImage(img?: string): Promise<string | undefined> {
 type NetBlock = [number, number, number, number];
 type NetBadge = { owner?: boolean; rank?: string; tier?: string };
 type NetPlayerInfo = { id: number; name: string; x: number; y: number; z: number; yaw: number; pitch: number; mode: string; look?: PlayerLook; badge?: NetBadge };
-type ServerSettings = { difficulty: Difficulty; keepInventory: boolean; scripts: boolean; mods: boolean; commands: boolean; pvp?: boolean };
+type ServerSettings = { difficulty: Difficulty; keepInventory: boolean; scripts: boolean; mods: boolean; commands: boolean; pvp?: boolean; scriptPerm?: ScriptPerm };
 const DEFAULT_SERVER: ServerSettings = { difficulty: 'normal', keepInventory: false, scripts: true, mods: true, commands: true, pvp: true };
-type Welcome = { game?: NetGame; id: number; name: string; seed: number; worldType: 'default' | 'superflat' | 'eggwars' | 'bridge'; mode: string; time: number; changes: NetBlock[]; players: NetPlayerInfo[]; hostId?: number | null; settings?: ServerSettings; weather?: WeatherKind; experimental?: boolean; maxPlayers?: number; ranks?: unknown };
+type Welcome = { game?: NetGame; id: number; name: string; seed: number; worldType: 'default' | 'superflat' | 'eggwars' | 'bridge'; mode: string; time: number; changes: NetBlock[]; players: NetPlayerInfo[]; hostId?: number | null; settings?: ServerSettings; weather?: WeatherKind; experimental?: boolean; maxPlayers?: number; ranks?: unknown; roles?: Record<string, string>; drops?: NetDrop[] };
 import type { NetDrop } from './multiplayer';
+import { ShadersPanel, CrosshairPanel, CrosshairView } from './ShadersPanel';
+import { subscribeShaders, getShaders } from './shaderPrefs';
+import { RoleIcon, ROLE_LABELS, SCRIPT_PERM_LABELS, roleLevel, canRunScripts, type ServerRole, type ScriptPerm } from './roles';
+type NetHandoff = Record<string, unknown> & { seed: number; owner: string; name: string; changes: NetBlock[]; time: number; weather: WeatherKind; settings: ServerSettings; ranks: unknown; roles: Record<string, 'admin' | 'coowner'>; bans: string[]; privacy: WorldPrivacy; maxPlayers: number; worldType: string; mode: string; experimental: boolean };
 type MpEvents = {
   onPing?: (ms: number) => void;
   onWelcome?: (w: Welcome) => void;
@@ -168,9 +172,17 @@ type MpEvents = {
   onMatchReset?: (round: number) => void;
   onHurt?: (h: { by: number; name: string; dmg: number; kx: number; kz: number }) => void;
   onHurtFx?: (id: number) => void;
+  onRoles?: (roles: Record<string, string>) => void;
+  onAnticheat?: (settings: { enabled: boolean; autoKick: boolean; kickAt: number }) => void;
+  onCheat?: (alert: Record<string, unknown>) => void;
+  onBecomeHost?: (room: string, state: NetHandoff) => void;
+  onMigrate?: (room: string, host: string) => void;
   onClose?: (reason: string) => void;
 };
 type MpClient = {
+  sendPromote(name: string, role: 'admin' | 'coowner' | 'none'): void;
+  sendMod(action: 'kick' | 'ban' | 'unban', name: string): void;
+  sendAnticheat(settings: { enabled: boolean; autoKick: boolean; kickAt: number }): void;
   sendHit(id: number, dmg: number, kx: number, kz: number, bow?: boolean): void;
   sendMatchStart(): void;
   sendMatchDied(by: number | null): void;
@@ -209,10 +221,12 @@ type SavedSettings = {
 const savedSettings: SavedSettings = (() => {
   try { return JSON.parse(localStorage.getItem('vb-settings') ?? '{}') as SavedSettings; } catch { return {}; }
 })();
+/** The texture size a graphics tier draws: Low is always 16×16, Epic and Max always 32×32; in between, your choice. */
+function texResFor(q: GraphicsQuality, chosen: TextureRes): TextureRes { return q === 'low' ? 16 : q === 'epic' || q === 'max' ? 32 : chosen; }
 // Before version 15 "Max" was what is now called "Epic": keep those players on the tier they picked
 if (savedSettings.graphicsQuality === 'max' && !savedSettings.gfxV) savedSettings.graphicsQuality = 'epic';
 // Textures must be set before anything is drawn, so this runs right away
-setTextureResolution(savedSettings.textureRes === 32 && savedSettings.graphicsQuality !== 'low' ? 32 : 16); // Low graphics always uses 16×16
+setTextureResolution(texResFor(savedSettings.graphicsQuality ?? 'medium', savedSettings.textureRes === 32 ? 32 : 16)); // Low is always 16×16, Epic and Max always 32×32
 import {
   Settings,
   Users,
@@ -926,6 +940,8 @@ function newWorldId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
+/** A new id for a world that moves to another player (the same shape hosting.ts uses). */
+function randomRoomId(): string { return Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => 'abcdefghijklmnopqrstuvwxyz0123456789'[b % 36]).join(''); }
 function randomSeed(): number {
   return 1 + Math.floor(Math.random() * 2_000_000_000);
 }
@@ -958,6 +974,7 @@ type WorldConfig = {
   experimental?: boolean; // early-access features, chosen at creation and fixed after
   privacy?: WorldPrivacy; // who may join while you play it (public when not set)
   bans?: string[];        // players banned from this world
+  roles?: Record<string, 'admin' | 'coowner'>; // admins and co-owners the owner promoted (lowercase names)
   description?: string;   // shown with the world's picture on the Servers page while it is open
   tags?: string[];        // up to three server tags (Survival, PvP...) shown on the Servers page
 };
@@ -1472,7 +1489,7 @@ function SettingsView({
   compact?: boolean;
 }) {
   useLanguage();
-  const [tab, setTab] = useState<'video' | 'audio' | 'controls' | 'hud' | 'language' | 'account' | 'about'>('video');
+  const [tab, setTab] = useState<'video' | 'shaders' | 'crosshair' | 'audio' | 'controls' | 'hud' | 'language' | 'account' | 'about'>('video');
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [showCredits, setShowCredits] = useState(false);
   const builtInTracks: Array<{ value: AnySoundtrack; label: string }> = SOUNDTRACKS;
@@ -1508,7 +1525,7 @@ function SettingsView({
 
       <div className="flex gap-5" data-testid="settings-layout">
       <SideNav testid="settings-sidenav" active={tab} onSelect={setTab} tabs={[
-        { id: 'video', label: 'Video' }, { id: 'audio', label: 'Audio' }, { id: 'controls', label: t('settings.controls') }, { id: 'hud', label: 'HUD' },
+        { id: 'video', label: 'Video' }, { id: 'shaders', label: 'Shaders' }, { id: 'crosshair', label: 'Crosshair' }, { id: 'audio', label: 'Audio' }, { id: 'controls', label: t('settings.controls') }, { id: 'hud', label: 'HUD' },
         { id: 'language', label: t('settings.language') }, { id: 'account', label: 'Account' }, { id: 'about', label: 'About' },
       ]} />
       <div className="flex-1 min-w-0 max-w-2xl vb-stack">
@@ -1596,17 +1613,23 @@ function SettingsView({
           <label className="text-white text-sm font-medium">{t('settings.textures')}</label>
           <p className="text-[#5a6b80] text-xs mt-0.5">{t('settings.texturesDesc')}</p>
         </div>
+        {(graphicsQuality === 'low' || graphicsQuality === 'epic' || graphicsQuality === 'max') && (
+          <p className="text-[#ffb347] text-xs -mt-2 mb-3" data-testid="tex-locked">{graphicsQuality === 'low' ? 'Low graphics always uses 16×16 textures.' : `${graphicsQuality === 'max' ? 'Max' : 'Epic'} graphics always uses 32×32 textures.`} Pick Medium or High to choose.</p>
+        )}
         <div className="grid grid-cols-2 gap-3">
           {([
             { value: 16 as TextureRes, label: '16×16', name: t('tex.classic'), blurb: t('tex.classicDesc') },
             { value: 32 as TextureRes, label: '32×32', name: t('tex.detailed'), blurb: t('tex.detailedDesc') },
           ]).map((opt) => {
-            const active = textureRes === opt.value;
+            const locked = graphicsQuality === 'low' || graphicsQuality === 'epic' || graphicsQuality === 'max';
+            const active = texResFor(graphicsQuality, textureRes) === opt.value;
             return (
               <button
                 key={opt.value}
+                disabled={locked}
+                data-testid={`tex-${opt.value}`}
                 onClick={() => onTextureResChange(opt.value)}
-                className={`flex flex-col items-center gap-1 py-3 px-2 rounded-xl border text-center transition-all duration-200 hover:scale-[1.02] active:scale-95 ${
+                className={`disabled:cursor-not-allowed ${locked && !active ? 'opacity-40' : ''} flex flex-col items-center gap-1 py-3 px-2 rounded-xl border text-center transition-all duration-200 hover:scale-[1.02] active:scale-95 ${
                   active ? 'bg-[#00e676]/15 border-[#00e676] text-[#00e676]' : 'bg-[#0a0e14] border-[#243044] text-[#8ea0b8] hover:border-[#364860] hover:text-white'
                 }`}
               >
@@ -1626,6 +1649,8 @@ function SettingsView({
       {tab === 'controls' && <ControlsPanel />}
       {tab === 'account' && <AccountTab />}
 
+      {tab === 'shaders' && <ShadersPanel />}
+      {tab === 'crosshair' && <CrosshairPanel />}
       {tab === 'audio' && <>
       <section className="bg-[#121822] rounded-2xl border border-[#243044] p-6 mt-6">
         <div className="flex items-center justify-between mb-3">
@@ -2006,6 +2031,25 @@ function ShopView({ compact = false }: { compact?: boolean }) {
           </div>
           {adsFree && <p className="-mt-3 mb-5 text-[#5a6b80] text-xs" data-testid="no-ads-note">You have a rank, so you never see ads. Claim coins up to {COIN_CLAIMS_PER_HOUR} times an hour and a booster every 15 minutes instead.</p>}
           {!adsOk && !adsFree && <p className="-mt-3 mb-5 text-[#5a6b80] text-xs">{ADS_POSSIBLE ? 'No ads are available right now. Try again in a moment.' : 'Ads are available when you play VibeBlox on CrazyGames or Poki. Here you earn coins by levelling up.'}</p>}
+
+          {/* Lootboxes for coins */}
+          <div className="rounded-2xl bg-gradient-to-r from-[#3a2a08] to-[#121822] border border-[#ffd23a]/40 p-4 mb-3" data-testid="shop-lootboxes">
+            <div className="flex items-center gap-2 mb-1"><Package className="w-5 h-5 text-[#ffd23a]" /><span className="text-white text-sm font-bold">Lootboxes</span></div>
+            <p className="text-[#c8b890] text-xs mb-3">Coins, Streak Freezes, XP Boosters, skins, and now and then a rare skin or cape.</p>
+            <div className="grid sm:grid-cols-2 gap-3 mb-3">
+              <button data-testid="buy-lootbox" onClick={() => { const r = buyShopItem('lootbox'); setNote(r === 'ok' ? 'You bought a lootbox! Open it below.' : 'Not enough coins yet.'); }}
+                className="flex items-center justify-between gap-2 rounded-xl px-4 py-3 bg-[#121822] border border-[#243044] hover:border-[#ffd23a] text-left transition-all active:scale-95">
+                <span className="text-white text-sm font-bold">1 Lootbox</span>
+                <span className={`inline-flex items-center gap-1 text-sm font-bold ${p.coins >= LOOTBOX_PRICE ? 'text-[#ffd23a]' : 'text-[#5a6b80]'}`}><Coins className="w-4 h-4" />{LOOTBOX_PRICE}</span>
+              </button>
+              <button data-testid="buy-lootbox5" onClick={() => { const r = buyShopItem('lootbox5'); setNote(r === 'ok' ? 'You bought 5 lootboxes! Open them below.' : 'Not enough coins yet.'); }}
+                className="flex items-center justify-between gap-2 rounded-xl px-4 py-3 bg-[#121822] border border-[#243044] hover:border-[#ffd23a] text-left transition-all active:scale-95">
+                <span className="text-white text-sm font-bold">5 Lootboxes <span className="text-[#7cfc7c] text-[11px] font-normal">save {LOOTBOX_PRICE * 5 - LOOTBOX_PACK_PRICE}</span></span>
+                <span className={`inline-flex items-center gap-1 text-sm font-bold ${p.coins >= LOOTBOX_PACK_PRICE ? 'text-[#ffd23a]' : 'text-[#5a6b80]'}`}><Coins className="w-4 h-4" />{LOOTBOX_PACK_PRICE}</span>
+              </button>
+            </div>
+            <LootboxRow />
+          </div>
 
           {/* Streak freeze and XP booster */}
           <div className="grid sm:grid-cols-2 gap-3 mb-5" data-testid="shop-items">
@@ -2579,11 +2623,10 @@ function MobileProfileBar({ username, onPlayNow }: { username: string; onPlayNow
   );
 }
 
-function ProfilePanel({ username, onPlayNow, onOpenLeaderboard }: { username: string; onPlayNow: () => void; onOpenLeaderboard: () => void }) {
+function ProfilePanel({ username }: { username: string }) {
   useLanguage();
   const p = useProgress();
   const { rising, tier, signedIn, guest } = useContext(StandingContext);
-  const top = useLeaderboard(5);
   const displayName = username || 'PlayerOne';
   const initial = username ? username.charAt(0).toUpperCase() : 'P';
   const curXp = xpForLevel(p.level), nextXp = xpForLevel(p.level + 1);
@@ -2613,15 +2656,6 @@ function ProfilePanel({ username, onPlayNow, onOpenLeaderboard }: { username: st
         </div>
       </div>
 
-      <div className="bg-[#121822] rounded-2xl border border-[#243044] p-4">
-        <h3 className="font-[var(--font-display)] text-white text-sm tracking-wide mb-3 flex items-center gap-2">
-          <Play className="w-4 h-4 text-[#00e676] fill-current" /> QUICK PLAY
-        </h3>
-        <button onClick={onPlayNow} className="w-full py-3 rounded-xl bg-gradient-to-r from-[#00e676] to-[#00b248] text-[#0a0e14] font-[var(--font-display)] text-sm tracking-wide flex items-center justify-center gap-2 hover:from-[#00ff88] hover:to-[#00c853] transition-all duration-300 hover:scale-[1.02] active:scale-95 vb-glow">
-          <Play className="w-4 h-4 fill-current" /> PLAY NOW
-        </button>
-      </div>
-
       <div className={`bg-[#121822] rounded-2xl border border-[#243044] p-4 ${guest ? 'opacity-40 select-none' : ''}`} aria-disabled={guest || undefined} data-testid="currency-card">
         <div className="flex items-center gap-2 mb-3">
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#ffd700] to-[#ff8c00] flex items-center justify-center">
@@ -2637,36 +2671,13 @@ function ProfilePanel({ username, onPlayNow, onOpenLeaderboard }: { username: st
 
       <DailyCard />
 
-      <div className="bg-[#121822] rounded-2xl border border-[#243044] p-4" data-testid="lb-card">
-        <h3 className="font-[var(--font-display)] text-white text-sm tracking-wide mb-3 flex items-center gap-2">
-          <Trophy className="w-4 h-4 text-[#ffd23a]" /> {t('lb.title').toUpperCase()}
-        </h3>
-        {top === null && <p className="text-[#5a6b80] text-xs">…</p>}
-        {top !== null && top.length === 0 && <p className="text-[#5a6b80] text-xs">{t('lb.empty')}</p>}
-        <ol className="space-y-1.5">
-          {top?.map((r, i) => (
-            <li key={r.username} className="flex items-center gap-2 text-xs">
-              <span className={`w-4 text-center font-bold ${i === 0 ? 'text-[#ffd23a]' : 'text-[#5a6b80]'}`}>{i + 1}</span>
-              <span className="text-white truncate flex-1">{r.username}</span>
-              <span className="text-[#8ea0b8] tabular-nums">{r.plays.toLocaleString()}</span>
-            </li>
-          ))}
-        </ol>
-        <button onClick={() => { nextBoard = 'creators'; onOpenLeaderboard(); }} data-testid="lb-see-all" className="mt-3 w-full py-1.5 rounded-lg bg-[#1a2230] text-[#8ea0b8] text-xs font-bold hover:text-white hover:bg-[#243044] transition-colors">{t('lb.seeAll')}</button>
-      </div>
     </aside>
   );
 }
 
+/** The crosshair (Settings > Crosshair). */
 function GameOverlay() {
-  return (
-    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 pointer-events-none">
-      <div className="relative w-6 h-6">
-        <div className="absolute top-1/2 left-0 w-full h-0.5 bg-white/50 -translate-y-1/2" />
-        <div className="absolute left-1/2 top-0 h-full w-0.5 bg-white/50 -translate-x-1/2" />
-      </div>
-    </div>
-  );
+  return <CrosshairView />;
 }
 
 function ItemIcon({ id, className = 'w-7 h-7' }: { id: number; className?: string }) {
@@ -2943,7 +2954,7 @@ const TIME_PRESETS: Array<{ label: string; time: number }> = [
   { label: 'Sunrise', time: 0 }, { label: 'Noon', time: 0.25 }, { label: 'Sunset', time: 0.5 }, { label: 'Midnight', time: 0.75 },
 ];
 const WEATHER_OPTIONS: Array<{ kind: WeatherKind; label: string }> = [
-  { kind: 'clear', label: 'Clear' }, { kind: 'rain', label: 'Rain' }, { kind: 'snow', label: 'Snow' },
+  { kind: 'clear', label: 'Clear' }, { kind: 'rain', label: 'Rain' }, { kind: 'thunder', label: 'Thunderstorm' }, { kind: 'snow', label: 'Snow' },
 ];
 
 /** Manage Server > Anti-cheat: its switches, and what it caught in the world you host. */
@@ -2988,8 +2999,10 @@ function AntiCheatPanel({ settings, onChange, alerts, onKick, onBan, hosting }: 
   );
 }
 
-function ManageServerView({ settings, hardcore, online, isHost, players, myId, hostId, weather, onChange, onKick, onBan, bans, onUnban, onTime, onWeather, tagOf, privacy, schematics, anticheat }: {
+function ManageServerView({ settings, hardcore, online, isHost, players, myId, hostId, weather, onChange, onKick, onBan, bans, onUnban, onTime, onWeather, tagOf, privacy, schematics, anticheat, role = null, roles = {}, onPromote }: {
   tagOf?: (name: string) => string;
+  /** Your role here ('owner' in your own world), everyone's roles, and promoting someone */
+  role?: ServerRole | null; roles?: Record<string, string>; onPromote?: (name: string, to: 'admin' | 'coowner' | 'none') => void;
   /** The schematic maker (select, save, paste and share builds), shown in the Schematics tab */
   schematics?: ReactNode;
   /** Anti-cheat alerts about players in this world (host only) */
@@ -3004,11 +3017,14 @@ function ManageServerView({ settings, hardcore, online, isHost, players, myId, h
   onTime: (t: number) => void; onWeather: (k: WeatherKind) => void;
 }) {
   const [confirmBan, setConfirmBan] = useState<number | null>(null);
-  const [tab, setTab] = useState<'world' | 'rules' | 'players' | 'schematics' | 'anticheat'>('world');
+  const lvl = isHost ? 3 : roleLevel(role);
+  const canRules = lvl >= 2, canCheat = lvl >= 1;
+  const roleOfName = (n: string) => (roles[n.toLowerCase()] as ServerRole | undefined) ?? null;
+  const [tab, setTab] = useState<'world' | 'rules' | 'players' | 'roles' | 'schematics' | 'anticheat'>(() => (lvl >= 2 ? 'world' : 'players'));
   const toggle = (key: 'keepInventory' | 'scripts' | 'mods' | 'commands' | 'pvp', label: string, hint: string) => {
     const on = key === 'pvp' ? settings.pvp !== false : settings[key];
     return (
-      <button disabled={!isHost} onClick={() => onChange({ [key]: !on })} data-testid={`toggle-${key}`}
+      <button disabled={!canRules} onClick={() => onChange({ [key]: !on })} data-testid={`toggle-${key}`}
         className="flex items-center justify-between gap-3 w-full rounded-xl bg-[#121822] border border-[#243044] px-4 py-3 text-left disabled:opacity-60">
         <span><span className="block text-white text-sm">{label}</span><span className="block text-[#5a6b80] text-[11px]">{hint}</span></span>
         <span className={`w-11 h-6 shrink-0 rounded-full p-0.5 transition-colors ${on ? 'bg-[#00e676]' : 'bg-[#2a3444]'}`}><span className={`block w-5 h-5 rounded-full bg-white transition-transform ${on ? 'translate-x-5' : ''}`} /></span>
@@ -3017,9 +3033,10 @@ function ManageServerView({ settings, hardcore, online, isHost, players, myId, h
   };
   return (
     <div className="flex gap-5" data-testid="manage-server">
-     <SideNav tabs={[{ id: 'world', label: 'World' }, { id: 'rules', label: 'Rules' }, { id: 'players', label: 'Players' }, { id: 'schematics', label: 'Schematics' }, ...(anticheat ? [{ id: 'anticheat' as const, label: 'Anti-cheat' }] : [])]} active={tab} onSelect={setTab} testid="manage-sidenav" />
+     <SideNav tabs={[{ id: 'world', label: 'World' }, { id: 'rules', label: 'Rules' }, { id: 'players', label: 'Players' }, ...(online ? [{ id: 'roles' as const, label: 'Roles' }] : []), ...(canRules ? [{ id: 'schematics' as const, label: 'Schematics' }] : []), ...(anticheat && canRules ? [{ id: 'anticheat' as const, label: 'Anti-cheat' }] : [])]} active={tab} onSelect={setTab} testid="manage-sidenav" />
      <div className="flex-1 min-w-0 flex flex-col gap-4">
-      {!isHost && <p className="text-[#ffb347] text-xs">Only the host can change these.</p>}
+      {!isHost && role && <p className="text-[#8ea0b8] text-xs flex items-center" data-testid="my-role"><RoleIcon role={role} />You are {role === 'admin' ? 'an admin' : role === 'coowner' ? 'a co-owner' : 'the owner'} here. {role === 'admin' ? 'You can kick and ban players and use commands.' : role === 'coowner' ? 'You can change the rules, use schematics, set up anti-cheat and promote admins.' : ''}</p>}
+      {!isHost && !role && <p className="text-[#ffb347] text-xs">Only the host can change these.</p>}
       {tab === 'world' && <>
       {privacy && (
         <div data-testid="manage-privacy">
@@ -3043,7 +3060,7 @@ function ManageServerView({ settings, hardcore, online, isHost, players, myId, h
         <p className="text-[#8ea0b8] text-xs mb-1.5">Difficulty{hardcore ? ' (Hardcore is always Hard)' : ''}</p>
         <div className="grid grid-cols-4 gap-2">
           {(['peaceful', 'easy', 'normal', 'hard'] as Difficulty[]).map((d) => (
-            <button key={d} disabled={!isHost || hardcore} onClick={() => onChange({ difficulty: d })} data-testid={`server-difficulty-${d}`}
+            <button key={d} disabled={!canRules || hardcore} onClick={() => onChange({ difficulty: d })} data-testid={`server-difficulty-${d}`}
               className={`py-2 rounded-xl text-xs font-bold capitalize ${settings.difficulty === d ? 'bg-[#00e676] text-[#0a0e14]' : 'bg-[#121822] border border-[#243044] text-[#8ea0b8] hover:text-white'} disabled:cursor-not-allowed`}>{d}</button>
           ))}
         </div>
@@ -3053,7 +3070,7 @@ function ManageServerView({ settings, hardcore, online, isHost, players, myId, h
           <p className="text-[#8ea0b8] text-xs mb-1.5">Time</p>
           <div className="grid grid-cols-2 gap-2">
             {TIME_PRESETS.map((p) => (
-              <button key={p.label} disabled={!isHost} onClick={() => onTime(p.time)} data-testid={`server-time-${p.label.toLowerCase()}`}
+              <button key={p.label} disabled={!canCheat} onClick={() => onTime(p.time)} data-testid={`server-time-${p.label.toLowerCase()}`}
                 className="py-2 rounded-xl text-xs font-bold bg-[#121822] border border-[#243044] text-[#8ea0b8] hover:text-white hover:border-[#00e676]/50 active:scale-95 transition-all disabled:cursor-not-allowed disabled:opacity-60">{p.label}</button>
             ))}
           </div>
@@ -3065,7 +3082,7 @@ function ManageServerView({ settings, hardcore, online, isHost, players, myId, h
             const i = Math.max(0, WEATHER_OPTIONS.findIndex((w) => w.kind === weather));
             const next = WEATHER_OPTIONS[(i + 1) % WEATHER_OPTIONS.length];
             return (
-              <button disabled={!isHost} onClick={() => onWeather(next.kind)} data-testid="server-weather"
+              <button disabled={!canCheat} onClick={() => onWeather(next.kind)} data-testid="server-weather"
                 className="w-full py-2 rounded-xl text-xs font-bold bg-[#121822] border border-[#243044] text-white hover:border-[#00e676]/50 active:scale-95 transition-all disabled:cursor-not-allowed disabled:opacity-60">
                 Now: {WEATHER_OPTIONS[i]?.label ?? weather} · click for {next.label.toLowerCase()}
               </button>
@@ -3081,7 +3098,48 @@ function ManageServerView({ settings, hardcore, online, isHost, players, myId, h
         {toggle('scripts', 'Allow scripts', 'Off hides the Scripts button')}
         {toggle('mods', 'Allow mods', 'Off hides the Mods button')}
         {toggle('pvp', 'PvP', 'Players can hit each other (when others join your world)')}
+        <div className="col-span-2 rounded-xl bg-[#121822] border border-[#243044] px-4 py-3" data-testid="script-perm">
+          <span className="block text-white text-sm">Who can use scripts</span>
+          <span className="block text-[#5a6b80] text-[11px] mb-2">Owner only means the owner and co-owners.</span>
+          <div className="grid grid-cols-4 gap-2">
+            {(['off', 'all', 'admin', 'owner'] as ScriptPerm[]).map((v) => {
+              const cur: ScriptPerm = !settings.scripts ? 'off' : settings.scriptPerm ?? 'owner';
+              return (
+                <button key={v} disabled={!canRules} data-testid={`script-perm-${v}`} onClick={() => onChange(v === 'off' ? { scripts: false, scriptPerm: 'off' } : { scripts: true, scriptPerm: v })}
+                  className={`py-1.5 rounded-lg text-xs font-bold ${cur === v ? 'bg-[#00e676] text-[#0a0e14]' : 'bg-[#0a0e14] border border-[#243044] text-[#8ea0b8] hover:text-white'} disabled:cursor-not-allowed`}>{SCRIPT_PERM_LABELS[v]}</button>
+              );
+            })}
+          </div>
+        </div>
       </div>}
+      {tab === 'roles' && (
+        <div className="flex flex-col gap-3" data-testid="manage-roles">
+          <div className="rounded-xl bg-[#121822] border border-[#243044] px-4 py-3 text-[11px] text-[#8ea0b8] leading-relaxed">
+            <p className="flex items-center"><RoleIcon role="admin" /><b className="text-white mr-1">Admin</b> bans and kicks players here, and can use commands.</p>
+            <p className="flex items-center"><RoleIcon role="coowner" /><b className="text-white mr-1">Co-owner</b> also changes the rules, uses schematics, sets up anti-cheat and promotes admins.</p>
+            <p className="flex items-center"><RoleIcon role="owner" /><b className="text-white mr-1">Owner</b> is the world's creator. Only the owner makes co-owners.</p>
+            <p className="mt-1">These roles only count in this world. The icons show in the player list (Tab).</p>
+          </div>
+          {players.filter((pl) => pl.id !== myId).length === 0 && <p className="text-[#5a6b80] text-xs rounded-xl bg-[#121822] border border-[#243044] px-4 py-3">Nobody else is here right now. You can also type <b>/promote name admin</b> in chat.</p>}
+          {players.filter((pl) => pl.id !== myId).map((pl) => {
+            const r = roleOfName(pl.name);
+            const opt = (to: 'admin' | 'coowner' | 'none', label: string) => {
+              const allowed = r !== 'owner' && (lvl >= 3 || (lvl === 2 && to !== 'coowner' && r !== 'coowner'));
+              const active = (to === 'none' && !r) || to === r;
+              return (
+                <button key={to} disabled={!allowed || active || !onPromote} onClick={() => onPromote?.(pl.name, to)} data-testid={`promote-${to}`}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold ${active ? 'bg-[#00e676] text-[#0a0e14]' : 'bg-[#1a2230] text-[#8ea0b8] hover:text-white'} disabled:cursor-not-allowed ${!active && !allowed ? 'opacity-40' : ''}`}>{label}</button>
+              );
+            };
+            return (
+              <div key={pl.id} className="flex items-center gap-2 rounded-xl bg-[#121822] border border-[#243044] px-4 py-2" data-testid="role-row">
+                <span className="text-white text-sm flex-1 truncate flex items-center"><RoleIcon role={r} />{pl.name}</span>
+                {r === 'owner' ? <span className="text-[#ffd23a] text-xs font-bold">Owner</span> : <>{opt('none', 'Player')}{opt('admin', 'Admin')}{opt('coowner', 'Co-owner')}</>}
+              </div>
+            );
+          })}
+        </div>
+      )}
       {tab === 'schematics' && (
         <div className="flex flex-col gap-5" data-testid="manage-schematics">
           {schematics}
@@ -3103,8 +3161,8 @@ function ManageServerView({ settings, hardcore, online, isHost, players, myId, h
           <div className="flex flex-col gap-1.5" data-testid="player-list">
             {players.map((pl) => (
               <div key={pl.id} className="flex items-center gap-2 rounded-xl bg-[#121822] border border-[#243044] px-4 py-2">
-                <span className="text-white text-sm flex-1 truncate" data-testid="manage-player">{tagOf && tagOf(pl.name) ? <FancyText text={tagOf(pl.name)} /> : null}{pl.name}{pl.id === myId ? ' (you)' : ''}{pl.id === hostId ? ' · host' : ''}</span>
-                {isHost && pl.id !== myId && (confirmBan === pl.id ? (
+                <span className="text-white text-sm flex-1 truncate" data-testid="manage-player"><RoleIcon role={roleOfName(pl.name)} />{tagOf && tagOf(pl.name) ? <FancyText text={tagOf(pl.name)} /> : null}{pl.name}{pl.id === myId ? ' (you)' : ''}{pl.id === hostId ? ' · host' : ''}</span>
+                {(isHost || (lvl >= 1 && lvl > roleLevel(roleOfName(pl.name)))) && pl.id !== myId && roleOfName(pl.name) !== 'owner' && (confirmBan === pl.id ? (
                   <>
                     <span className="text-[#ff8a8a] text-xs">Ban {pl.name}?</span>
                     <button onClick={() => { onBan(pl.id); setConfirmBan(null); }} className="px-3 py-1 rounded-lg bg-[#ff5555] text-white text-xs font-bold">Ban</button>
@@ -4122,6 +4180,9 @@ const COMMANDS: Array<{ names: string[]; usage: string; desc: string }> = [
   { names: ['pardon', 'unban'], usage: '/pardon <player>', desc: 'Let a banned player join this world again (the world\'s owner, or an admin in someone else\'s world).' },
   { names: ['mute', 'unmute', 'mutes'], usage: '/mute <player> · /unmute <player> · /mutes', desc: 'Stop a player from chatting in this world (the host and staff: HELPER and MOD).' },
   { names: ['kick', 'ban'], usage: '/kick <player> · /ban <player>', desc: 'Remove a player from this world (staff and admins; a ban only covers this world).' },
+  { names: ['promote', 'demote', 'roles'], usage: '/promote <player> <admin|coowner> · /demote <player> · /roles', desc: 'World roles. Admins ban players and use cheats; co-owners also change rules, schematics and anti-cheat. Only the owner makes co-owners.' },
+  { names: ['join'], usage: '/join <friend>', desc: 'Go to the world a friend is playing in.' },
+  { names: ['globalban', 'globalunban'], usage: '/globalban <player> [reason] · /globalunban <player>', desc: 'VibeBlox staff ([HELPER], [MOD]) and admins: ban a player from all of VibeBlox.' },
   { names: ['gamerule'], usage: '/gamerule keepInventory true|false', desc: 'Keep your items when you die.' },
   { names: ['screenshot', 'ss'], usage: '/screenshot', desc: 'Save a picture of the game (a PNG download). F2 does the same. Works everywhere.' },
   { names: ['locate'], usage: '/locate village | temple | fortress | dungeon | portal | treasure', desc: 'Find the closest village, desert temple, dungeon, ruined portal, buried treasure, or (in the Nether) fortress.' },
@@ -4931,7 +4992,7 @@ function GameMenu({ page, onResume, onOpenSettings, onOpenScripts, onOpenMods, o
 }) {
   useLanguage();
   return (
-    <div data-testid="game-menu" className="absolute inset-0 z-40 bg-black/55 flex items-center justify-center overflow-y-auto py-4 vb-fade-in" onContextMenu={(e) => e.preventDefault()}>
+    <div data-testid="game-menu" className="absolute inset-0 z-40 bg-black/55 flex justify-center overflow-y-auto overscroll-contain py-4 [@media(max-height:500px)]:py-1 vb-fade-in" onContextMenu={(e) => e.preventDefault()}>
       {page === 'main' ? (
         <div className="w-[400px] max-w-[90vw] flex flex-col gap-2.5 [@media(max-height:500px)]:gap-1.5 my-auto">
           <h2 className="font-[var(--font-retro)] text-white text-2xl text-center mb-4 [@media(max-height:500px)]:mb-1 [@media(max-height:500px)]:text-lg drop-shadow-[0_3px_0_rgba(0,0,0,0.6)]">{t('menu.title')}</h2>
@@ -4949,7 +5010,7 @@ function GameMenu({ page, onResume, onOpenSettings, onOpenScripts, onOpenMods, o
           <p className="text-center text-white/50 text-[11px] mt-2">{t('menu.hint')}</p>
         </div>
       ) : (
-        <div className={`${page === 'settings' ? 'w-[960px]' : page === 'scripts' ? 'w-[1180px]' : page === 'server' ? 'w-[1040px]' : 'w-[820px]'} max-w-[96vw] max-h-[90vh] flex flex-col bg-[#0a0e14]/95 border border-[#243044] rounded-2xl shadow-2xl overflow-hidden vb-fade-in vb-themed`}>
+        <div className={`${page === 'settings' ? 'w-[960px]' : page === 'scripts' ? 'w-[1180px]' : page === 'server' ? 'w-[1040px]' : 'w-[820px]'} max-w-[96vw] max-h-[90vh] [@media(max-height:500px)]:max-h-[97vh] my-auto flex flex-col bg-[#0a0e14]/95 border border-[#243044] rounded-2xl shadow-2xl overflow-hidden vb-fade-in vb-themed`}>
           <div className="flex items-center gap-3 px-5 py-3 border-b border-[#243044]">
             <button
               onClick={onBack}
@@ -4959,7 +5020,7 @@ function GameMenu({ page, onResume, onOpenSettings, onOpenScripts, onOpenMods, o
             </button>
             <span className="font-[var(--font-retro)] text-white text-xs tracking-wider">{t('page.' + page).toUpperCase()}</span>
           </div>
-          <div className="overflow-y-auto vb-scroll p-5">{children}</div>
+          <div className="overflow-y-auto overscroll-contain vb-scroll p-5 [@media(max-height:500px)]:p-3 min-h-0 flex-1" data-testid="menu-page-scroll">{children}</div>
         </div>
       )}
     </div>
@@ -5068,7 +5129,8 @@ function ServersView({ serverUrl, onServerUrlChange, onJoin, status, error, avai
   useEffect(() => { if (!connecting) setJoiningId(null); }, [connecting]);
   const canJoin = available && hostingAvailable;
   // filter by tag, then sort (most players first by default; most liked first when asked; ties keep the order from the database)
-  const shownWorlds = (worlds ?? []).filter((w) => !tagFilter || w.tags.includes(tagFilter)).map((w, i) => ({ w, i }))
+  // EggWars and Bridge Duels matches aren't open worlds: they are found from the minigame menus instead
+  const shownWorlds = (worlds ?? []).filter((w) => w.worldType !== 'eggwars' && w.worldType !== 'bridge').filter((w) => !tagFilter || w.tags.includes(tagFilter)).map((w, i) => ({ w, i }))
     .sort((a, b) => (sortBy === 'likes' ? b.w.likes - a.w.likes : 0) || b.w.players - a.w.players || a.i - b.i).map((x) => x.w);
   const privacyBadge = (p: HostedWorld['privacy']) => (p === 'friends' ? { icon: Users, text: 'Friends', cls: 'text-[#c8a2ff]' } : p === 'accounts' ? { icon: Shield, text: 'Accounts', cls: 'text-[#6ec6ff]' } : { icon: Globe, text: 'Public', cls: 'text-[#7cfc7c]' });
   const gameLabel = (w: HostedWorld) => (w.worldType === 'eggwars' ? 'EggWars' : w.worldType === 'bridge' ? 'Bridge Duels' : `${w.mode.charAt(0).toUpperCase()}${w.mode.slice(1)}${w.worldType === 'superflat' ? ' · Superflat' : ''}`);
@@ -5227,14 +5289,16 @@ function ServersView({ serverUrl, onServerUrlChange, onJoin, status, error, avai
   );
 }
 
-function PlayerList({ players, myId, max, tagOf }: { players: Record<number, string>; myId: number | null; max?: number | null; tagOf?: (name: string) => string }) {
-  const entries = Object.entries(players).sort((a, b) => a[1].localeCompare(b[1]));
+/** The player list (hold Tab, or LIST on a phone): down the right side, with world role icons (helmet, crown, king's crown). */
+function PlayerList({ players, myId, max, tagOf, roles = {} }: { players: Record<number, string>; myId: number | null; max?: number | null; tagOf?: (name: string) => string; roles?: Record<string, string> }) {
+  const roleOf = (n: string) => (roles[n.toLowerCase()] as ServerRole | undefined) ?? null;
+  const entries = Object.entries(players).sort((a, b) => roleLevel(roleOf(b[1])) - roleLevel(roleOf(a[1])) || a[1].localeCompare(b[1]));
   return (
-    <div className="absolute top-8 left-1/2 -translate-x-1/2 z-30 w-[300px] bg-black/60 rounded-lg p-3 pointer-events-none vb-fade-in">
-      <div className="text-center text-white text-xs font-bold mb-2">Players online ({entries.length}{max ? `/${max}` : ''})</div>
+    <div className="absolute top-14 right-3 z-30 w-[260px] max-w-[45vw] max-h-[70vh] overflow-y-auto bg-black/60 rounded-lg p-2.5 pointer-events-none vb-fade-in [@media(pointer:coarse)]:top-16 [@media(pointer:coarse)]:pointer-events-auto" data-testid="player-list-panel">
+      <div className="text-white text-xs font-bold mb-1.5 px-1">Players online ({entries.length}{max ? `/${max}` : ''})</div>
       <div className="flex flex-col gap-0.5">
         {entries.map(([id, name]) => (
-          <div key={id} className={`px-2 py-0.5 text-sm bg-white/10 ${Number(id) === myId ? 'text-[#ffe066]' : 'text-white'}`} data-testid="player-row">{tagOf && tagOf(name) ? <><FancyText text={tagOf(name)} /></> : null}{name}</div>
+          <div key={id} className={`px-2 py-0.5 text-sm bg-white/10 rounded-sm truncate flex items-center ${Number(id) === myId ? 'text-[#ffe066]' : 'text-white'}`} data-testid="player-row"><RoleIcon role={roleOf(name)} />{tagOf && tagOf(name) ? <><FancyText text={tagOf(name)} /></> : null}{name}</div>
         ))}
       </div>
     </div>
@@ -5802,6 +5866,8 @@ export default function App() {
   const memberTeamsRef = useRef<Record<number, number>>({});
   // Anti-cheat alerts about players in the world you host
   const [cheatAlerts, setCheatAlerts] = useState<CheatAlertLike[]>([]);
+  /** Co-owners: the anti-cheat settings of the world you are in (the host's room sends them) */
+  const [remoteAc, setRemoteAc] = useState<AcSettings | null>(null);
   const [acSettings, setAcSettingsState] = useState<AcSettings>(loadAcSettings);
   function setAcSettings(next: AcSettings) {
     setAcSettingsState(next);
@@ -5838,11 +5904,13 @@ export default function App() {
   const [renderDistance, setRenderDistance] = useState(savedSettings.renderDistance ?? 6);
   const [graphicsQuality, setGraphicsQuality] = useState<GraphicsQuality>(savedSettings.graphicsQuality ?? 'medium');
   const [textureRes, setTextureRes] = useState<TextureRes>(savedSettings.textureRes === 32 ? 32 : 16);
+  /** Lagging: ask once whether to switch to Low graphics (Yes/No) */
+  const [askOptimise, setAskOptimise] = useState(false);
 
   /** Switch textures right now, even in the middle of a game. */
   const [, bumpTexIcons] = useState(0);
   function changeTextureRes(res: TextureRes) {
-    setTextureResolution(graphicsQuality === 'low' ? 16 : res); // clears every cached texture (Low graphics stays 16×16)
+    setTextureResolution(texResFor(graphicsQuality, res)); // clears every cached texture (Low stays 16×16, Epic and Max 32×32)
     setTextureRes(res); // saves the choice and redraws the hotbar and inventory icons
     gameHandleRef.current?.reloadTextures(); // re-skins the running world
   }
@@ -5882,7 +5950,16 @@ export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   // Touch screens (phones, tablets): on-screen controls instead of mouse and keyboard
   const [touchPref, setTouchPrefState] = useState<TouchPref>(loadTouchPref);
-  const touchOn = touchEnabled(touchPref);
+  // Some phones say they have a mouse too (a stylus, a "desktop site" setting): a real finger on the screen turns touch controls on anyway
+  const [sawTouch, setSawTouch] = useState(false);
+  useEffect(() => {
+    if (touchPref !== 'auto' || sawTouch) return;
+    const f = (e: TouchEvent | PointerEvent) => { if (!('pointerType' in e) || e.pointerType === 'touch') setSawTouch(true); };
+    addEventListener('touchstart', f, { passive: true });
+    addEventListener('pointerdown', f, { passive: true });
+    return () => { removeEventListener('touchstart', f); removeEventListener('pointerdown', f); };
+  }, [touchPref, sawTouch]);
+  const touchOn = touchEnabled(touchPref) || (touchPref === 'auto' && sawTouch);
   const touchOnRef = useRef(touchOn);
   touchOnRef.current = touchOn;
   useEffect(() => { if (touchOn) lockViewportForTouch(); }, [touchOn]);
@@ -5912,10 +5989,27 @@ export default function App() {
   /** Where you are playing online right now ("p2p:<id>" for a hosted world): friends get a Join button for it. */
   const joinedAddressRef = useRef<string | null>(null);
   const [myNetId, setMyNetId] = useState<number | null>(null);
+  /** Roles in the world you are in (lowercase name -> 'owner' | 'coowner' | 'admin'), from the room */
+  const [netRoles, setNetRoles] = useState<Record<string, string>>({});
+  /** You keep a world open that its owner left (you run it, but it isn't yours: your role decides what you may do) */
+  const [handedOver, setHandedOver] = useState(false);
+  const handedOverRef = useRef(false);
+  handedOverRef.current = handedOver;
+  /** The host is leaving and the world moves to another player: reconnect there instead of showing "Disconnected" */
+  const migratingRef = useRef<{ room: string; host: string } | null>(null);
+  /** Bumped to reload the world view (joining the same world again after it moved to another host) */
+  const [gameNonce, setGameNonce] = useState(0);
+  /** Your things in a world you joined are kept on this device under this key */
+  const mpSaveKeyRef = useRef<string | null>(null);
   // Minigames, and worlds that belong to somebody else, have no cheats: no commands, mods, scripts or server admin.
   // Advancements are for survival worlds only.
   const isMinigame = activeWorldType === 'eggwars' || activeWorldType === 'bridge';
-  const ownsWorld = !isMinigame && !(netStatus === 'online' && hostId !== myNetId);
+  const myRole: ServerRole | null = netStatus === 'online' && !isMinigame ? ((netRoles[(username ?? '').toLowerCase()] as ServerRole | undefined) ?? null) : null;
+  const myRoleRef = useRef<ServerRole | null>(null);
+  myRoleRef.current = myRole;
+  const netRolesRef = useRef(netRoles);
+  netRolesRef.current = netRoles;
+  const ownsWorld = !isMinigame && !(netStatus === 'online' && hostId !== myNetId) && !(handedOver && myRole !== 'owner');
   const advAllowed = !isMinigame && activeWorldMode === 'survival';
   const ownsWorldRef = useRef(true);
   ownsWorldRef.current = ownsWorld;
@@ -6327,9 +6421,10 @@ export default function App() {
     setToasts((t) => [...t.slice(-3), { key, text, kind }]);
     window.setTimeout(() => setToasts((t) => t.filter((x) => x.key !== key)), kind === 'announce' ? 9000 : 5000);
   }
+  /** An announcement goes into the chat of everyone who is playing right now (players in the menus don't get it). */
   function showAnnouncement(text: string) {
-    pushMessage(`[Announcement] ${text}`, '#ffd700');
-    showToast(text, 'announce');
+    if (gameModeRef.current !== 'playing') return;
+    pushMessage(`ANNOUNCEMENT: ${text}`, '#ffd700');
   }
 
   async function handleIncomingMessages(msgs: DM[]) {
@@ -6533,6 +6628,7 @@ export default function App() {
       setPanelOpen(false);
       handle.setSleepOnline(!!mpRef.current?.connected); // online, the server skips the night once half the players sleep
       handle.setTouchMode(touchOnRef.current);
+      handle.setShaderPrefs(getShaders());
       // First time ever in a world (not a minigame): the tutorial
       if (!tutorialDone() && activeWorldType !== 'eggwars' && activeWorldType !== 'bridge') setShowTutorial(true);
       if (touchOnRef.current) { try { const el = document.documentElement; if (!document.fullscreenElement && el.requestFullscreen) void el.requestFullscreen().then(() => (screen.orientation as unknown as { lock?: (o: string) => Promise<void> })?.lock?.('landscape')).catch(() => {}); } catch { /* not allowed */ } }
@@ -6603,7 +6699,23 @@ export default function App() {
           handle.setRemotePlayer(p.id, p.name, p.x, p.y, p.z, p.yaw, p.pitch, p.mode);
           if (p.look) handle.setRemoteLook(p.id, p.look);
         }
+        for (const d of welcome.drops ?? []) handle.addRemoteDrop(d); // things already lying around
         pushMessage(`Connected as ${welcome.name}. ${welcome.players.length} other player${welcome.players.length === 1 ? '' : 's'} online.`, '#ffe066');
+        // your things from last time in this world
+        const key = mpSaveKeyRef.current;
+        if (key) {
+          try {
+            const raw = localStorage.getItem(key);
+            if (raw) {
+              const ps = JSON.parse(raw) as { selected?: number };
+              handle.loadPlayerSave(ps as Parameters<typeof handle.loadPlayerSave>[0]);
+              setSelectedSlot(Number.isInteger(ps.selected) ? ps.selected! : 0);
+              setInventory(handle.getInventory()); setOffhand(handle.getOffhand()); setArmor(handle.getArmor());
+              setHealth(handle.getHealth()); setHunger(handle.getHunger()); setXpState(handle.getXp());
+              pushMessage('Welcome back! Your items and spot in this world were kept.', '#ffe066');
+            }
+          } catch { /* a broken save just starts fresh */ }
+        }
       }
       handle.setBlockOutline(getQol().outline);
       handle.onHint((text) => {
@@ -6659,7 +6771,7 @@ export default function App() {
         gameHandleRef.current = null;
       };
     }
-  }, [gameMode, activeWorldMode, activeWorldType, activeSeed, activeExperimental]);
+  }, [gameMode, activeWorldMode, activeWorldType, activeSeed, activeExperimental, gameNonce]);
 
   useEffect(() => {
     if (gameHandleRef.current) {
@@ -6668,8 +6780,8 @@ export default function App() {
   }, [renderDistance]);
 
   useEffect(() => {
-    // Low graphics always draws 16×16 textures; leaving Low brings your chosen resolution back
-    setTextureResolution(graphicsQuality === 'low' ? 16 : textureRes);
+    // Low graphics always draws 16×16 textures, Epic and Max always 32×32; the others use your choice
+    setTextureResolution(texResFor(graphicsQuality, textureRes));
     if (gameHandleRef.current) {
       gameHandleRef.current.setGraphicsQuality(graphicsQuality);
       gameHandleRef.current.reloadTextures();
@@ -6686,6 +6798,31 @@ export default function App() {
 
   // Video settings (clouds, stars, fast render, frame cap...) go straight to the running game
   useEffect(() => subscribeVideo(() => gameHandleRef.current?.setVideoPrefs(getVideo())), []);
+  useEffect(() => subscribeShaders(() => gameHandleRef.current?.setShaderPrefs(getShaders())), []);
+  // Lagging badly for a while (and not already on Low)? Offer to switch to Low graphics: once per visit, unless you say No forever.
+  useEffect(() => {
+    if (gameMode !== 'playing' || graphicsQuality === 'low' || navigator.webdriver) return; // (no question for automated browsers)
+    let never = false;
+    try { never = localStorage.getItem('vb-fps-never') === '1' || sessionStorage.getItem('vb-fps-asked') === '1'; } catch { /* storage blocked */ }
+    if (never) return;
+    const started = performance.now();
+    const samples: number[] = [];
+    const t = window.setInterval(() => {
+      const h = gameHandleRef.current;
+      if (!h || document.visibilityState !== 'visible' || menuOpenRef.current || performance.now() - started < 15_000) { samples.length = 0; return; }
+      const fps = h.getFps();
+      if (!(fps > 0)) return;
+      samples.push(fps);
+      if (samples.length > 10) samples.shift();
+      if (samples.length === 10 && samples.reduce((a, b) => a + b, 0) / 10 < 24) {
+        window.clearInterval(t);
+        try { sessionStorage.setItem('vb-fps-asked', '1'); } catch { /* storage blocked */ }
+        setAskOptimise(true);
+        if (document.pointerLockElement) document.exitPointerLock();
+      }
+    }, 1000);
+    return () => window.clearInterval(t);
+  }, [gameMode, graphicsQuality]);
 
   useEffect(() => {
     gameHandleRef.current?.setSfxVolume(sfxVolume);
@@ -6812,7 +6949,7 @@ export default function App() {
   /** Manage Server changes: the host sends them to the server; alone, they apply right away. */
   function changeServerSettings(part: Partial<ServerSettings>) {
     const mp = mpRef.current;
-    if (mp && mp.connected) { if (hostId === myNetId) mp.sendSettings(part); return; }
+    if (mp && mp.connected) { if (hostId === myNetId || roleLevel(myRoleRef.current) >= 2) mp.sendSettings(part); return; } // the host and co-owners change the rules
     applyServerSettings({ ...serverSettingsRef.current, ...part });
   }
 
@@ -6820,7 +6957,7 @@ export default function App() {
   function changeTime(t: number): boolean {
     const mp = mpRef.current;
     if (mp && mp.connected) {
-      if (hostId !== myNetId) return false;
+      if (hostId !== myNetId && roleLevel(myRoleRef.current) < 1) return false;
       mp.sendTime(t);
       return true;
     }
@@ -6830,7 +6967,7 @@ export default function App() {
   function changeWeather(kind: WeatherKind, seconds?: number): boolean {
     const mp = mpRef.current;
     if (mp && mp.connected) {
-      if (hostId !== myNetId) return false;
+      if (hostId !== myNetId && roleLevel(myRoleRef.current) < 1) return false;
       mp.sendWeather(kind);
       return true;
     }
@@ -6878,7 +7015,9 @@ export default function App() {
 
   function openGameMenu(page: MenuPage = 'main') {
     if (menuOpenRef.current) return; // already open: never stack a second one
-    if ((page === 'server' || page === 'scripts' || page === 'mods') && !ownsWorldRef.current) page = 'main';
+    if (page === 'server' && !ownsWorldRef.current && roleLevel(myRoleRef.current) < 1) page = 'main';
+    if (page === 'scripts' && !ownsWorldRef.current && !canRunScripts(serverSettingsRef.current.scriptPerm, serverSettingsRef.current.scripts, myRoleRef.current)) page = 'main';
+    if (page === 'mods' && !ownsWorldRef.current) page = 'main';
     if (page === 'advancements' && !advAllowedRef.current) page = 'main';
     menuOpenedAtRef.current = performance.now();
     menuOpenRef.current = true;
@@ -6910,6 +7049,8 @@ export default function App() {
     handleExitGame();
     setView('home');
   }
+  const exitToHomeRef = useRef(exitToHome);
+  exitToHomeRef.current = exitToHome;
 
   const lastStatTickRef = useRef(0);
   function saveWorldNow() {
@@ -6989,6 +7130,7 @@ export default function App() {
           setOnlinePlayers(names);
           setMyNetId(w.id);
           setHostId(w.hostId ?? w.id);
+          setNetRoles(w.roles ?? {});
           setServerMax(typeof w.maxPlayers === 'number' ? w.maxPlayers : null);
           const h = gameHandleRef.current;
           h?.setNetEnabled(true);
@@ -7009,7 +7151,15 @@ export default function App() {
         setOnlinePlayers(names);
         setMyNetId(w.id);
         setHostId(w.hostId ?? null);
+        setNetRoles(w.roles ?? {});
+        setHandedOver(false);
         setServerMax(typeof w.maxPlayers === 'number' ? w.maxPlayers : null);
+        // Your things in this world are kept on your device (the world's owner keeps the world)
+        {
+          const owner = Object.entries(w.roles ?? {}).find(([, r]) => r === 'owner')?.[0] ?? (w.hostId != null ? names[w.hostId] : undefined) ?? (joinedAddressRef.current ?? url);
+          mpSaveKeyRef.current = `vb-mpsave:${String(owner).toLowerCase().slice(0, 80)}:${w.seed}`;
+        }
+        if (gameModeRef.current === 'playing') setGameNonce((n) => n + 1); // already in a world (it moved to another host): load this one fresh
         // Joining someone's game counts as a play for them (the database ignores repeats and your own)
         { const hostName = w.hostId != null ? names[w.hostId] : undefined; const me = accountRef.current; if (hostName && w.hostId !== w.id && me && !isGuestName(me.username)) void recordPlay(hostName); }
         hardcoreRef.current = false; setHardcore(false);
@@ -7071,6 +7221,11 @@ export default function App() {
       onDropGone: (n) => gameHandleRef.current?.removeNetDrop(n),
       onPickupResult: (n, ok) => gameHandleRef.current?.resolvePickup(n, ok),
       onRemoteCmd: (cmd, args, from) => applyRemoteCmd(cmd, args, from),
+      onRoles: (r) => setNetRoles(r),
+      onAnticheat: (st) => setRemoteAc(st),
+      onCheat: (a) => setCheatAlerts((prev) => [a as unknown as CheatAlertLike, ...prev].slice(0, 100)),
+      onBecomeHost: (room, st) => { void becomeHostRef.current(room, st); },
+      onMigrate: (room, host) => { migratingRef.current = { room, host }; pushMessage(`The host left. ${host} is keeping the world open: moving you there…`, '#ffe066'); },
       onRanks: (r) => { applyFakeRanks(cleanFakeRanks(r)); refreshNameTags(); },
       onBadge: (id, badge) => {
         const nm = onlineNamesRef.current[id];
@@ -7098,6 +7253,18 @@ export default function App() {
       onHurtFx: (id) => gameHandleRef.current?.remoteHurtFx(id),
       onClose: (reason) => {
         if (hostingSelf) { stopHostingRef.current(true); return; } // (only if your own room shut down by itself)
+        if (mpRef.current !== mp) return; // an old connection (replaced already)
+        saveMpProgress();
+        const mig = migratingRef.current;
+        if (mig && gameModeRef.current === 'playing') {
+          // the world moved to another player: join them where it lives now, the game keeps going meanwhile
+          migratingRef.current = null;
+          mpRef.current = null;
+          const h = gameHandleRef.current;
+          for (const k of Object.keys(onlineNamesRef.current)) if (Number(k) !== myNetIdRef.current) h?.removeRemotePlayer(Number(k));
+          window.setTimeout(() => { if (gameModeRef.current === 'playing' && !mpRef.current) { friendJoinErrorRef.current = false; joinServer('p2p:' + mig.room, mig.host); } }, 3000);
+          return;
+        }
         mpRef.current = null;
         setNetStatus('offline');
         onlineNamesRef.current = {};
@@ -7155,6 +7322,9 @@ export default function App() {
       ...anticheatOptions(cfg.name),
       onCount: (n: number) => { setHostingInfo((x) => (x ? { ...x, players: n } : x)); publishHosting(); },
       onBans: (bans: string[]) => setSavedWorlds((prev) => prev.map((w) => (w.id === worldId ? { ...w, bans } : w))),
+      roles: cfg.roles ?? {}, worldName: cfg.name,
+      onRoles: (roles: Record<string, 'admin' | 'coowner'>) => setSavedWorlds((prev) => prev.map((w) => (w.id === worldId ? { ...w, roles } : w))),
+      onAnticheat: (a: AcSettings) => setAcSettings(a),
     });
     const peer = new hMod.PeerHost(id, signalingFor(hMod), room);
     hostingRef.current = { id, room, peer, worldId, privacy, name: cfg.name, mode, worldType, max, timer: 0, description: cfg.description, image: await listImage(cfg.image), tags: cleanTags(cfg.tags) };
@@ -7264,6 +7434,56 @@ export default function App() {
     };
   }
 
+  /** Your things in a world you joined (someone else's): kept on this device, so you have them next time. */
+  function saveMpProgress() {
+    const key = mpSaveKeyRef.current, h = gameHandleRef.current;
+    if (!key || !h || ownsWorldRef.current && !handedOverRef.current || isMinigameRef.current || pendingWelcomeRef.current) return;
+    try { localStorage.setItem(key, JSON.stringify(h.getPlayerSave())); } catch { /* storage full or blocked */ }
+  }
+  const saveMpProgressRef = useRef(saveMpProgress);
+  saveMpProgressRef.current = saveMpProgress;
+  useEffect(() => {
+    if (netStatus !== 'online') return;
+    const t = window.setInterval(() => saveMpProgressRef.current(), 15_000);
+    const bye = () => saveMpProgressRef.current();
+    addEventListener('pagehide', bye);
+    return () => { window.clearInterval(t); removeEventListener('pagehide', bye); };
+  }, [netStatus]);
+
+  /** The host left their world and picked you to keep it open: your browser runs it from now on. */
+  async function becomeHost(roomId: string, st: NetHandoff) {
+    const me = accountRef.current, h = gameHandleRef.current;
+    const load = Object.values(multiplayerModules)[0];
+    const [mpMod, hMod] = await Promise.all([load ? load().catch(() => null) : null, loadHosting()]);
+    if (!mpMod || !hMod || !me || !h || gameHandleRef.current !== h || hostingRef.current) return;
+    saveMpProgress();
+    const worldType = st.worldType === 'superflat' ? 'superflat' : 'default';
+    const mode = st.mode === 'creative' || st.mode === 'adventure' ? st.mode : 'survival';
+    const room = new hMod.HostRoom({
+      seed: st.seed, worldType, mode, changes: Array.isArray(st.changes) ? st.changes : [], time: Number(st.time) || 0, weather: st.weather ?? 'clear',
+      settings: { ...DEFAULT_SERVER, ...(st.settings ?? {}) }, ranks: st.ranks, experimental: !!st.experimental, privacy: st.privacy ?? 'public',
+      hostName: me.username, owner: st.owner, roles: st.roles ?? {}, worldName: st.name, maxPlayers: Math.max(2, Math.min(40, Number(st.maxPlayers) || 18)), bans: Array.isArray(st.bans) ? st.bans : [],
+      services: roomServices(me),
+      ...anticheatOptions(st.name),
+      onCount: (n: number) => { setHostingInfo((x) => (x ? { ...x, players: n } : x)); publishHosting(); },
+    });
+    const peer = new hMod.PeerHost(roomId, signalingFor(hMod), room);
+    // the old link to the leaving host closes quietly; remote players come back as they reconnect
+    const old = mpRef.current; mpRef.current = null; old?.disconnect();
+    for (const k of Object.keys(onlineNamesRef.current)) if (Number(k) !== myNetIdRef.current) h.removeRemotePlayer(Number(k));
+    setHandedOver(true);
+    hostingRef.current = { id: roomId, room, peer, worldId: '', privacy: (st.privacy ?? 'public') as WorldPrivacy, name: st.name, mode, worldType, max: Number(st.maxPlayers) || 18, timer: 0, tags: [] };
+    joinedAddressRef.current = 'p2p:' + roomId;
+    connectWith((mpMod as { MultiplayerClient: new () => MpClient }).MultiplayerClient, undefined, { hostSocket: hMod.loopback(room) });
+    setHostingInfo({ privacy: (st.privacy ?? 'public') as WorldPrivacy, players: 1 });
+    peer.start().catch(() => { if (hostingRef.current?.id === roomId) pushMessage("Couldn't keep the world open for others (the matchmaking service didn't answer).", '#ff9a3c'); });
+    publishHosting();
+    hostingRef.current.timer = window.setInterval(publishHosting, 20_000);
+    pushMessage(`The host left, so the world now runs on your device. Others are joining you. If you leave, the next player takes over.`, '#7cfc7c');
+  }
+  const becomeHostRef = useRef(becomeHost);
+  becomeHostRef.current = becomeHost;
+
   /** Closes your world to others. stillPlaying: you stay in it (it was made private). */
   function stopHosting(stillPlaying: boolean) {
     const hs = hostingRef.current;
@@ -7271,9 +7491,12 @@ export default function App() {
     hostingRef.current = null;
     setHostingInfo(null);
     window.clearInterval(hs.timer);
-    hs.peer.stop();
+    // Leaving (not just closing the door): the world stays open, run by another player
+    let handedTo: string | null = null;
+    if (!stillPlaying && hs.room.handOff && hs.privacy !== 'private') { try { handedTo = hs.room.handOff(randomRoomId()); } catch { handedTo = null; } }
+    if (handedTo) window.setTimeout(() => hs.peer.stop(), 2600); else hs.peer.stop();
     if (mpRef.current) { mpRef.current.disconnect(); mpRef.current = null; }
-    hs.room.stop();
+    if (!handedTo) hs.room.stop();
     void unpublishHostedWorld(hs.id);
     void setServerPresence(null);
     joinedAddressRef.current = null;
@@ -7345,6 +7568,8 @@ export default function App() {
     joinServer(friend.server, friend.username);
   }
   useEffect(() => { if (netStatus !== 'connecting') setJoiningFriend(false); }, [netStatus]);
+  const joinFriendRef = useRef(joinFriend);
+  joinFriendRef.current = joinFriend;
 
   // Online: send our position ~10 times a second, plus any blocks we changed
   useEffect(() => {
@@ -8083,6 +8308,22 @@ export default function App() {
       void (cmd === 'friend' ? addFriend(me, args[0]) : unfriendByName(me, args[0])).then((r) => (r.ok ? info(r.message) : err(r.error)));
       return;
     }
+    if (cmd === 'join') {
+      // /join <friend>: go to the world a friend is playing in right now
+      if (!me || isGuestName(me.username)) { err('Sign in to join friends (open the Social tab in the menu).'); return; }
+      if (!args[0]) { err('Usage: /join <friend>'); return; }
+      void loadFriends(me.userId).then((r) => {
+        if (!r.ok) { err(r.error); return; }
+        const f = r.friends.find((x) => x.username.toLowerCase() === args[0].toLowerCase());
+        if (!f) { err(`${args[0]} isn't your friend. Add them with /friend ${args[0]}`); return; }
+        if (!f.server) { err(`${f.username} isn't in a world you can join right now${f.online ? ' (they may be in a private world or the menus)' : ''}`); return; }
+        if (joinedAddressRef.current === f.server) { info(`You're already in ${f.username}'s world`); return; }
+        info(`Joining ${f.username}…`);
+        exitToHomeRef.current();
+        window.setTimeout(() => joinFriendRef.current(f), 400);
+      });
+      return;
+    }
     if (cmd === 'r' || cmd === 'reply') {
       const to = lastWhisperFromRef.current;
       if (!to) { err('Nobody has whispered to you yet'); return; }
@@ -8157,7 +8398,7 @@ export default function App() {
       return true;
     };
     /** The host can also reach other players (@a, @p, a name): the command is sent to their game and runs there. */
-    const iAmHost = !!mpRef.current?.connected && hostId === myNetIdRef.current;
+    const iAmHost = !!mpRef.current?.connected && (hostId === myNetIdRef.current || roleLevel(myRoleRef.current) >= 1); // the host, and world admins (cheats)
     const reach = (tok: string | undefined, what: string): { you: boolean; others: string[] } | null => {
       if (tok === undefined) return { you: true, others: [] };
       const r = resolve(tok);
@@ -8184,16 +8425,49 @@ export default function App() {
       });
       return;
     }
-    const SOCIAL = ['friend', 'friends', 'unfriend', 'whisper', 'w', 'msg', 'tell', 'r', 'reply', 'panel'];
+    const SOCIAL = ['friend', 'friends', 'unfriend', 'whisper', 'w', 'msg', 'tell', 'r', 'reply', 'panel', 'join'];
     if (SOCIAL.includes(cmd)) {
       if (ctx) { err('That command only works in chat'); return; }
       return runSocialCommand(cmd, args);
     }
+    if (cmd === 'promote' || cmd === 'demote' || cmd === 'roles') {
+      if (ctx) { err('That command only works in chat'); return; }
+      const mp = mpRef.current;
+      if (cmd === 'roles') {
+        const list = Object.entries(netRolesRef.current).sort((a, b) => roleLevel(b[1] as ServerRole) - roleLevel(a[1] as ServerRole));
+        info(list.length ? `Roles here: ${list.map(([n, r]) => `${n} (${ROLE_LABELS[r as ServerRole] ?? r})`).join(', ')}` : 'Nobody has a role in this world yet. The owner can use /promote <player> admin');
+        return;
+      }
+      if (!mp?.connected || isMinigameRef.current) { err('Roles are for worlds other players can join. Open your world (Manage Server > Who can join), then promote players.'); return; }
+      const who = args[0];
+      const to = cmd === 'demote' ? 'none' : (args[1] ?? 'admin').toLowerCase().replace(/[-_ ]/g, '');
+      if (!who || !['admin', 'coowner', 'none'].includes(to)) { err(cmd === 'demote' ? 'Usage: /demote <player>' : 'Usage: /promote <player> <admin|coowner>'); return; }
+      if (roleLevel(myRoleRef.current) < 2) { err('Only the owner and co-owners can promote players'); return; }
+      mp.sendPromote(who, to as 'admin' | 'coowner' | 'none'); // the world answers in chat
+      return;
+    }
+    if (cmd === 'globalban' || cmd === 'globalunban' || cmd === 'gban' || cmd === 'gunban') {
+      if (ctx) { err('That command only works in chat'); return; }
+      const me = accountRef.current;
+      if (!me || !canModerateRef.current) { err('Only VibeBlox staff ([HELPER], [MOD]) and admins can ban players from VibeBlox'); return; }
+      const who = args[0];
+      if (!who) { err(`Usage: /${cmd} <player>${cmd.includes('un') ? '' : ' [reason]'}`); return; }
+      if (cmd === 'globalunban' || cmd === 'gunban') { void unbanEverywhere(who).then((r) => (r.ok ? info(`${who} can play VibeBlox again`) : err(r.error))); return; }
+      void banEverywhere(me, who, args.slice(1).join(' ')).then((r) => {
+        if (!r.ok) { err(r.error); return; }
+        info(`${who} is banned from VibeBlox`);
+        if (mpRef.current?.connected) mpRef.current.sendAdmin(me.token, 'kick', { name: who }); // and out of this world now
+      });
+      return;
+    }
     if (cmd === 'kick' || cmd === 'ban') {
       if (ctx) { err('That command only works in chat'); return; }
       if (!args[0]) { err(`Usage: /${cmd} <player>`); return; }
-      if (canModerateRef.current && accountRef.current && mpRef.current?.connected) mpRef.current.sendAdmin(accountRef.current.token, cmd, { name: args[0] }); // the server answers in chat
-      else err('Only staff and admins can use /' + cmd + ' (hosts: use Manage Server)');
+      const mp = mpRef.current;
+      const worldPower = !!mp?.connected && !isMinigameRef.current && (roleLevel(myRoleRef.current) >= 1 || hostId === myNetIdRef.current);
+      if (worldPower) mp!.sendMod(cmd, args[0]); // world admins, co-owners and the owner (the world answers in chat)
+      else if (canModerateRef.current && accountRef.current && mp?.connected) mp.sendAdmin(accountRef.current.token, cmd, { name: args[0] }); // VibeBlox staff
+      else err(mp?.connected ? `Only this world's admins and staff can use /${cmd}` : 'Kick and ban are for players in your world (multiplayer)');
       return;
     }
     if (cmd === 'mute' || cmd === 'unmute' || cmd === 'mutes') {
@@ -8212,11 +8486,12 @@ export default function App() {
       if (!who) { err('Usage: /pardon <player>'); return; }
       if (ownsWorldRef.current) {
         if (unbanName(who)) info(`${who} can join this world again`); else err(`${who} isn't banned from this world`);
-      } else if (canModerateRef.current && accountRef.current && mpRef.current?.connected) mpRef.current.sendAdmin(accountRef.current.token, 'unban', { name: who }); // the server answers in chat
+      } else if (roleLevel(myRoleRef.current) >= 1 && mpRef.current?.connected) mpRef.current.sendMod('unban', who);
+      else if (canModerateRef.current && accountRef.current && mpRef.current?.connected) mpRef.current.sendAdmin(accountRef.current.token, 'unban', { name: who }); // the server answers in chat
       else err(isMinigameRef.current ? t('restricted.minigame') : t('restricted.world'));
       return;
     }
-    const staffPower = canModerateRef.current && !!accountRef.current; // admins and staff use commands in every world
+    const staffPower = (canModerateRef.current && !!accountRef.current) || roleLevel(myRoleRef.current) >= 1; // VibeBlox admins and staff use commands in every world; world admins in theirs
     if (!ownsWorldRef.current && !staffPower && cmd !== 'help' && cmd !== '?') { err(isMinigameRef.current ? t('restricted.minigame') : t('restricted.world')); return; } // no cheats in minigames or other people's worlds
     if (!serverSettingsRef.current.commands && !staffPower && cmd !== 'help' && cmd !== '?') { err('Commands are turned off on this server (Manage Server).'); return; }
 
@@ -8513,10 +8788,11 @@ export default function App() {
         return;
       }
       case 'weather': {
-        const kind = (args[0] ?? '').toLowerCase();
+        const raw = (args[0] ?? '').toLowerCase();
+        const kind = raw === 'storm' || raw === 'thunderstorm' ? 'thunder' : raw;
         const secs = args[1] === undefined ? undefined : Number(args[1]);
-        if ((kind !== 'clear' && kind !== 'rain' && kind !== 'snow') || (secs !== undefined && !(secs > 0))) {
-          err('Usage: /weather <clear|rain|snow> [seconds]');
+        if ((kind !== 'clear' && kind !== 'rain' && kind !== 'snow' && kind !== 'thunder') || (secs !== undefined && !(secs > 0))) {
+          err('Usage: /weather <clear|rain|thunder|snow> [seconds]');
           return;
         }
         if (h.getDebugInfo().dimension !== 'overworld') info('There is no weather here. It will show when you go back to the Overworld.');
@@ -8753,6 +9029,8 @@ export default function App() {
     activityRef.current = typeof activity === 'string' ? activity : null;
     setGameMode('playing');
   }
+  // The phone's PLAY NOW button and the browser tests use this to start a quick, unsaved survival game
+  useEffect(() => { (window as unknown as { __vbPlayNow?: () => void }).__vbPlayNow = () => handlePlayNow(); });
   // While you play, tell everyone what (every 30 seconds; it stops counting you about a minute after you leave)
   useEffect(() => {
     if (gameMode !== 'playing') return;
@@ -8799,7 +9077,13 @@ export default function App() {
 
   function handleExitGame() {
     saveWorldNow(); // save before the world is thrown away
-    stopHosting(false); // everyone in your world is sent home
+    saveMpProgress(); // (your things in someone else's world)
+    migratingRef.current = null;
+    stopHosting(false); // your world stays open: another player keeps it running (or everyone goes home)
+    setNetRoles({});
+    setHandedOver(false);
+    setRemoteAc(null);
+    mpSaveKeyRef.current = null;
     onlineMgRef.current = null;
     arenaVariantRef.current = undefined;
     matchRef.current = null;
@@ -8916,7 +9200,7 @@ export default function App() {
           netStatus={netStatus}
           netError={netError}
         />
-        {!compactLayout && <ProfilePanel username={currentUsername} onPlayNow={handlePlayNow} onOpenLeaderboard={() => handleNavClick('leaderboard')} />}
+        {!compactLayout && <ProfilePanel username={currentUsername} />}
         {showModal && <LoginOverlay onGuest={handleGuest} onClose={username ? () => setShowModal(false) : undefined} />}
       </div>
 
@@ -8931,6 +9215,22 @@ export default function App() {
           className={`w-full h-full ${showMenu ? 'hidden' : 'block'}`}
         />
         {!showMenu && <GameOverlay />}
+        {!showMenu && askOptimise && (
+          <div className="absolute inset-0 z-[70] flex items-center justify-center bg-black/50 vb-fade-in" data-testid="optimise-fps">
+            <div className="w-[360px] max-w-[92vw] rounded-2xl bg-[#121822] border border-[#243044] p-5 text-center vb-themed">
+              <h3 className="font-[var(--font-retro)] text-white text-sm mb-2">Optimise FPS?</h3>
+              <p className="text-[#8ea0b8] text-xs mb-4">VibeBlox is running slowly on this device. Switch to Low graphics to make it smoother? You can change it back in Settings &gt; Video.</p>
+              <div className="flex gap-2">
+                <button data-testid="optimise-yes" onClick={() => { setAskOptimise(false); setGraphicsQuality('low'); if (renderDistance > 6) setRenderDistance(6); pushMessage('Switched to Low graphics for a smoother game.', '#7cfc7c'); gameHandleRef.current?.relock(); }}
+                  className="flex-1 py-2.5 rounded-xl bg-[#00e676] text-[#0a0e14] text-sm font-bold">Yes</button>
+                <button data-testid="optimise-no" onClick={() => { setAskOptimise(false); gameHandleRef.current?.relock(); }}
+                  className="flex-1 py-2.5 rounded-xl bg-[#1a2230] border border-[#364860] text-white text-sm font-bold">No</button>
+              </div>
+              <button data-testid="optimise-never" onClick={() => { setAskOptimise(false); try { localStorage.setItem('vb-fps-never', '1'); } catch { /* storage blocked */ } gameHandleRef.current?.relock(); }}
+                className="mt-3 text-[#5a6b80] text-[11px] underline">Don't ask again</button>
+            </div>
+          </div>
+        )}
         {!showMenu && <GameHUD xp={xpState} inventory={inventory} offhand={offhand} armor={armor} health={health} hunger={hunger} selectedSlot={selectedSlot} mode={playMode} air={air} blighted={effectsList.some((e) => e.name === 'blight')} onPick={touchOn && !inventoryOpen && !menuOpen ? (i) => setSelectedSlot(i) : undefined} />}
         {!showMenu && touchOn && (
           <TouchControls
@@ -8938,10 +9238,12 @@ export default function App() {
             onMenu={() => openGameMenu()}
             onChat={() => openChat('')}
             creative={playMode === 'creative'}
+            onPlayers={netStatus === 'online' ? () => setShowPlayerList((v) => !v) : undefined}
+            playersOn={showPlayerList}
             paused={menuOpen || inventoryOpen || chatOpen || helpOpen || !!deathReason || !!trading || !!cmdBlock || !!disconnectReason || panelOpen}
           />
         )}
-        {!showMenu && touchOn && !menuOpen && <RotateHint />}
+        {!showMenu && touchOn && <RotateHint />}
         {!showMenu && touchOn && (inventoryOpen || chatOpen) && (
           <button data-testid="touch-close"
             onClick={() => { if (chatOpen) closeChat(false); else { const c = getBinds().inventory; document.dispatchEvent(new KeyboardEvent('keydown', { code: c, key: c, bubbles: true })); document.dispatchEvent(new KeyboardEvent('keyup', { code: c, key: c, bubbles: true })); } }}
@@ -9076,7 +9378,7 @@ export default function App() {
         {!showMenu && <NowPlayingToast />}
         {!showMenu && <AttackIndicator getCharge={() => gameHandleRef.current?.getAttackCharge?.() ?? 1} />}
         {!showMenu && <LookingAtLabel getName={() => gameHandleRef.current?.getTargetName() ?? ''} paused={chatOpen || helpOpen || inventoryOpen} />}
-        {!showMenu && showPlayerList && netStatus === 'online' && <PlayerList players={onlinePlayers} myId={myNetIdRef.current} max={serverMax} tagOf={tagsFor} />}
+        {!showMenu && showPlayerList && netStatus === 'online' && <PlayerList players={onlinePlayers} myId={myNetIdRef.current} max={serverMax} tagOf={tagsFor} roles={netRoles} />}
         {!showMenu && disconnectReason !== null && <DisconnectedScreen reason={disconnectReason} onExit={leaveDisconnected} />}
         {!showMenu && deathReason !== null && (
           <DeathScreen reason={deathReason} onRespawn={handleRespawn} onExit={exitToHome} hardcore={hardcore} />
@@ -9092,10 +9394,10 @@ export default function App() {
             onOpenServer={() => setMenuPage('server')}
             onOpenAdvancements={() => setMenuPage('advancements')}
             onOpenSchematics={() => setMenuPage('schematics')}
-            showSchematics={ownsWorld}
-            showScripts={ownsWorld && serverSettings.scripts}
+            showSchematics={ownsWorld || roleLevel(myRole) >= 2}
+            showScripts={!isMinigame && (ownsWorld ? serverSettings.scripts && serverSettings.scriptPerm !== 'off' : canRunScripts(serverSettings.scriptPerm, serverSettings.scripts, myRole))}
             showMods={ownsWorld && serverSettings.mods}
-            showServer={ownsWorld}
+            showServer={ownsWorld || roleLevel(myRole) >= 1}
             showAdvancements={advAllowed}
             onBack={() => setMenuPage('main')}
             onExit={exitToHome}
@@ -9137,7 +9439,10 @@ export default function App() {
                 settings={serverSettings}
                 hardcore={hardcore}
                 online={!!mpRef.current?.connected}
-                isHost={!mpRef.current?.connected || hostId === myNetId}
+                isHost={!mpRef.current?.connected || (hostId === myNetId && !handedOver)}
+                role={!mpRef.current?.connected || (hostId === myNetId && !handedOver) ? 'owner' : myRole}
+                roles={netRoles}
+                onPromote={(n, to) => mpRef.current?.sendPromote(n, to)}
                 players={Object.entries(onlinePlayers).map(([id, name]) => ({ id: Number(id), name }))}
                 myId={myNetId}
                 hostId={hostId}
@@ -9150,7 +9455,7 @@ export default function App() {
                 onTime={(t) => { changeTime(t); }}
                 onWeather={(k) => { changeWeather(k); }}
                 anticheat={
-                  <AntiCheatPanel settings={acSettings} onChange={setAcSettings} alerts={cheatAlerts} hosting={!!hostingInfo}
+                  <AntiCheatPanel settings={hostingInfo ? acSettings : remoteAc ?? acSettings} onChange={(a) => { if (hostingInfo || !remoteAc) setAcSettings(a); else mpRef.current?.sendAnticheat(a); }} alerts={cheatAlerts} hosting={!!hostingInfo || !!remoteAc}
                     onKick={(n) => { const id = (Object.entries(onlinePlayers) as Array<[string, string]>).find(([, nm]) => nm.toLowerCase() === n.toLowerCase())?.[0]; if (id) mpRef.current?.kick(Number(id)); }}
                     onBan={(n) => { const id = (Object.entries(onlinePlayers) as Array<[string, string]>).find(([, nm]) => nm.toLowerCase() === n.toLowerCase())?.[0]; if (id) mpRef.current?.ban(Number(id)); }} />
                 }

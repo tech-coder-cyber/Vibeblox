@@ -31,7 +31,7 @@ const OWNER_NAME = 'master';
 let hostTier = 'none';
 const maxPlayers = () => (ENV_MAX && ENV_MAX > 0 ? ENV_MAX : CAPS[hostTier] || CAPS.none);
 const WORLD_FILE = process.env.WORLD_FILE || path.join(__dirname, 'world.json');
-const PROTOCOL = 16; // must match PROTOCOL_VERSION in the game (16: shared dropped items, host commands on players; 15: turned heads, low trapdoors; 14: /title, fake ranks, badges; 13: sleeping, whispers, admin panel)
+const PROTOCOL = 17; // must match PROTOCOL_VERSION in the game (17: world roles + host hand-over (P2P worlds only; ignored here); 16: shared dropped items, host commands on players; 15: turned heads, low trapdoors; 14: /title, fake ranks, badges; 13: sleeping, whispers, admin panel)
 const DAY_LENGTH = 600; // seconds, must match the game
 const MAX_FRAME = 64 * 1024; // biggest message a client may send
 const VALID_MODES = ['survival', 'creative', 'adventure'];
@@ -43,7 +43,7 @@ const SLEEP_SECONDS = 3; // must match the game: how long you lie in bed before 
 // Server rules the host can change from Manage Server (everyone gets them)
 const DEFAULT_SETTINGS = { difficulty: 'normal', keepInventory: false, scripts: true, mods: true, commands: true };
 const DIFFICULTIES = ['peaceful', 'easy', 'normal', 'hard'];
-const WEATHERS = ['clear', 'rain', 'snow'];
+const WEATHERS = ['clear', 'rain', 'snow', 'thunder'];
 const WEATHER_CYCLE = process.env.WEATHER_CYCLE !== '0';
 // Fake ranks (/rank add Owner ...): names in front of players, set by the host. Same rules as cleanFakeRanks in src/fakeranks.ts.
 const RANK_NAME_RE = /^[A-Za-z0-9_]{1,16}$/, PLAYER_RE = /^[A-Za-z0-9_]{3,16}$/;
@@ -519,6 +519,7 @@ function handle(p, msg) {
       const next = { ...world.settings };
       if (DIFFICULTIES.includes(s.difficulty)) next.difficulty = s.difficulty;
       for (const k of ['keepInventory', 'scripts', 'mods', 'commands']) if (typeof s[k] === 'boolean') next[k] = s[k];
+      if (['off', 'all', 'admin', 'owner'].includes(String(s.scriptPerm))) next.scriptPerm = s.scriptPerm;
       world.settings = next;
       worldDirty = true;
       broadcast({ t: 'settings', settings: next });
@@ -559,7 +560,7 @@ function handle(p, msg) {
       p.x = msg.x; p.y = msg.y; p.z = msg.z; p.yaw = msg.yaw; p.pitch = msg.pitch;
       p.mode = typeof msg.mode === 'string' ? msg.mode.slice(0, 12) : 'survival';
       p.held = Number.isInteger(msg.held) && msg.held >= 0 && msg.held < 4000 ? msg.held : 0; // item id in hand (1400+: newer items)
-      p.act = Number.isInteger(msg.act) ? msg.act & 63 : 0; // swinging / aiming / drawing a bow / blocking / sleeping / sneaking
+      p.act = Number.isInteger(msg.act) ? msg.act & 127 : 0; // swinging / aiming / drawing a bow / blocking / sleeping / sneaking / swimming
       p.moved = true;
       return;
     }

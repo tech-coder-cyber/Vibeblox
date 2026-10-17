@@ -1,7 +1,7 @@
 // Miniblox-style coloured text: \green\\shiny\ Hello world!
 //
 // Codes sit between backslashes and apply to the text after them (until \reset\):
-//   colours   \red\ \gold\ \aqua\ ... or any hex colour \#ff8800\
+//   colours   \red\ \gold\ \aqua\ ... or any hex colour \ff8800\ (a # in front works too: \#ff8800\)
 //   styles    \bold\ \italic\ \underline\ \strike\
 //   effects   \shiny\ \rainbow\ \neon\ \toxic\ \pristine\ \glitched\ \wave\ \shake\ \pulse\ \flair\
 //   fonts     \serif\ \mono\ \cursive\ \comic\ \impact\ \pixel\ \retro\
@@ -26,7 +26,8 @@ export const FANCY_FONTS: Record<string, string> = {
   retro: 'var(--font-retro, "Press Start 2P", monospace)',
 };
 export const ALIASES: Record<string, string> = { glitch: 'glitched', glitchy: 'glitched', fancy: 'cursive', strikethrough: 'strike', underlined: 'underline', shine: 'shiny', gradient: 'rainbow' };
-const HEX = /^#[0-9a-fA-F]{6}$/;
+const HEX = /^#?[0-9a-fA-F]{6}$/; // \ff8800\ and \#ff8800\ both work
+const hexColor = (w: string) => `#${w.replace('#', '').toLowerCase()}`;
 
 export type FancyStyle = {
   color?: string; bold: boolean; italic: boolean; underline: boolean; strike: boolean; font?: string; fx: FancyEffect[];
@@ -54,7 +55,7 @@ export function parseFancy(text: string, baseColor?: string): FancySeg[] {
     push(text.slice(last, m.index));
     const w = ALIASES[word.toLowerCase()] ?? word.toLowerCase();
     if (w === 'reset') st = blank(baseColor);
-    else if (HEX.test(word)) st = { ...st, color: word.toLowerCase() };
+    else if (HEX.test(word)) st = { ...st, color: hexColor(word) };
     else if (MC_COLORS[w]) st = { ...st, color: MC_COLORS[w] };
     else if (w === 'bold') st = { ...st, bold: true };
     else if (w === 'italic') st = { ...st, italic: true };

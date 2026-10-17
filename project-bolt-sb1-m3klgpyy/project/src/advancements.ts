@@ -14,10 +14,12 @@ import {
   ITEM_GHAST_TEAR, ITEM_BOOK, ITEM_BOAT, ITEM_GOLD_INGOT, ITEM_DIAMOND_SWORD, ITEM_FLINT_AND_STEEL, ITEM_BONE, ITEM_STEAK,
   BLOCK_BOOKSHELF, BLOCK_ENCHANTING_TABLE, BLOCK_ANVIL, BLOCK_PISTON, BLOCK_REDSTONE_LAMP, BLOCK_COMPARATOR, BLOCK_REPEATER,
   BLOCK_TNT, BLOCK_CAMPFIRE, BLOCK_BLUE_ICE, BLOCK_BREWING_STAND, BLOCK_REDSTONE_BLOCK, BLOCK_LEVER, BLOCK_GLOWSTONE, BLOCK_CHEST,
-  BLOCK_DIAMOND_BLOCK, BLOCK_IRON_BLOCK, isPotionItem,
+  BLOCK_DIAMOND_BLOCK, BLOCK_IRON_BLOCK, isPotionItem, ITEM_INFERNIUM_INGOT as INFERNIUM, ITEM_DIAMOND as DIAMOND, ITEM_EMERALD as EMERALD, ITEM_GHAST_TEAR as TEAR, ITEM_IRON_INGOT as IRON, ITEM_BLAZE_ROD as ROD, ITEM_ENDER_PEARL as PEARL,
 } from './voxelGame';
 
 export type AdvancementTab = 'story' | 'nether' | 'adventure' | 'husbandry';
+/** What a hard advancement hands you the moment you earn it (the easy ones give nothing). */
+export type AdvReward = { xp: number; items?: Array<[number, number]> };
 export type Advancement = {
   id: string;
   title: string;
@@ -27,6 +29,8 @@ export type Advancement = {
   goal?: boolean;         // a bigger one: the toast says "Goal Reached!"
   challenge?: boolean;    // the hardest: "Challenge Complete!" in purple
   experimental?: boolean; // only exists in planets made with experimental features
+  /** Hard ones pay out: experience and sometimes items. */
+  reward?: AdvReward;
   /** Earned by holding an item that passes this test. */
   item?: (id: number) => boolean;
   /** Earned by a game event. */
@@ -49,16 +53,16 @@ export const ADVANCEMENTS: Advancement[] = [
   { id: 'suit_up', title: 'Suit Up', description: 'Protect yourself with a piece of iron armor', icon: 147, tab: 'story', item: (id) => ARMOR[id]?.material === 'iron' },
   { id: 'hot_stuff', title: 'Hot Stuff', description: 'Fill a bucket with lava', icon: ITEM_LAVA_BUCKET, tab: 'story', item: is(ITEM_LAVA_BUCKET) },
   { id: 'isnt_it_iron_pick', title: "Isn't It Iron Pick", description: 'Upgrade your pickaxe', icon: ITEM_IRON_PICKAXE, tab: 'story', item: is(ITEM_IRON_PICKAXE) },
-  { id: 'diamonds', title: 'Diamonds!', description: 'Acquire diamonds', icon: ITEM_DIAMOND, tab: 'story', item: is(ITEM_DIAMOND) },
+  { id: 'diamonds', reward: { xp: 25 }, title: 'Diamonds!', description: 'Acquire diamonds', icon: ITEM_DIAMOND, tab: 'story', item: is(ITEM_DIAMOND) },
   { id: 'ice_bucket_challenge', title: 'Ice Bucket Challenge', description: 'Obtain a block of obsidian', icon: BLOCK_OBSIDIAN, tab: 'story', item: is(BLOCK_OBSIDIAN) },
-  { id: 'cover_me_in_diamonds', title: 'Cover Me with Diamonds', description: 'Diamond armor saves lives', icon: 155, tab: 'story', goal: true, item: (id) => ARMOR[id]?.material === 'diamond' },
-  { id: 'enchanter', title: 'Enchanter', description: 'Enchant an item at an Enchanting Table', icon: ITEM_ENCHANTED_BOOK, tab: 'story', event: (n) => n === 'itemEnchanted' },
-  { id: 'we_need_to_go_deeper', title: 'We Need to Go Deeper', description: 'Build, light and enter a Nether Portal', icon: BLOCK_OBSIDIAN, tab: 'story', event: (n, d) => n === 'dimensionChange' && d.dimension === 'nether' },
+  { id: 'cover_me_in_diamonds', reward: { xp: 60, items: [[EMERALD, 4]] }, title: 'Cover Me with Diamonds', description: 'Diamond armor saves lives', icon: 155, tab: 'story', goal: true, item: (id) => ARMOR[id]?.material === 'diamond' },
+  { id: 'enchanter', reward: { xp: 20 }, title: 'Enchanter', description: 'Enchant an item at an Enchanting Table', icon: ITEM_ENCHANTED_BOOK, tab: 'story', event: (n) => n === 'itemEnchanted' },
+  { id: 'we_need_to_go_deeper', reward: { xp: 30, items: [[PEARL, 1]] }, title: 'We Need to Go Deeper', description: 'Build, light and enter a Nether Portal', icon: BLOCK_OBSIDIAN, tab: 'story', event: (n, d) => n === 'dimensionChange' && d.dimension === 'nether' },
 
   // ---- Nether ----
   { id: 'into_fire', title: 'Into Fire', description: 'Relieve a Blaze of its rod', icon: ITEM_BLAZE_ROD, tab: 'nether', item: is(ITEM_BLAZE_ROD) },
-  { id: 'hidden_in_the_depths', title: 'Hidden in the Depths', description: 'Smelt an Infernium ingot', icon: ITEM_INFERNIUM_INGOT, tab: 'nether', challenge: true, item: is(ITEM_INFERNIUM_INGOT) },
-  { id: 'return_to_sender', title: 'Return to Sender', description: 'Destroy a Ghast', icon: ITEM_BLAZE_ROD, tab: 'nether', goal: true, event: (n, d) => n === 'entityDeath' && d.byPlayer === true && d.type === 'ghast' },
+  { id: 'hidden_in_the_depths', reward: { xp: 120, items: [[INFERNIUM, 2]] }, title: 'Hidden in the Depths', description: 'Smelt an Infernium ingot', icon: ITEM_INFERNIUM_INGOT, tab: 'nether', challenge: true, item: is(ITEM_INFERNIUM_INGOT) },
+  { id: 'return_to_sender', reward: { xp: 80, items: [[TEAR, 2], [ROD, 3]] }, title: 'Return to Sender', description: 'Destroy a Ghast', icon: ITEM_BLAZE_ROD, tab: 'nether', goal: true, event: (n, d) => n === 'entityDeath' && d.byPlayer === true && d.type === 'ghast' },
 
   // ---- Adventure ----
   { id: 'monster_hunter', title: 'Monster Hunter', description: 'Kill any hostile monster', icon: ITEM_WOOD_SWORD, tab: 'adventure', event: (n, d) => n === 'entityDeath' && d.byPlayer === true && HOSTILE.has(String(d.type)) },
@@ -77,7 +81,7 @@ export const ADVANCEMENTS: Advancement[] = [
   { id: 'diamond_edge', title: 'Diamond Edge', description: 'Craft a diamond sword', icon: ITEM_DIAMOND_SWORD, tab: 'story', item: is(ITEM_DIAMOND_SWORD) },
   { id: 'gold_rush', title: 'Gold Rush', description: 'Smelt a gold ingot', icon: ITEM_GOLD_INGOT, tab: 'story', item: is(ITEM_GOLD_INGOT) },
   { id: 'shiny_blocks', title: 'Shiny Blocks', description: 'Pack iron ingots into a block of iron', icon: BLOCK_IRON_BLOCK, tab: 'story', item: is(BLOCK_IRON_BLOCK) },
-  { id: 'filthy_rich', title: 'Filthy Rich', description: 'Make a whole block of diamond', icon: BLOCK_DIAMOND_BLOCK, tab: 'story', item: is(BLOCK_DIAMOND_BLOCK) },
+  { id: 'filthy_rich', reward: { xp: 50, items: [[EMERALD, 2]] }, title: 'Filthy Rich', description: 'Make a whole block of diamond', icon: BLOCK_DIAMOND_BLOCK, tab: 'story', item: is(BLOCK_DIAMOND_BLOCK) },
   { id: 'bookworm', title: 'Bookworm', description: 'Make a book', icon: ITEM_BOOK, tab: 'story', item: is(ITEM_BOOK) },
   { id: 'library', title: 'Library', description: 'Build a bookshelf', icon: BLOCK_BOOKSHELF, tab: 'story', item: is(BLOCK_BOOKSHELF) },
   { id: 'magic_table', title: 'Magic Table', description: 'Craft an enchanting table', icon: BLOCK_ENCHANTING_TABLE, tab: 'story', item: is(BLOCK_ENCHANTING_TABLE) },
@@ -107,8 +111,8 @@ export const ADVANCEMENTS: Advancement[] = [
   { id: 'creeper_aw_man', title: 'Creeper? Aw Man', description: 'Defeat a creeper before it goes off', icon: 117, tab: 'adventure', event: (n, d) => n === 'entityDeath' && d.byPlayer === true && d.type === 'creeper' },
   { id: 'web_cleaner', title: 'Web Cleaner', description: 'Defeat a spider', icon: ITEM_STRING, tab: 'adventure', event: (n, d) => n === 'entityDeath' && d.byPlayer === true && d.type === 'spider' },
   { id: 'zombie_slayer', title: 'Zombie Slayer', description: 'Defeat a zombie', icon: ITEM_WOOD_SWORD, tab: 'adventure', event: (n, d) => n === 'entityDeath' && d.byPlayer === true && d.type === 'zombie' },
-  { id: 'iron_giant', title: 'Iron Giant', description: 'Take down an iron golem', icon: ITEM_IRON_INGOT, tab: 'adventure', event: (n, d) => n === 'entityDeath' && d.byPlayer === true && d.type === 'iron_golem' },
-  { id: 'wither_away', title: 'Tyrant Slayer', description: 'Defeat the Hollow Tyrant', icon: ITEM_INFERNIUM_INGOT, tab: 'adventure', event: (n, d) => n === 'entityDeath' && d.byPlayer === true && d.type === 'hollow_tyrant' },
+  { id: 'iron_giant', reward: { xp: 40, items: [[IRON, 6]] }, title: 'Iron Giant', description: 'Take down an iron golem', icon: ITEM_IRON_INGOT, tab: 'adventure', event: (n, d) => n === 'entityDeath' && d.byPlayer === true && d.type === 'iron_golem' },
+  { id: 'wither_away', reward: { xp: 250, items: [[EMERALD, 8], [DIAMOND, 4]] }, title: 'Tyrant Slayer', description: 'Defeat the Hollow Tyrant', icon: ITEM_INFERNIUM_INGOT, tab: 'adventure', challenge: true, event: (n, d) => n === 'entityDeath' && d.byPlayer === true && d.type === 'hollow_tyrant' },
 
   // ---- More Nether ----
   { id: 'nether_crystals', title: 'Nether Crystals', description: 'Mine some nether quartz', icon: ITEM_QUARTZ, tab: 'nether', item: is(ITEM_QUARTZ) },
@@ -116,7 +120,7 @@ export const ADVANCEMENTS: Advancement[] = [
   { id: 'let_there_be_light', title: 'Let There Be Light', description: 'Collect glowstone', icon: BLOCK_GLOWSTONE, tab: 'nether', item: is(BLOCK_GLOWSTONE) },
   { id: 'local_brewery', title: 'Local Brewery', description: 'Set up a brewing stand', icon: BLOCK_BREWING_STAND, tab: 'nether', item: is(BLOCK_BREWING_STAND) },
   { id: 'bottoms_up', title: 'Bottoms Up', description: 'Get a potion', icon: BLOCK_BREWING_STAND, tab: 'nether', item: isPotionItem },
-  { id: 'monster_of_the_nether', title: 'Bone Breaker', description: 'Defeat a Cinderbone', icon: ITEM_BONE, tab: 'nether', event: (n, d) => n === 'entityDeath' && d.byPlayer === true && d.type === 'cinderbone' },
+  { id: 'monster_of_the_nether', reward: { xp: 40, items: [[IRON, 3]] }, title: 'Bone Breaker', description: 'Defeat a Cinderbone', icon: ITEM_BONE, tab: 'nether', event: (n, d) => n === 'entityDeath' && d.byPlayer === true && d.type === 'cinderbone' },
 
   // ---- More Husbandry ----
   { id: 'gone_fishing', title: 'Gone Fishing', description: 'Craft a fishing rod', icon: ITEM_FISHING_ROD, tab: 'husbandry', item: is(ITEM_FISHING_ROD) },
@@ -162,4 +166,10 @@ export function saveAdvancements(worldId: string | null, have: ReadonlySet<strin
 }
 export function clearAdvancements(worldId: string) {
   try { localStorage.removeItem(key(worldId)); } catch { /* ignore */ }
+}
+
+/** A reward as words, e.g. "60 XP, 4 emeralds" (the item names come from the game's own list). */
+export function rewardText(r: AdvReward | undefined, nameOf: (id: number) => string): string {
+  if (!r) return '';
+  return [`${r.xp} XP`, ...(r.items ?? []).map(([id, n]) => `${n} ${nameOf(id)}`)].join(', ');
 }

@@ -48,6 +48,38 @@ export function LookingAtLabel({ getName, paused }: { getName: () => string; pau
   );
 }
 
+/** The attack cooldown: a little knife under the crosshair that fills up as your weapon recharges (no text). Gone when ready. */
+export function AttackIndicator({ getCharge }: { getCharge: () => number }) {
+  const [c, setC] = useState(1);
+  const ref = useRef(getCharge);
+  ref.current = getCharge;
+  useEffect(() => {
+    const t = window.setInterval(() => { const v = Math.round(Math.min(1, ref.current()) * 24) / 24; setC((p) => (p === v ? p : v)); }, 50);
+    return () => window.clearInterval(t);
+  }, []);
+  if (c >= 1) return null;
+  const W = 34;
+  const knife = (grey: string, edge: string, wood: string, id: string) => (
+    <svg width={W} height="9" viewBox="0 0 34 9" shapeRendering="crispEdges" style={{ position: 'absolute', left: 0, top: 0 }} data-layer={id}>
+      <rect x="0" y="3" width="8" height="3" fill={wood} />
+      <rect x="8" y="1" width="2" height="7" fill={edge} />
+      <rect x="10" y="3" width="20" height="3" fill={grey} />
+      <rect x="30" y="3" width="2" height="2" fill={grey} />
+      <rect x="32" y="3" width="1" height="1" fill={grey} />
+    </svg>
+  );
+  return (
+    <div className="absolute left-1/2 top-[calc(50%+14px)] -translate-x-1/2 z-[19] pointer-events-none" data-testid="attack-indicator" data-charge={c.toFixed(2)}>
+      <div style={{ position: 'relative', width: W, height: 9, opacity: 0.95 }}>
+        {knife('#3b3f46', '#2a2d33', '#3a2c1c', 'empty')}
+        <div style={{ position: 'absolute', left: 0, top: 0, width: Math.round(W * c), height: 9, overflow: 'hidden' }}>
+          {knife('#c7ced9', '#8e98a8', '#7a5a38', 'full')}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const OPTIONS: Array<[keyof QolPrefs, string, string]> = [
   ['outline', 'Block outline', 'A dark outline and a soft glow on the block you are aiming at (the cracks show while you mine it)'],
   ['lookingAt', 'Block name', 'Shows the name of the block you are aiming at under the crosshair (needs the outline)'],

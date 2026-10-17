@@ -2,11 +2,40 @@
 // a small update to the current one is a point release (Indev 26.1, 26.2...), a big one is the next number.
 //
 // The News page in the sidebar shows this list, and a dot appears on it until the newest one has been read.
-export const GAME_VERSION = 26.4;
+export const GAME_VERSION = 27;
 
 export type NewsEntry = { version: number; date: string; title: string; changes: string[] };
 
 export const NEWS: NewsEntry[] = [
+  {
+    version: 27,
+    date: 'October 17, 2026',
+    title: 'Server roles, thunderstorms, shaders, Cinderwood and phones',
+    changes: [
+      'Phones: dragging to look around works every time (a lost finger can no longer freeze the camera), and touch controls turn on by themselves the moment you touch the screen. Every menu scrolls, everything is smaller on a phone turned sideways, and the game asks you to turn your phone sideways to play.',
+      'Player list: hold Tab on a computer (it now sits down the right side), or tap LIST on a phone to show and hide it.',
+      'Server roles: promote players in Manage Server > Roles or with /promote <player> admin|coowner (and /demote). Admins (helmet icon) ban and kick players in your world and can use cheats. Co-owners (crown) also change the rules, use schematics, set up anti-cheat and promote admins. The owner has the king\'s crown, and only the owner makes co-owners. The icons show in the player list.',
+      'Rules > Who can use scripts: Off, Everyone, Admins, or Owner only (the owner and co-owners).',
+      '[HELPER] and [MOD] staff can ban players from all of VibeBlox with /globalban <player> [reason] (and /globalunban).',
+      'Your world stays open when you leave: the player who has been there longest (admins and co-owners first) takes over and everyone moves to them automatically.',
+      'Multiplayer: your items, health, XP and spot are now kept in worlds you join (not only your own), blocks other players break drop items everyone can see, and players who join later see items already on the ground. EggWars and Bridge Duels matches no longer show in the open worlds list.',
+      'Join friends from chat with /join <friend>. Guests get a random name like CoolCat382, and you can\'t friend guests.',
+      'Announcements are live: they only show to players who are playing when they are sent, as ANNOUNCEMENT: <message> in chat.',
+      'Thunderstorms: darker skies, heavier slanted rain, lightning that lights up the world, bolts striking the ground and rolling thunder. On High, Epic and Max the rain is drawn as real streaks (no more nearly invisible rain on Max), and storms make puddles faster.',
+      'Settings > Shaders: Lighting, Dynamic Lighting (a torch in your hand lights things up), Global Illumination, Volumetric Fog, God Rays, Bloom, Eye Adaptation, Motion Blur, Water Shaders, Shadows and Grass Wave, with Reset to default. Insert shader packs (or try Vibrant, Cinematic, Cozy Autumn and Noir), including your own GLSL colour grade.',
+      'Settings > Crosshair: cross, dot, circle, cross + dot or T shape, with size, thickness, gap, colour, opacity and an outline.',
+      'Lagging? VibeBlox notices and asks "Optimise FPS?". Yes switches you to Low graphics.',
+      'Epic and Max always use 32x32 textures. Lava is animated (it flows and bubbles).',
+      'Bows: drawn, both arms come up at eye level like Minecraft (in F5 and for other players), the bow in your hand stands more upright, enchanted items in your hand shine with a moving purple glint, and arrows are 3D with a stone head and feathers.',
+      'Swimming: you lean forward and stroke with your arms (in F5, and other players see it). New water sounds: strokes, wading, and a splash when you jump in. Footsteps sound different on grass, dirt, gravel, sand, stone, wood, leaves, glass, metal, wool, snow, soul sand and netherrack.',
+      'Cinderwood: a new tree that only grows in the Nether, with its own log, planks and ember leaves (leaves sometimes drop blaze powder). Its planks work like any planks, and it never burns.',
+      'Cobwebs hang in caves. They slow you right down (and stop fall damage). A sword cuts them and drops string; shears keep them whole, like Silk Touch (shears already kept leaves).',
+      'New flowers: Allium, Orange Tulip, Pink Tulip and Oxeye Daisy, each making a dye. Sheep come in more wool colours now and then.',
+      'Redstone ore shows up higher, so you find it on cave walls. Enchanting already costs 1, 2 or 3 lapis lazuli for the three choices, and fishing rods catch fish (cast onto water, reel in when the bobber dips).',
+      'Shop: buy lootboxes with coins (1 for 150, or 5 for 650). The first-person fist now wears your skin\'s hand: gloves, sleeves and the second layer of a custom skin.',
+      'The right side of Home no longer has Quick Play or the leaderboard (the Top tab has it).',
+    ],
+  },
   {
     version: 26.4,
     date: 'October 17, 2026',

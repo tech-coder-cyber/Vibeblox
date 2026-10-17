@@ -11,11 +11,18 @@
 import { AntiCheat, type AntiCheatSettings, type CheatAlert, type GroundProbe } from './anticheat';
 
 /** Must match PROTOCOL_VERSION in multiplayer.ts (and PROTOCOL in server/server.js). */
-export const ROOM_PROTOCOL = 16;
+export const ROOM_PROTOCOL = 17;
 export type Privacy = 'private' | 'friends' | 'accounts' | 'public';
 export const PRIVACY_LABELS: Record<Privacy, string> = { private: 'Private', friends: 'Friends only', accounts: 'Signed-in players', public: 'Public' };
 type NetBlock = [number, number, number, number];
-type Settings = { difficulty: 'peaceful' | 'easy' | 'normal' | 'hard'; keepInventory: boolean; scripts: boolean; mods: boolean; commands: boolean; pvp?: boolean };
+type Settings = { difficulty: 'peaceful' | 'easy' | 'normal' | 'hard'; keepInventory: boolean; scripts: boolean; mods: boolean; commands: boolean; pvp?: boolean; /** who may run scripts */ scriptPerm?: 'off' | 'all' | 'admin' | 'owner' };
+/** Roles the world's owner hands out (lowercase name -> role). The owner is always 'owner'. */
+export type RoleMap = Record<string, 'admin' | 'coowner'>;
+type Role = 'owner' | 'coowner' | 'admin' | null;
+const roleLevel = (r: Role) => (r === 'owner' ? 3 : r === 'coowner' ? 2 : r === 'admin' ? 1 : 0);
+const SCRIPT_PERMS = ['off', 'all', 'admin', 'owner'];
+/** Everything a player needs to keep this world running after its host leaves (they become the new host). */
+export type Handoff = { seed: number; worldType: RoomOptions['worldType']; mode: RoomOptions['mode']; changes: NetBlock[]; time: number; weather: 'clear' | 'rain' | 'snow' | 'thunder'; settings: Settings; ranks: unknown; roles: RoleMap; bans: string[]; privacy: Privacy; maxPlayers: number; owner: string; experimental: boolean; name: string };
 
 // ---------------- Online EggWars and Bridge Duels ----------------
 /** An online minigame: teams of real players. The room keeps the score, eggs, who is out, and the countdowns. */
@@ -74,7 +81,7 @@ export type RoomOptions = {
   changes: NetBlock[];
   /** 0..1, where the host's day is now */
   time: number;
-  weather: 'clear' | 'rain' | 'snow';
+  weather: 'clear' | 'rain' | 'snow' | 'thunder';
   settings: Settings;
   ranks?: unknown;
   experimental?: boolean;
@@ -87,12 +94,20 @@ export type RoomOptions = {
   onCount?: (n: number) => void;
   /** Someone was banned from this world (the host's game saves the list). */
   onBans?: (bans: string[]) => void;
+  /** Roles the owner (or a co-owner) handed out, and who owns the world (when this room took over from someone else) */
+  roles?: RoleMap;
+  owner?: string;
+  onRoles?: (roles: RoleMap) => void;
+  /** A co-owner changed the anti-cheat settings */
+  onAnticheat?: (s: AntiCheatSettings) => void;
+  /** The world's name (passed on when the host leaves and someone else keeps it open) */
+  worldName?: string;
 };
 
 const DAY_LENGTH = 600; // seconds, must match the game
 const SLEEP_SECONDS = 3;
 const DIFFICULTIES = ['peaceful', 'easy', 'normal', 'hard'];
-const WEATHERS = ['clear', 'rain', 'snow'];
+const WEATHERS = ['clear', 'rain', 'snow', 'thunder'];
 const VALID_MODES = ['survival', 'creative', 'adventure'];
 const RANK_NAME_RE = /^[A-Za-z0-9_]{1,16}$/, PLAYER_RE = /^[A-Za-z0-9_]{3,16}$/;
 const OWNER = 'master';
@@ -140,15 +155,20 @@ export class HostRoom {
   private hostId: number | null = null;
   private changes = new Map<string, number>();
   private timeBase: { at: number; value: number };
-  private weather: 'clear' | 'rain' | 'snow';
+  private weather: 'clear' | 'rain' | 'snow' | 'thunder';
   private weatherAt: number;
   private settings: Settings;
   private ranks: ReturnType<typeof cleanRanks>;
   private bans: string[];
+  private roles: RoleMap = {};
+  /** The world's owner (lowercase). Usually the host; after a hand-over, the player who made the world. */
+  readonly owner: string;
   /** Players the host or staff muted (lowercase names). It lasts as long as this world is open. */
   private mutes = new Set<string>();
   /** Thrown items still on the ground (shared id -> when). */
   private drops = new Map<string, number>();
+  /** What each of those drops was (so players who join later see them on the ground too) */
+  private dropInfo = new Map<string, Record<string, unknown>>();
   private timers: Array<ReturnType<typeof setInterval>> = [];
   private stopped = false;
   privacy: Privacy;
@@ -165,9 +185,11 @@ export class HostRoom {
     this.settings = { ...opts.settings };
     this.ranks = cleanRanks(opts.ranks);
     this.bans = (opts.bans ?? []).map((b) => b.toLowerCase());
+    this.owner = (opts.owner ?? opts.hostName).toLowerCase();
+    for (const [n, r] of Object.entries(opts.roles ?? {})) if (PLAYER_RE.test(n) && (r === 'admin' || r === 'coowner') && n.toLowerCase() !== this.owner) this.roles[n.toLowerCase()] = r;
     this.privacy = opts.privacy;
     this.anticheat = new AntiCheat({
-      onAlert: (a) => opts.onCheat?.(a),
+      onAlert: (a) => { opts.onCheat?.(a); for (const o of this.players.values()) if (o.joined && !o.conn.local && roleLevel(this.roleOf(o)) >= 2) o.conn.send({ t: 'cheat', alert: a }); },
       onKick: (id, reason) => {
         const target = this.players.get(id);
         if (!target || target.conn.local) return;
@@ -294,7 +316,8 @@ export class HostRoom {
     p.conn.send({
       t: 'welcome', id: p.id, name: p.name, seed: this.opts.seed, worldType: this.opts.worldType, mode: this.opts.mode, time: this.currentTime(),
       changes, players: others, hostId: this.hostId, settings: this.settings, weather: this.weather, experimental: !!this.opts.experimental,
-      maxPlayers: this.opts.maxPlayers, ranks: this.ranks,
+      maxPlayers: this.opts.maxPlayers, ranks: this.ranks, roles: this.roleList(),
+      drops: [...this.dropInfo.values()].slice(-150).map(({ t: _t, ...d }) => ({ ...d, vx: 0, vy: 0, vz: 0 })), // items lying around already
       ...(this.opts.game ? { game: this.opts.game } : {}),
     });
     this.broadcast({ t: 'join', id: p.id, name: p.name }, p.id);
@@ -302,11 +325,12 @@ export class HostRoom {
     if (p.conn.local) this.broadcast({ t: 'host', id: p.id }, p.id);
     void this.sendBadge(p);
     if (!p.conn.local) this.system(`${p.name} joined the game`);
+    if (roleLevel(this.roleOf(p)) >= 2 && !p.conn.local) p.conn.send({ t: 'acset', settings: this.anticheat.settings });
     this.countChanged();
   }
 
   /** Staff (HELPER / MOD) and the owner may use cheats and commands in every world, so anti-cheat leaves them alone. */
-  private exemptFromAntiCheat(p: Player): boolean { return !!(p.badge && (p.badge.owner || p.badge.staff)); }
+  private exemptFromAntiCheat(p: Player): boolean { return !!(p.badge && (p.badge.owner || p.badge.staff)) || roleLevel(this.roleOf(p)) >= 1; } // admins may use cheats
 
   private async sendBadge(p: Player) {
     if (!p.verified || !this.opts.services.standing) return;
@@ -317,9 +341,42 @@ export class HostRoom {
     this.broadcast({ t: 'badge', id: p.id, ...p.badge });
   }
 
+  /** A player's role in this world. */
+  roleOf(p: Player | string): Role {
+    const n = (typeof p === 'string' ? p : p.name).toLowerCase();
+    if (n === this.owner && (typeof p === 'string' || p.verified || p.conn.local)) return 'owner';
+    return this.roles[n] ?? null;
+  }
+  /** Everyone's role (the owner included), for the player list icons. */
+  roleList(): Record<string, string> { return { ...this.roles, [this.owner]: 'owner' }; }
+  getRoles(): RoleMap { return { ...this.roles }; }
+  private sendRoles() {
+    this.broadcast({ t: 'roles', roles: this.roleList() });
+    this.opts.onRoles?.(this.getRoles());
+  }
+  /** The owner (or a co-owner, for admins) gives someone a role, or takes it away. Returns what to tell them. */
+  setRole(byRole: Role, byName: string, name: string, to: 'admin' | 'coowner' | 'none'): string {
+    const n = name.trim().toLowerCase();
+    if (!PLAYER_RE.test(n)) return 'Usage: /promote <player> <admin|coowner|none>';
+    if (n === byName.toLowerCase()) return "You can't change your own role";
+    const cur = this.roleOf(n);
+    if (cur === 'owner') return "That's the owner of this world";
+    const ok = byRole === 'owner' || (byRole === 'coowner' && to !== 'coowner' && cur !== 'coowner');
+    if (!ok) return byRole === 'coowner' ? 'Co-owners can only promote players to admin' : 'Only the owner and co-owners can promote players';
+    if (to === 'none') { if (!this.roles[n]) return `${name.slice(0, 16)} has no role`; delete this.roles[n]; }
+    else { if (Object.keys(this.roles).length >= 100 && !this.roles[n]) return 'Too many roles in this world'; this.roles[n] = to; }
+    const target = [...this.players.values()].find((o) => o.joined && o.name.toLowerCase() === n);
+    const shown = target?.name ?? name.slice(0, 16);
+    this.sendRoles();
+    if (to === 'none') this.system(`${shown} is no longer ${cur === 'coowner' ? 'a co-owner' : 'an admin'}`);
+    else this.system(`${shown} was promoted to ${to === 'coowner' ? 'Co-owner' : 'Admin'} by ${byName}`);
+    if (target && to === 'coowner') target.conn.send({ t: 'acset', settings: this.anticheat.settings });
+    return to === 'none' ? `${shown} has no role now` : `${shown} is now ${to === 'coowner' ? 'a co-owner' : 'an admin'}`;
+  }
+
   private isNight() { const t = this.currentTime(); return t > 0.53 && t < 0.97; }
 
-  private setWeather(kind: 'clear' | 'rain' | 'snow') {
+  private setWeather(kind: 'clear' | 'rain' | 'snow' | 'thunder') {
     this.weather = kind;
     this.weatherAt = Date.now() + this.weatherGap(kind);
     this.broadcast({ t: 'weather', kind });
@@ -347,8 +404,8 @@ export class HostRoom {
       p.drops = 0;
       if (!p.conn.local && now - p.conn.lastSeen > 45_000) p.conn.close(4003, 'Timed out');
     }
-    for (const [n, t] of this.drops) if (now - t > 305_000) this.drops.delete(n);
-    if (now >= this.weatherAt) this.setWeather(this.weather === 'clear' ? 'rain' : 'clear');
+    for (const [n, t] of this.drops) if (now - t > 305_000) { this.drops.delete(n); this.dropInfo.delete(n); }
+    if (now >= this.weatherAt) this.setWeather(this.weather === 'clear' ? (Math.random() < 0.25 ? 'thunder' : 'rain') : 'clear');
     this.matchTick(now);
   }
 
@@ -396,12 +453,16 @@ export class HostRoom {
   private kickById(by: Player, id: number, ban: boolean) {
     const target = this.players.get(id);
     if (!target || !target.joined || target.id === by.id || target.conn.local) return;
+    const byHost = by.id === this.hostId;
+    if (!byHost && !(roleLevel(this.roleOf(by)) >= 1 && roleLevel(this.roleOf(by)) > roleLevel(this.roleOf(target)))) { by.conn.send({ t: 'system', text: "You can't remove that player" }); return; }
+    if (this.roleOf(target) === 'owner') { by.conn.send({ t: 'system', text: "You can't remove the owner" }); return; }
     if (ban) {
       const n = target.name.toLowerCase();
       if (!this.bans.includes(n)) { this.bans.push(n); this.opts.onBans?.(this.bans.slice()); }
     }
-    this.system(`${target.name} was ${ban ? 'banned' : 'kicked'} by the host`);
-    target.conn.close(ban ? 4005 : 4004, ban ? 'You were banned from this world' : 'You were kicked by the host');
+    const who = by.id === this.hostId && !this.roleOf(by) ? 'the host' : by.name;
+    this.system(`${target.name} was ${ban ? 'banned' : 'kicked'} by ${who}`);
+    target.conn.close(ban ? 4005 : 4004, ban ? `You were banned from this world by ${who}` : `You were kicked by ${who}`);
   }
 
   private async handleAdmin(p: Player, msg: Record<string, unknown>) {
@@ -458,6 +519,7 @@ export class HostRoom {
   private async handle(p: Player, msg: Record<string, unknown>) {
     if (!p.joined && msg.t !== 'hello') return;
     const isHost = p.id === this.hostId;
+    const lvl = roleLevel(this.roleOf(p));
     switch (msg.t) {
       case 'hello': await this.hello(p, msg); return;
       case 'sleep': p.sleepSince = msg.on === true && this.isNight() ? Date.now() : 0; return;
@@ -473,7 +535,7 @@ export class HostRoom {
         return;
       }
       case 'title': {
-        if (!isHost) return;
+        if (!isHost && lvl < 1) return;
         const text = typeof msg.text === 'string' ? msg.text.slice(0, 160) : '';
         const sub = typeof msg.sub === 'string' ? msg.sub.slice(0, 200) : '';
         const to = typeof msg.to === 'string' ? msg.to : '*';
@@ -484,7 +546,7 @@ export class HostRoom {
         return;
       }
       case 'rcmd': {
-        if (!isHost) return;
+        if (!isHost && lvl < 1) return; // the host and admins (cheats)
         const cmd = typeof msg.cmd === 'string' ? msg.cmd : '';
         if (!['give', 'clear', 'effect', 'effclear', 'xp', 'tp'].includes(cmd)) return;
         const args = msg.args && typeof msg.args === 'object' && JSON.stringify(msg.args).length < 600 ? msg.args : {};
@@ -501,16 +563,19 @@ export class HostRoom {
         if (![msg.x, msg.y, msg.z, msg.vx, msg.vy, msg.vz].every(num) || Math.abs(msg.vx as number) > 30 || Math.abs(msg.vy as number) > 30 || Math.abs(msg.vz as number) > 30) return;
         if (!p.conn.local && ++p.drops > 40) return;
         if (this.drops.has(n)) return;
-        if (this.drops.size > 600) this.drops.delete(this.drops.keys().next().value as string);
+        if (this.drops.size > 600) { const old = this.drops.keys().next().value as string; this.drops.delete(old); this.dropInfo.delete(old); }
         this.drops.set(n, Date.now());
         const d = typeof msg.d === 'string' && msg.d.length <= 500 ? msg.d : undefined;
-        this.broadcast({ t: 'drop', n, item, count, x: msg.x, y: msg.y, z: msg.z, vx: msg.vx, vy: msg.vy, vz: msg.vz, ...(d ? { d } : {}) }, p.id);
+        const out = { t: 'drop', n, item, count, x: msg.x, y: msg.y, z: msg.z, vx: msg.vx, vy: msg.vy, vz: msg.vz, ...(d ? { d } : {}) };
+        this.dropInfo.set(n, out);
+        this.broadcast(out, p.id);
         return;
       }
       case 'pickup': {
         const n = typeof msg.n === 'string' ? msg.n : '';
         if (!this.drops.has(n)) { p.conn.send({ t: 'pickupNo', n: n.slice(0, 16) }); return; }
         this.drops.delete(n);
+        this.dropInfo.delete(n);
         p.conn.send({ t: 'pickupOk', n });
         this.broadcast({ t: 'gone', n }, p.id);
         return;
@@ -518,36 +583,69 @@ export class HostRoom {
       case 'ranks': if (!isHost) return; this.ranks = cleanRanks(msg.ranks); this.broadcast({ t: 'ranks', ranks: this.ranks }, p.id); return;
       case 'admin': await this.handleAdmin(p, msg); return;
       case 'settings': {
-        if (!isHost) return;
+        if (!isHost && lvl < 2) return; // the host and co-owners change the rules
         const s = (msg.settings ?? {}) as Partial<Settings>;
         const next = { ...this.settings };
         if (DIFFICULTIES.includes(String(s.difficulty))) next.difficulty = s.difficulty as Settings['difficulty'];
         for (const k of ['keepInventory', 'scripts', 'mods', 'commands', 'pvp'] as const) if (typeof s[k] === 'boolean') next[k] = s[k] as boolean;
+        if (SCRIPT_PERMS.includes(String(s.scriptPerm))) next.scriptPerm = s.scriptPerm;
         this.settings = next;
         this.broadcast({ t: 'settings', settings: next });
         return;
       }
       case 'settime':
-        if (!isHost || !num(msg.time)) return;
+        if ((!isHost && lvl < 1) || !num(msg.time)) return;
         this.timeBase = { at: Date.now(), value: ((msg.time % 1) + 1) % 1 };
         this.broadcast({ t: 'time', time: this.currentTime() });
         return;
       case 'weather':
-        if (!isHost || !WEATHERS.includes(String(msg.kind))) return;
-        this.setWeather(msg.kind as 'clear' | 'rain' | 'snow');
-        this.system(`The host set the weather to ${String(msg.kind)}`);
+        if ((!isHost && lvl < 1) || !WEATHERS.includes(String(msg.kind))) return;
+        this.setWeather(msg.kind as 'clear' | 'rain' | 'snow' | 'thunder');
+        this.system(`${isHost ? 'The host' : p.name} set the weather to ${String(msg.kind)}`);
         return;
       case 'kick':
       case 'ban':
-        if (!isHost || !int(msg.id)) return;
+        if ((!isHost && lvl < 1) || !int(msg.id)) return;
         this.kickById(p, msg.id, msg.t === 'ban');
         return;
+      case 'promote': {
+        const to = msg.role === 'admin' || msg.role === 'coowner' ? msg.role : 'none';
+        const name = typeof msg.name === 'string' ? msg.name : '';
+        p.conn.send({ t: 'system', text: this.setRole(this.roleOf(p), p.name, name, to) });
+        return;
+      }
+      case 'mod': {
+        // world admins, co-owners and the owner: /kick, /ban and /pardon by name
+        const reply = (text: string) => p.conn.send({ t: 'system', text });
+        if (lvl < 1 && !isHost) { reply("You don't have permission in this world"); return; }
+        const name = typeof msg.name === 'string' ? msg.name.trim().toLowerCase() : '';
+        if (!PLAYER_RE.test(name)) { reply('Usage: /' + String(msg.action) + ' <player>'); return; }
+        if (msg.action === 'unban') { reply(this.unban(name) ? `${name} can join this world again` : `${name} isn't banned from this world`); return; }
+        if (msg.action !== 'kick' && msg.action !== 'ban') return;
+        const target = [...this.players.values()].find((o) => o.joined && o.name.toLowerCase() === name);
+        if (!target) {
+          if (msg.action === 'ban' && this.roleOf(name) !== 'owner' && roleLevel(this.roleOf(name)) < lvl) { if (!this.bans.includes(name)) { this.bans.push(name); this.opts.onBans?.(this.bans.slice()); } reply(`${name} is banned from this world`); }
+          else reply(`No player named ${name} here`);
+          return;
+        }
+        this.kickById(p, target.id, msg.action === 'ban');
+        return;
+      }
+      case 'acset': {
+        if (lvl < 2 && !isHost) return; // co-owners set up anti-cheat
+        const a = (msg.settings ?? {}) as Partial<AntiCheatSettings>;
+        const cur = this.anticheat.settings;
+        this.anticheat.settings = { enabled: typeof a.enabled === 'boolean' ? a.enabled : cur.enabled, autoKick: typeof a.autoKick === 'boolean' ? a.autoKick : cur.autoKick, kickAt: num(a.kickAt) ? Math.max(3, Math.min(50, Math.round(a.kickAt))) : cur.kickAt };
+        for (const o of this.players.values()) if (o.joined && roleLevel(this.roleOf(o)) >= 2) o.conn.send({ t: 'acset', settings: this.anticheat.settings });
+        this.opts.onAnticheat?.(this.anticheat.settings);
+        return;
+      }
       case 'move':
         if (![msg.x, msg.y, msg.z, msg.yaw, msg.pitch].every(num)) return;
         p.x = msg.x as number; p.y = msg.y as number; p.z = msg.z as number; p.yaw = msg.yaw as number; p.pitch = msg.pitch as number;
         p.mode = typeof msg.mode === 'string' ? msg.mode.slice(0, 12) : 'survival';
         p.held = int(msg.held) && msg.held >= 0 && msg.held < 4000 ? msg.held : 0;
-        p.act = int(msg.act) ? msg.act & 63 : 0;
+        p.act = int(msg.act) ? msg.act & 127 : 0; // (64: swimming)
         p.moved = true;
         if (!p.conn.local && !this.exemptFromAntiCheat(p)) this.anticheat.onMove(p.id, p.name, p.x, p.y, p.z, p.mode);
         return;
@@ -788,9 +886,41 @@ export class HostRoom {
     if (privacy === 'private') for (const p of this.players.values()) if (!p.conn.local) p.conn.close(4007, 'The host made this world private');
   }
 
+  /**
+   * The host is leaving, but the world stays open: the player who has been here longest (admins and co-owners first,
+   * signed-in players only) gets everything needed to run it, and everyone else is told to reconnect to them.
+   * Returns the new host's name, or null when nobody can take over (then stop() closes it like before).
+   */
+  handOff(newRoomId: string): string | null {
+    if (this.stopped || this.match || !/^[a-z0-9]{8,32}$/.test(newRoomId)) return null;
+    const others = [...this.players.values()].filter((o) => o.joined && !o.conn.local && o.verified)
+      .sort((a, b) => roleLevel(this.roleOf(b)) - roleLevel(this.roleOf(a)) || a.joinedAt - b.joinedAt);
+    const next = others[0];
+    if (!next) return null;
+    const changes: NetBlock[] = [];
+    for (const [k, b] of this.changes) { const [x, y, z] = k.split(',').map(Number); changes.push([x, y, z, b]); }
+    const state: Handoff = {
+      seed: this.opts.seed, worldType: this.opts.worldType, mode: this.opts.mode, changes, time: this.currentTime(), weather: this.weather,
+      settings: { ...this.settings }, ranks: this.ranks, roles: this.getRoles(), bans: this.bans.slice(), privacy: this.privacy,
+      maxPlayers: this.opts.maxPlayers, owner: this.owner, experimental: !!this.opts.experimental, name: (this.opts.worldName ?? `${this.opts.hostName}'s world`).slice(0, 40),
+    };
+    next.conn.send({ t: 'becomeHost', room: newRoomId, state });
+    for (const o of this.players.values()) if (o.joined && !o.conn.local && o !== next) o.conn.send({ t: 'migrate', room: newRoomId, host: next.name });
+    this.system(`${this.opts.hostName} left. ${next.name} is keeping the world open.`);
+    // give the (big) hand-over message time to arrive before the connections close
+    this.stopped = true;
+    for (const t of this.timers) clearInterval(t);
+    if (this.matchTimer) clearTimeout(this.matchTimer);
+    setTimeout(() => {
+      for (const p of [...this.players.values()]) p.conn.close(p.conn.local ? 1000 : 4012, p.conn.local ? '' : 'The world moved to another player');
+      this.players.clear();
+    }, 2500);
+    return next.name;
+  }
+
   /** The host left: everyone else is disconnected. */
   stop(reason = 'The host left the world') {
-    if (this.stopped) return;
+    if (this.stopped) { for (const p of [...this.players.values()]) if (p.conn.local) p.conn.close(1000, ''); return; }
     this.stopped = true;
     for (const t of this.timers) clearInterval(t);
     if (this.matchTimer) clearTimeout(this.matchTimer);
