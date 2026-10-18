@@ -39,7 +39,7 @@ export type MatchView = {
 };
 type MatchMember = { team: number; out: boolean; kills: number; deaths: number };
 const LOBBY_MS = 30_000, FULL_LOBBY_MS = 5000, COUNTDOWN_MS = 5000, ROUND_COUNTDOWN_MS = 3000, OVER_MS = 10_000;
-type Badge = { owner?: boolean; rank?: string; tier?: string; staff?: string | null };
+type Badge = { owner?: boolean; rank?: string; tier?: string; staff?: string | null; og?: boolean; special?: string | null };
 type Look = { skin: string; cape: string; custom?: string };
 
 /** One player's link to the room (the host's own loopback, or a peer's data channel). */
@@ -63,7 +63,7 @@ export type RoomServices = {
   /** Banned from all of VibeBlox (admin panel)? */
   isBanned?(name: string): Promise<boolean>;
   /** Paid rank and creator tier, for the tags in front of names. */
-  standing?(name: string): Promise<{ rank: string; tier: string; staff?: string | null }>;
+  standing?(name: string): Promise<{ rank: string; tier: string; staff?: string | null; og?: boolean; special?: string | null }>;
   /** Is this token an admin's? (/panel actions) */
   isAdmin?(token: string): Promise<boolean>;
 };
@@ -339,7 +339,7 @@ export class HostRoom {
     const st = await this.opts.services.standing(p.name).catch(() => null);
     if (!st || p.conn.closed) return;
     const owner = p.name.toLowerCase() === OWNER;
-    p.badge = { owner, rank: st.rank, tier: owner ? 'star' : st.tier, staff: st.staff === 'helper' || st.staff === 'mod' ? st.staff : null };
+    p.badge = { owner, rank: st.rank, tier: owner ? 'star' : st.tier, staff: st.staff === 'helper' || st.staff === 'mod' ? st.staff : null, og: st.og === true, special: st.special === 'youtube' ? 'youtube' : null };
     this.broadcast({ t: 'badge', id: p.id, ...p.badge });
   }
 
@@ -511,6 +511,7 @@ export class HostRoom {
         const who = target || (name ? null : p);
         if (!who) { reply(`No player named ${String(msg.name || '').slice(0, 16)} here`); return; }
         who.conn.send({ t: 'setmode', mode: msg.mode, by: p.name });
+        this.anticheat.modeChanged(who.id, String(msg.mode)); // changing the mode with a safe built-in command is never cheating
         if (who !== p) reply(`${who.name} is now in ${String(msg.mode)} mode`);
         return;
       }
@@ -647,9 +648,9 @@ export class HostRoom {
         p.x = msg.x as number; p.y = msg.y as number; p.z = msg.z as number; p.yaw = msg.yaw as number; p.pitch = msg.pitch as number;
         p.mode = typeof msg.mode === 'string' ? msg.mode.slice(0, 12) : 'survival';
         p.held = int(msg.held) && msg.held >= 0 && msg.held < 4000 ? msg.held : 0;
-        p.act = int(msg.act) ? msg.act & 127 : 0; // (64: swimming)
+        p.act = int(msg.act) ? msg.act & 255 : 0; // (64: swimming, 128: gliding with an elytra)
         p.moved = true;
-        if (!p.conn.local && !this.exemptFromAntiCheat(p)) this.anticheat.onMove(p.id, p.name, p.x, p.y, p.z, p.mode);
+        if (!p.conn.local && !this.exemptFromAntiCheat(p)) this.anticheat.onMove(p.id, p.name, p.x, p.y, p.z, p.mode, (p.act & 128) !== 0);
         return;
       case 'look': {
         const ok = (v: unknown): v is string => typeof v === 'string' && /^[a-z0-9_]{1,24}$/.test(v);
@@ -683,6 +684,12 @@ export class HostRoom {
         return;
       }
       case 'ping': if (num(msg.n)) p.conn.send({ t: 'pong', n: msg.n }); return;
+      case 'integrity': { // the player's game says an outside script runs in its page (see integrity.ts)
+        const KNOWN = ['userscript manager', 'injected script', 'patched browser functions', 'scripted clicks'];
+        const flags = Array.isArray(msg.flags) ? (msg.flags as unknown[]).filter((f): f is string => typeof f === 'string' && KNOWN.includes(f)) : [];
+        if (flags.length && !p.conn.local && !this.exemptFromAntiCheat(p)) this.anticheat.onScript(p.id, p.name, flags);
+        return;
+      }
       case 'chat': {
         const text = typeof msg.text === 'string' ? msg.text.trim().slice(0, 256) : '';
         if (!text) return;

@@ -12,10 +12,14 @@
 //   autoclicker  more than 16 hits a second, or clicks timed too perfectly for a hand
 //   nuker        breaking or placing blocks much faster than a person can (survival)
 //   spam         a flood of chat messages
+//   script       the player's game reports an outside script (Tampermonkey, Greasemonkey, a pasted console script...)
+//
+// Not cheating, so never flagged: creative / spectator, gliding with an elytra and firework boosts, the first moments after the
+// game mode changes (any way: F3+F4, /gamemode, a menu), teleports, respawns and portals.
 
-export type CheatKind = 'fly' | 'speed' | 'reach' | 'killaura' | 'autoclicker' | 'nuker' | 'spam';
+export type CheatKind = 'fly' | 'speed' | 'reach' | 'killaura' | 'autoclicker' | 'nuker' | 'spam' | 'script';
 export const CHEAT_LABELS: Record<CheatKind, string> = {
-  fly: 'Flying', speed: 'Speed', reach: 'Reach', killaura: 'Kill aura', autoclicker: 'Auto clicker', nuker: 'Nuker (fast building)', spam: 'Chat spam',
+  fly: 'Flying', speed: 'Speed', reach: 'Reach', killaura: 'Kill aura', autoclicker: 'Auto clicker', nuker: 'Nuker (fast building)', spam: 'Chat spam', script: 'Outside script',
 };
 export type CheatAlert = { at: number; id: number; player: string; kind: CheatKind; detail: string; points: number };
 export type AntiCheatSettings = { enabled: boolean; autoKick: boolean; kickAt: number };
@@ -33,6 +37,8 @@ type Track = {
   points: number;
   lastAlert: Partial<Record<CheatKind, number>>;
   graceUntil: number; // after joining or a teleport: positions settle first
+  glideUntil: number; // gliding with an elytra (and a few seconds after landing) is not flying
+  scriptFlags: string;
 };
 
 /**
@@ -51,13 +57,26 @@ export class AntiCheat {
   private track(id: number, name: string): Track {
     let tr = this.tracks.get(id);
     if (!tr) {
-      tr = { name, mode: 'survival', last: null, airSince: 0, airStartY: 0, lowestY: 0, speedWindow: [], speedStrikes: 0, hits: [], hitTargets: [], edits: [], chats: [], points: 0, lastAlert: {}, graceUntil: this.now() + 3000 };
+      tr = { name, mode: 'survival', last: null, airSince: 0, airStartY: 0, lowestY: 0, speedWindow: [], speedStrikes: 0, hits: [], hitTargets: [], edits: [], chats: [], points: 0, lastAlert: {}, graceUntil: this.now() + 3000, glideUntil: 0, scriptFlags: '' };
       this.tracks.set(id, tr);
     }
     tr.name = name;
     return tr;
   }
   remove(id: number) { this.tracks.delete(id); }
+  /** The player's mode was changed on purpose (/gamemode, F3+F4...): the next few seconds of movement are not judged. */
+  modeChanged(id: number, mode?: string) { const tr = this.tracks.get(id); if (tr) { if (mode) tr.mode = mode; tr.graceUntil = this.now() + 4000; tr.airSince = 0; tr.speedWindow = []; tr.last = null; } }
+  /**
+   * The player's game says an outside script is running (userscript manager, pasted console script...). It can't be proven from
+   * here, so it is one alert with some points, and the same flags don't raise it again.
+   */
+  onScript(id: number, name: string, flags: string[]) {
+    const tr = this.track(id, name);
+    const key = flags.slice().sort().join(',');
+    if (!key || key === tr.scriptFlags) return;
+    tr.scriptFlags = key;
+    this.flag(id, tr, 'script', flags.join(', ').slice(0, 120), 4);
+  }
   points(id: number) { return this.tracks.get(id)?.points ?? 0; }
   /** The host teleported this player (or they respawned): the next moves are not judged. */
   excuse(id: number, ms = 3000) { const tr = this.tracks.get(id); if (tr) { tr.graceUntil = this.now() + ms; tr.last = null; tr.airSince = 0; tr.speedWindow = []; } }
@@ -78,15 +97,17 @@ export class AntiCheat {
   }
 
   /** A position update from a player. */
-  onMove(id: number, name: string, x: number, y: number, z: number, mode: string) {
+  onMove(id: number, name: string, x: number, y: number, z: number, mode: string, gliding = false) {
     const tr = this.track(id, name);
     const t = this.now();
     const changedMode = tr.mode !== mode;
     tr.mode = mode;
+    if (changedMode) tr.graceUntil = Math.max(tr.graceUntil, t + 4000); // a mode change (creative <-> survival, however it happened) is never cheating
+    if (gliding) tr.glideUntil = t + 5000; // elytra and firework boosts are fast and stay in the air on purpose
     const prev = tr.last;
     tr.last = { t, x, y, z };
     const judged = mode === 'survival' || mode === 'adventure';
-    if (!judged || changedMode || t < tr.graceUntil || !prev) { tr.airSince = 0; tr.speedWindow = []; return; }
+    if (!judged || changedMode || t < tr.graceUntil || t < tr.glideUntil || !prev) { tr.airSince = 0; tr.speedWindow = []; return; }
     const step = Math.hypot(x - prev.x, z - prev.z);
     if (step > 12 || Math.abs(y - prev.y) > 12) { tr.airSince = 0; tr.speedWindow = []; return; } // a teleport (ender pearl, /tp, respawn): not judged
 

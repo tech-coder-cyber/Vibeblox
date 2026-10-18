@@ -866,21 +866,21 @@ function drawMiscItemCanvas(id: number): HTMLCanvasElement {
 }
 
 export type MobKind = 'pig' | 'cow' | 'chicken' | 'sheep' | 'zombie' | 'skeleton' | 'creeper' | 'spider' | 'ghast' | 'blaze' | 'piglin' | 'villager' | 'iron_golem'
-  | 'cinderbone' | 'hollow_tyrant' | 'bot' | 'wolf';
+  | 'cinderbone' | 'hollow_tyrant' | 'bot' | 'wolf' | 'strider' | 'magma_cube';
 /** Mobs you can /summon ('bot' players only exist in minigames). */
-export const MOB_KINDS: MobKind[] = ['pig', 'cow', 'chicken', 'sheep', 'zombie', 'skeleton', 'creeper', 'spider', 'ghast', 'blaze', 'piglin', 'villager', 'iron_golem', 'cinderbone', 'hollow_tyrant', 'wolf'];
+export const MOB_KINDS: MobKind[] = ['pig', 'cow', 'chicken', 'sheep', 'zombie', 'skeleton', 'creeper', 'spider', 'ghast', 'blaze', 'piglin', 'villager', 'iron_golem', 'cinderbone', 'hollow_tyrant', 'wolf', 'strider', 'magma_cube'];
 /** Every mob that has a spawn egg (all but the boss). */
 export const SPAWN_EGG_KINDS: MobKind[] = MOB_KINDS.filter((k) => k !== 'hollow_tyrant');
 export const MOB_NAMES: Record<MobKind, string> = {
   pig: 'Pig', cow: 'Cow', chicken: 'Chicken', sheep: 'Sheep', zombie: 'Zombie', skeleton: 'Skeleton', creeper: 'Creeper', spider: 'Spider',
-  ghast: 'Ghast', blaze: 'Blaze', piglin: 'Piglin', villager: 'Villager', iron_golem: 'Iron Golem', cinderbone: 'Cinderbone', hollow_tyrant: 'Hollow Tyrant', bot: 'Bot', wolf: 'Wolf',
+  ghast: 'Ghast', blaze: 'Blaze', piglin: 'Piglin', villager: 'Villager', iron_golem: 'Iron Golem', cinderbone: 'Cinderbone', hollow_tyrant: 'Hollow Tyrant', bot: 'Bot', wolf: 'Wolf', strider: 'Strider', magma_cube: 'Magma Cube',
 };
 /** Spawn egg colors: the shell and its spots. */
 const EGG_COLORS: Partial<Record<MobKind, [string, string]>> = {
   pig: ['#f0a5a2', '#db635f'], cow: ['#443626', '#a1a1a1'], chicken: ['#a1a1a1', '#ff0000'], sheep: ['#e7e7e7', '#ffb5b5'],
   zombie: ['#00afaf', '#799c65'], skeleton: ['#c1c1c1', '#494949'], creeper: ['#0da70b', '#000000'], spider: ['#342d27', '#a80e0e'],
   ghast: ['#f9f9f9', '#bcbcbc'], blaze: ['#f6b201', '#fff87e'], piglin: ['#c66e55', '#f9f3a4'], villager: ['#563c33', '#bd8b72'],
-  iron_golem: ['#dbcdc1', '#74a332'], cinderbone: ['#1e1b18', '#ff7a1a'], wolf: ['#d7d3cd', '#6a5a4a'],
+  iron_golem: ['#dbcdc1', '#74a332'], cinderbone: ['#1e1b18', '#ff7a1a'], wolf: ['#d7d3cd', '#6a5a4a'], strider: ['#9a2f35', '#4d4d6b'], magma_cube: ['#340000', '#fcfc00'],
 };
 export const spawnEggId = (kind: MobKind) => ITEM_SPAWN_EGG + SPAWN_EGG_KINDS.indexOf(kind);
 export const spawnEggKind = (id: number): MobKind | null => (id >= ITEM_SPAWN_EGG && id < ITEM_SPAWN_EGG + SPAWN_EGG_KINDS.length ? SPAWN_EGG_KINDS[id - ITEM_SPAWN_EGG] : null);
@@ -1217,6 +1217,34 @@ function buildMobModel(kind: MobKind | 'player', variant = 0): MobModel {
       const a = (i / 4) * Math.PI * 2 + ring * 0.6, r = [9, 7, 5][ring];
       legs.push(box(root, [2, 8, 2], [Math.cos(a) * r, 16 - ring * 7, Math.sin(a) * r], [0, 0, 0], rod));
     }
+  } else if (kind === 'strider') {
+    // Two long thin legs, a wide body with a shaggy red back, and a face on the front
+    const legM = mat(mobTex('#c4451f', ['#a8361a', '#d9582a'], 0.3));
+    legs.push(box(root, [4, 16, 4], [-4, 16, 0], [0, -8, 0], legM));
+    legs.push(box(root, [4, 16, 4], [4, 16, 0], [0, -8, 0], legM));
+    const skin = () => mobTex('#9a2f35', ['#7d2429', '#b4434a', '#5e1a1f'], 0.4);
+    const face = mobTex('#9a2f35', ['#7d2429'], 0.25, (ctx) => {
+      ctx.fillStyle = '#ffe9a8'; ctx.fillRect(1, 3, 2, 2); ctx.fillRect(5, 3, 2, 2);
+      ctx.fillStyle = '#2a0e10'; ctx.fillRect(2, 4, 1, 1); ctx.fillRect(5, 4, 1, 1);
+      ctx.fillStyle = '#4a1418'; ctx.fillRect(2, 6, 4, 1);
+    });
+    body = box(root, [16, 14, 16], [0, 24, 0], [0, 0, 0], headMats(skin(), face));
+    head = body;
+    const bristle = mat(mobTex('#d96b3a', ['#e88a4a', '#b8532a'], 0.4));
+    for (const [x, z] of [[-6, -5], [0, -6], [6, -5], [-5, 1], [5, 1], [0, 5], [-6, 6], [6, 6]]) box(body, [3, 3 + ((x + z + 20) % 3), 3], [x, 7, z], [0, 1.5, 0], bristle);
+  } else if (kind === 'magma_cube') {
+    // A cooled-lava cube with glowing cracks and a wide mouth
+    const crust = () => mobTex('#2a1410', ['#3d1d16', '#1c0c09', '#52271a'], 0.45, (ctx) => {
+      ctx.fillStyle = '#ff7a1a'; ctx.fillRect(0, 2, 3, 1); ctx.fillRect(5, 5, 3, 1); ctx.fillRect(3, 0, 1, 3); ctx.fillRect(6, 1, 1, 2);
+      ctx.fillStyle = '#ffd23a'; ctx.fillRect(1, 2, 1, 1); ctx.fillRect(6, 5, 1, 1);
+    });
+    const face = mobTex('#2a1410', ['#3d1d16', '#1c0c09'], 0.3, (ctx) => {
+      ctx.fillStyle = '#ffd23a'; ctx.fillRect(1, 2, 2, 2); ctx.fillRect(5, 2, 2, 2);
+      ctx.fillStyle = '#ff5a1a'; ctx.fillRect(2, 5, 4, 2);
+      ctx.fillStyle = '#2a0e08'; ctx.fillRect(2, 2, 1, 1); ctx.fillRect(5, 2, 1, 1);
+    });
+    body = box(root, [14, 14, 14], [0, 7, 0], [0, 0, 0], headMats(crust(), face));
+    head = body;
   } else if (kind === 'piglin') {
     const skin = '#e0a08c', skinS = ['#d08e7a', '#ecb09c'];
     const legM = mat(mobTex('#6b4a2b', ['#593c22', '#7c5834']));
@@ -1365,6 +1393,8 @@ function buildMobModel(kind: MobKind | 'player', variant = 0): MobModel {
 export function applyArmorOverlay(model: MobModel, armorIds: Array<number | null>) {
   const old = (model.root.userData.armorMeshes ?? []) as THREE.Mesh[];
   for (const m of old) { m.parent?.remove(m); m.geometry.dispose(); (m.material as THREE.Material).dispose(); }
+  for (const g of (model.root.userData.wingGroups ?? []) as THREE.Group[]) g.parent?.remove(g);
+  model.root.userData.wingGroups = [];
   const meshes: THREE.Mesh[] = [];
   const P = 1 / 16;
   const add = (parent: THREE.Object3D, size: number[], offset: number[], color: string) => {
@@ -1376,10 +1406,14 @@ export function applyArmorOverlay(model: MobModel, armorIds: Array<number | null
   armorIds.forEach((id, slot) => {
     const def = id !== null ? ARMOR[id] : undefined;
     if (!def) return;
-    if (def.elytra) { // two folded wings on the back
+    if (def.elytra) { // two folded wings on the back, each hanging from a shoulder pivot so they can spread out in flight
       for (const side of [-1, 1]) {
-        add(model.body, [5, 12, 1], [side * 2.6, 6, 3], '#8b94ab');
-        add(model.body, [3, 8, 1], [side * 3.6, 4, 3.8], '#aab3c8');
+        const g = new THREE.Group();
+        g.position.set(side * 1.5 * P, 11 * P, 2.2 * P);
+        model.body.add(g);
+        (model.root.userData.wingGroups as THREE.Group[]).push(g);
+        add(g, [5, 12, 1], [side * 2.6 - side * 1.5, 6 - 11, 3 - 2.2], '#8b94ab');
+        add(g, [3, 8, 1], [side * 3.6 - side * 1.5, 4 - 11, 3.8 - 2.2], '#aab3c8');
       }
       return;
     }
@@ -1459,6 +1493,8 @@ const MOB_INFO: Record<MobKind, { hp: number; speed: number; hostile: boolean; w
   hollow_tyrant: { hp: 300, speed: 4.5, hostile: true, width: 1.0, height: 3.3 }, // the three-headed boss
   bot: { hp: 20, speed: 4.3, hostile: true, width: 0.6, height: 1.8 }, // a computer player in EggWars and Bridge Duels
   wolf: { hp: 16, speed: 3.4, hostile: false, width: 0.6, height: 0.85 }, // leaves you alone until you hit it (then the whole pack comes)
+  strider: { hp: 20, speed: 1.6, hostile: false, width: 0.9, height: 1.7 }, // strolls on the Nether's lava seas and never burns
+  magma_cube: { hp: 16, speed: 2.4, hostile: true, width: 1.0, height: 1.0 }, // hops after you, and never burns
 };
 
 /** Seconds the Hollow Tyrant takes to wake up after it is summoned (it can't be hurt until then). */
@@ -1481,7 +1517,7 @@ function sizeOf(kind: MobKind, baby: boolean) {
 /** Every mob drops at least one item when killed. */
 /** Experience for killing each mob, like Minecraft. */
 const MOB_XP: Partial<Record<MobKind, number>> = {
-  pig: 2, cow: 2, chicken: 1, sheep: 2, zombie: 5, skeleton: 5, spider: 5, creeper: 5, ghast: 5, blaze: 10, piglin: 5, cinderbone: 5, hollow_tyrant: 50, wolf: 3,
+  pig: 2, cow: 2, chicken: 1, sheep: 2, zombie: 5, skeleton: 5, spider: 5, creeper: 5, ghast: 5, blaze: 10, piglin: 5, cinderbone: 5, hollow_tyrant: 50, wolf: 3, strider: 3, magma_cube: 4,
 };
 /** Rare drops: Looting raises their chance a little instead of multiplying them. */
 const isRareDrop = (id: number) => id === ITEM_CINDERBONE_SKULL || id === ITEM_HOLLOW_STAR;
@@ -1520,6 +1556,8 @@ export function mobDrops(kind: MobKind, ctx: { baby?: boolean; burning?: boolean
     : kind === 'villager' || kind === 'bot' ? []
     : kind === 'cinderbone' ? [[ITEM_COAL, r(0, 1)], [ITEM_BONE, r(0, 2)], [ITEM_CINDERBONE_SKULL, Math.random() < 0.1 + 0.02 * (ctx.looting ?? 0) ? 1 : 0]]
     : kind === 'hollow_tyrant' ? [[ITEM_HOLLOW_STAR, 1]]
+    : kind === 'strider' ? [[ITEM_STRING, r(2, 5)]]
+    : kind === 'magma_cube' ? [[ITEM_GOLD_INGOT, r(0, 1)], [ITEM_COAL, r(0, 2)]]
     : [[ITEM_GUNPOWDER, r(1, 2)]];
   if (ctx.burning) for (const d of list) d[0] = COOKED_DROP[d[0]] ?? d[0];
   return list.filter(([, n]) => n > 0);
@@ -5268,7 +5306,14 @@ export function customGroundHeight(noise: { fbm: (x: number, y: number, z: numbe
   const h = mountains ? base + Math.pow(Math.max(0, n * 0.7 + 0.5), 2.2) * amp * 1.6 : base + n * amp * 1.4;
   return Math.max(2, Math.min(CHUNK_HEIGHT - 9, Math.round(h)));
 }
+/** Grass and leaves take on the colour of the land: dry and yellow in deserts and savannas, cold and blue-green in snow and taiga, deep green in dark forests. */
+const BIOME_TINT: Partial<Record<Biome, [number, number, number]>> = {
+  forest: [0.93, 1.0, 0.9], birch_forest: [1.0, 1.04, 0.88], dark_forest: [0.62, 0.78, 0.58], taiga: [0.78, 0.95, 0.88], snowy: [0.78, 0.94, 0.96],
+  mountains: [0.84, 0.95, 0.86], desert: [1.0, 0.94, 0.58], savanna: [0.98, 0.95, 0.56], badlands: [0.9, 0.84, 0.52], ocean: [0.88, 1.0, 1.0],
+};
+const NO_TINT: [number, number, number] = [1, 1, 1];
 const NETHER_LAVA_LEVEL = 12;
+const LAVA_SAFE_FLOOR = 14; // the decorations stay above the lava seas
 
 // ---------------- Villages ----------------
 /** One piece of a village (a road, a house, the well...). build() writes blocks; the chunk keeps only the ones inside it. */
@@ -5292,6 +5337,9 @@ export type Village = {
 export const VILLAGE_REGION = 256;
 export const TEMPLE_REGION = 384;
 export const FORTRESS_REGION = 256;
+/** Nether ruins (a small brick outpost with a chest) can stand once in every square of this size. */
+export const NETHER_RUIN_REGION = 56;
+export type NetherRuin = { cx: number; cz: number; y: number; x0: number; z0: number; x1: number; z1: number; chest: [number, number, number] };
 export type MinorStructureKind = 'dungeon' | 'portal' | 'treasure';
 export type StructureKind = 'temple' | 'fortress' | MinorStructureKind;
 /** How big the areas are that hold at most one dungeon / ruined portal / buried treasure each. */
@@ -5521,6 +5569,34 @@ function swimPose(model: MobModel, s: number, t: number) {
   R.rotation.x = R.rotation.x * (1 - s) + stroke(t + Math.PI) * s; R.rotation.z = (R.rotation.z * (1 - s)) + 0.25 * s;
   model.legs[0].rotation.x = model.legs[0].rotation.x * (1 - s) + Math.sin(t * 2.2) * 0.45 * s;
   model.legs[1].rotation.x = model.legs[1].rotation.x * (1 - s) - Math.sin(t * 2.2) * 0.45 * s;
+}
+
+/** How far a glider tips forward (radians): nearly flat, face down the wind. */
+const GLIDE_LEAN = 1.38;
+/**
+ * Gliding with an elytra: the wings swing out from the back and flutter a little, the arms trail and the legs stream out
+ * behind. s: 0 (not gliding) .. 1; t: a running clock; speed: blocks a second (faster flutters faster and holds the wings flatter).
+ * Call it every frame for anybody wearing wings (at s = 0 it folds them back).
+ */
+function glidePose(model: MobModel, s: number, t: number, speed = 12) {
+  const wings = (model.root.userData.wingGroups ?? []) as THREE.Group[];
+  const fast = Math.min(1, speed / 30);
+  for (const g of wings) {
+    const side = g.position.x < 0 ? -1 : 1;
+    const flutter = Math.sin(t * (7 + fast * 7) + (side < 0 ? 0 : 0.6)) * (0.10 + 0.06 * fast);
+    g.rotation.z = side * (s * (1.2 + flutter)); // hanging down when folded, out to the sides when gliding
+    g.rotation.x = -0.35 * s * (1 - fast * 0.5); // swept back a little
+  }
+  if (s <= 0.02) return;
+  const [L, R] = model.arms;
+  if (L && R) {
+    L.rotation.x = L.rotation.x * (1 - s) + (0.25 + Math.sin(t * 3) * 0.05) * s; L.rotation.z = L.rotation.z * (1 - s) - 0.12 * s;
+    R.rotation.x = R.rotation.x * (1 - s) + (0.25 + Math.sin(t * 3 + 1) * 0.05) * s; R.rotation.z = R.rotation.z * (1 - s) + 0.12 * s;
+  }
+  if (model.legs.length === 2) {
+    model.legs[0].rotation.x = model.legs[0].rotation.x * (1 - s) + (0.08 + Math.sin(t * 2.4) * 0.07) * s;
+    model.legs[1].rotation.x = model.legs[1].rotation.x * (1 - s) + (0.08 - Math.sin(t * 2.4) * 0.07) * s;
+  }
 }
 
 /**
@@ -6350,6 +6426,8 @@ class World {
     if (this.kind === 'nether') {
       this.generateCaverns(chunk, BLOCK_NETHERRACK, BLOCK_NETHERRACK, BLOCK_LAVA, true);
       this.placeCinderTrees(chunk);
+      this.decorateNether(chunk);
+      this.placeNetherRuins(chunk);
       this.placeStructures(chunk); // Nether fortresses
       chunk.generated = true;
       return;
@@ -7006,6 +7084,10 @@ class World {
       const m = this.minorInRegion(k, Math.floor(x / MINOR_REGION[k]), Math.floor(z / MINOR_REGION[k]));
       if (m && m.chests.some((c) => c[0] === x && c[1] === y && c[2] === z)) return k;
     }
+    if (this.kind === 'nether') {
+      const ru = this.netherRuinInCell(Math.floor(x / NETHER_RUIN_REGION), Math.floor(z / NETHER_RUIN_REGION));
+      if (ru && ru.chest[0] === x && ru.chest[1] === y && ru.chest[2] === z) return 'fortress';
+    }
     const R = this.kind === 'nether' ? FORTRESS_REGION : TEMPLE_REGION;
     const st = this.kind === 'nether' ? this.fortressInRegion(Math.floor(x / R), Math.floor(z / R)) : this.templeInRegion(Math.floor(x / R), Math.floor(z / R));
     return st && st.chests.some((c) => c[0] === x && c[1] === y && c[2] === z) ? st.kind : null;
@@ -7055,6 +7137,122 @@ class World {
           }
           break;
         }
+      }
+    }
+  }
+
+  /** Is this spot solid rock in the Nether before anything is added to it? (The same maths as generateCaverns.) */
+  private netherSolid(wx: number, y: number, wz: number): boolean {
+    if (y <= 1 || y >= CHUNK_HEIGHT - 2) return true;
+    const n = this.noise.noise3d(wx * 0.045, y * 0.07, wz * 0.045) + this.noise.noise3d(wx * 0.11, y * 0.15, wz * 0.11) * 0.35;
+    const edge = Math.pow(Math.abs(y - 31) / 31, 2) * 0.9;
+    return n + edge > 0.02;
+  }
+
+  /** Stalagmites, hanging spikes, rock pillars, fields of hot magma, quartz veins and glowstone chandeliers: so the caves are not bare. */
+  decorateNether(chunk: Chunk) {
+    const bx = chunk.cx * CHUNK_SIZE, bz = chunk.cz * CHUNK_SIZE;
+    const NR = BLOCK_NETHERRACK;
+    const air = (x: number, y: number, z: number) => chunk.get(x, y, z) === BLOCK_AIR;
+    const cross = (x: number, y: number, z: number, b: number) => {
+      for (const [dx, dz] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) if (air(x + dx, y, z + dz)) chunk.set(x + dx, y, z + dz, b);
+    };
+    for (let x = 1; x < CHUNK_SIZE - 1; x++) {
+      for (let z = 1; z < CHUNK_SIZE - 1; z++) {
+        const wx = bx + x, wz = bz + z;
+        const rs = this.hash3(wx, 3, wz, 401), rp = this.hash3(wx, 4, wz, 402), rg = this.hash3(wx, 5, wz, 403);
+        const rq = this.hash3(wx, 6, wz, 404), rt = this.hash3(wx, 8, wz, 405);
+        for (let y = 55; y >= LAVA_SAFE_FLOOR; y--) {
+          const b = chunk.get(x, y, z);
+          if (b === NR && air(x, y + 1, z) && air(x, y + 2, z)) {
+            if (rs < 0.016) { // a stalagmite
+              const h = 3 + Math.floor(this.hash3(wx, y, wz, 406) * 4);
+              for (let k = 1; k <= h; k++) { if (!air(x, y + k, z)) break; if (k <= h - 2) cross(x, y + k, z, NR); else chunk.set(x, y + k, z, NR); }
+            } else if (rp < 0.0026) { // a pillar from the floor up to the roof, when the cave is not too tall
+              let top = -1;
+              for (let k = 1; k <= 14; k++) { if (!air(x, y + k, z)) { top = y + k; break; } }
+              if (top > 0) for (let yy = y + 1; yy < top; yy++) { chunk.set(x, yy, z, NR); if (rp < 0.0013) { chunk.set(x + 1, yy, z, NR); chunk.set(x, yy, z + 1, NR); chunk.set(x + 1, yy, z + 1, NR); } }
+            } else if (y > NETHER_LAVA_LEVEL + 1 && y < 46 && this.noise.noise3d(wx * 0.07 + 11, 3.1, wz * 0.07) > 0.42 && rt < 0.6) {
+              chunk.set(x, y, z, BLOCK_MAGMA); // a field of hot ground
+            }
+            break;
+          }
+          if (b === NR && air(x, y - 1, z) && y > 26) { // the underside of a roof
+            if (rs < 0.012) { // a spike hanging down
+              const h = 2 + Math.floor(this.hash3(wx, y, wz, 407) * 5);
+              for (let k = 1; k <= h; k++) { if (!air(x, y - k, z)) break; if (k <= h - 2) cross(x, y - k, z, NR); else chunk.set(x, y - k, z, NR); }
+            } else if (rg < 0.006) { // a glowstone chandelier
+              const h = 1 + Math.floor(this.hash3(wx, y, wz, 408) * 3);
+              chunk.set(x, y, z, BLOCK_GLOWSTONE);
+              for (let k = 1; k <= h; k++) if (air(x, y - k, z)) chunk.set(x, y - k, z, BLOCK_GLOWSTONE);
+              for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (chunk.get(x + dx, y, z + dz) === NR && this.hash3(wx + dx, y, wz + dz, 409) < 0.6) chunk.set(x + dx, y, z + dz, BLOCK_GLOWSTONE);
+            }
+          }
+          if (b === NR && rq < 0.0035 && y > 14) { // a vein of quartz ore
+            chunk.set(x, y, z, BLOCK_QUARTZ_ORE);
+            for (const [dx, dy, dz] of [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]) {
+              if (chunk.get(x + dx, y + dy, z + dz) === NR && this.hash3(wx + dx, y + dy, wz + dz, 410) < 0.55) chunk.set(x + dx, y + dy, z + dz, BLOCK_QUARTZ_ORE);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // ---------------- Nether ruins: a small brick outpost with a chest ----------------
+  private ruinCache = new Map<string, NetherRuin | null>();
+  netherRuinInCell(rx: number, rz: number): NetherRuin | null {
+    if (this.kind !== 'nether') return null;
+    const key = `${rx},${rz}`;
+    const hit = this.ruinCache.get(key);
+    if (hit !== undefined) return hit;
+    const R = NETHER_RUIN_REGION;
+    let ruin: NetherRuin | null = null;
+    if (this.hash3(rx, 211, rz, 311) < 0.6) {
+      const cx = rx * R + 8 + Math.floor(this.hash3(rx, 212, rz, 312) * (R - 16));
+      const cz = rz * R + 8 + Math.floor(this.hash3(rx, 213, rz, 313) * (R - 16));
+      const fort = this.fortressInRegion(Math.floor(cx / FORTRESS_REGION), Math.floor(cz / FORTRESS_REGION));
+      if (!fort || Math.abs(cx - fort.cx) > 44 || Math.abs(cz - fort.cz) > 44) {
+        for (let y = 48; y >= NETHER_LAVA_LEVEL + 4; y--) {
+          if (!this.netherSolid(cx, y, cz)) continue;
+          let room = true;
+          for (let k = 1; k <= 7 && room; k++) if (this.netherSolid(cx, y + k, cz)) room = false;
+          if (room) { ruin = { cx, cz, y, x0: cx - 3, z0: cz - 3, x1: cx + 3, z1: cz + 3, chest: [cx, y + 1, cz] }; }
+          break; // only the highest floor counts
+        }
+      }
+    }
+    this.ruinCache.set(key, ruin);
+    return ruin;
+  }
+
+  private placeNetherRuins(chunk: Chunk) {
+    const R = NETHER_RUIN_REGION;
+    const bx = chunk.cx * CHUNK_SIZE, bz = chunk.cz * CHUNK_SIZE;
+    for (let rx = Math.floor((bx - 4) / R); rx <= Math.floor((bx + CHUNK_SIZE + 3) / R); rx++) {
+      for (let rz = Math.floor((bz - 4) / R); rz <= Math.floor((bz + CHUNK_SIZE + 3) / R); rz++) {
+        const ru = this.netherRuinInCell(rx, rz);
+        if (!ru || ru.x1 < bx || ru.x0 >= bx + CHUNK_SIZE || ru.z1 < bz || ru.z0 >= bz + CHUNK_SIZE) continue;
+        const set = (x: number, y: number, z: number, b: number) => chunk.set(x - bx, y, z - bz, b);
+        for (let dx = -3; dx <= 3; dx++) {
+          for (let dz = -3; dz <= 3; dz++) {
+            if (Math.abs(dx) + Math.abs(dz) >= 6) continue; // rounded corners
+            const wx = ru.cx + dx, wz = ru.cz + dz;
+            for (let yy = ru.y + 1; yy <= ru.y + 6; yy++) set(wx, yy, wz, BLOCK_AIR);
+            for (let yy = ru.y - 3; yy < ru.y; yy++) set(wx, yy, wz, BLOCK_NETHERRACK);
+            const f = this.hash3(wx, ru.y, wz, 314);
+            set(wx, ru.y, wz, f < 0.72 ? BLOCK_NETHER_BRICK : f < 0.84 ? BLOCK_MAGMA : f < 0.92 ? BLOCK_SOUL_SAND : BLOCK_NETHERRACK);
+            const edge = Math.max(Math.abs(dx), Math.abs(dz)) === 3;
+            if (edge) {
+              const pillar = (dx === 0 || dz === 0);
+              const h = pillar ? 5 : this.hash3(wx, ru.y, wz, 315) < 0.4 ? 0 : 1 + Math.floor(this.hash3(wx, ru.y, wz, 316) * 2);
+              for (let k = 1; k <= h; k++) set(wx, ru.y + k, wz, BLOCK_NETHER_BRICK);
+              if (pillar && this.hash3(wx, ru.y, wz, 317) < 0.75) set(wx, ru.y + 6, wz, BLOCK_GLOWSTONE);
+            }
+          }
+        }
+        set(ru.chest[0], ru.chest[1], ru.chest[2], BLOCK_CHEST);
+        set(ru.cx, ru.y, ru.cz, BLOCK_NETHER_BRICK);
       }
     }
   }
@@ -7557,6 +7755,12 @@ class World {
     const blkAt = (lx: number, ly: number, lz: number) => (ly >= CHUNK_HEIGHT || ly < 0 ? 0 : light.blk[lIdx(lx, ly, lz)]);
     const pushLight = (sk: number, bl: number, n: number) => { const d = 1 - lightCurve(sk), b = bl > 0 ? lightCurve(bl) : 0; for (let k = 0; k < n; k++) { lightDark.push(d); blockLight.push(b); } };
     const AO_CURVE = [0.5, 0.68, 0.84, 1.0];
+    const tintOn = this.kind === 'overworld' && !this.flat && !this.airWorld;
+    const tintGrid: Array<[number, number, number] | undefined> = [];
+    const tintAt = (lx: number, lz: number): [number, number, number] => {
+      const gi = (lx >> 2) * 4 + (lz >> 2);
+      return tintGrid[gi] ?? (tintGrid[gi] = BIOME_TINT[this.getBiome(baseX + (lx >> 2) * 4 + 2, baseZ + (lz >> 2) * 4 + 2)] ?? NO_TINT);
+    };
     const p = [0, 0, 0], q1 = [0, 0, 0], q2 = [0, 0, 0], q3 = [0, 0, 0];
     const ao = [0, 0, 0, 0];
 
@@ -7576,7 +7780,8 @@ class World {
               positions.push(px0 + ax, y, pz0 + az, px0 + ex, y, pz0 + ez, px0 + ex, y + 0.9, pz0 + ez, px0 + ax, y + 0.9, pz0 + az);
               for (let k = 0; k < 4; k++) normals.push(0, 1, 0);
               uvs.push(0, 0, 1, 0, 1, 1, 0, 1);
-              colors.push(0.75, 0.75, 0.75, 0.75, 0.75, 0.75, 1, 1, 1, 1, 1, 1);
+              if (tintOn && block === BLOCK_TALL_GRASS) { const t = tintAt(x, z); colors.push(0.75 * t[0], 0.75 * t[1], 0.75 * t[2], 0.75 * t[0], 0.75 * t[1], 0.75 * t[2], t[0], t[1], t[2], t[0], t[1], t[2]); }
+              else colors.push(0.75, 0.75, 0.75, 0.75, 0.75, 0.75, 1, 1, 1, 1, 1, 1);
               pushLight(skyAt(x, y, z), blkAt(x, y, z), 4);
               bucket.push(v0, v0 + 1, v0 + 2, v0, v0 + 2, v0 + 3);
             }
@@ -7661,7 +7866,8 @@ class World {
               const level = s1 && s2 ? 0 : 3 - (s1 + s2 + cn);
               ao[k] = level;
               const b = FACE_SHADE[f] * AO_CURVE[level];
-              colors.push(b, b, b);
+              if (tintOn && (block === BLOCK_LEAVES || (block === BLOCK_GRASS && (f === 2 || (f !== 3 && c[1] === 1))))) { const t = tintAt(x, z); colors.push(b * t[0], b * t[1], b * t[2]); }
+              else colors.push(b, b, b);
               // Smooth light: average the open cells touching this corner
               let sk = skyAt(p[0], p[1], p[2]), bl = blkAt(p[0], p[1], p[2]), ln = 1;
               if (!s1) { sk += skyAt(q1[0], q1[1], q1[2]); bl += blkAt(q1[0], q1[1], q1[2]); ln++; }
@@ -8056,6 +8262,8 @@ export type GameHandle = {
   glideSpeed: () => number;
   /** Test hook: launch into a glide / fire a rocket as if right-clicked. */
   debugStartGlide: () => void;
+  /** For tests: how far the elytra animation has got (0..1), the wings' spread (radians) and the body's lean. */
+  debugGlidePose: () => { glide: number; wingSpread: number[]; lean: number; wings: number };
   useFirework: () => void;
   /** A furnace's 3 slots (input, fuel, output) plus cooking and fuel progress (0..1). */
   getFurnace: (key: string) => { slots: Slots; cook: number; burn: number };
@@ -8829,10 +9037,12 @@ export function createVoxelGame(
   // 9 bedrock, 10-14 ores, 15 log top, 16 snow
   const fc = faceCanvases();
   const worldTextures: THREE.Texture[] = [];
+  const maxAniso = Math.max(1, Math.min(8, Number(renderer.capabilities?.getMaxAnisotropy?.()) || 1));
   const worldTex = (c: HTMLCanvasElement): THREE.Texture => {
     const t = new THREE.CanvasTexture(c);
     t.magFilter = THREE.NearestFilter;
     t.minFilter = THREE.NearestMipmapLinearFilter;
+    t.anisotropy = maxAniso; // floors and walls seen at a slant stay sharp instead of going blurry
     worldTextures.push(t);
     return t;
   };
@@ -9622,6 +9832,7 @@ export function createVoxelGame(
   /** In water and moving: the body leans forward and the arms stroke (you in F5, and other players see it) */
   let swimming = false;
   let swimLerp = 0;
+  let glideLerp = 0; // 0..1: how far the wings are spread (the elytra animation; off on Low graphics)
   let equipLerp = 0; // 1 right after switching items, falls to 0 as the new item rises into view
   let sprintLerp = 0;
   let idleT = 0;
@@ -10085,6 +10296,13 @@ export function createVoxelGame(
         noiseHit(pos, 'bandpass', 900, 500, hurt ? 0.3 : 0.6, 0.5, 0, 2);
         tone(pos, 'square', hurt ? 400 : 180, hurt ? 200 : 140, hurt ? 0.25 : 0.5, 0.15, 0, 12);
         break;
+      case 'strider': // a soft, trilling coo
+        tone(pos, 'sine', hurt ? 700 : 520, hurt ? 420 : 640, hurt ? 0.2 : 0.35, 0.16, 0, 14);
+        break;
+      case 'magma_cube': // a wet, bubbling squelch
+        noiseHit(pos, 'lowpass', 500, 160, hurt ? 0.2 : 0.3, 0.5, 0, 2);
+        tone(pos, 'triangle', hurt ? 220 : 130, hurt ? 120 : 80, hurt ? 0.2 : 0.25, 0.15);
+        break;
       case 'piglin':
         tone(pos, 'sawtooth', hurt ? 260 : 170, hurt ? 160 : 110, hurt ? 0.25 : 0.5, 0.25, 0, 18);
         noiseHit(pos, 'bandpass', 700, 400, 0.12, 0.4, 0.05, 2);
@@ -10508,6 +10726,7 @@ export function createVoxelGame(
     bot?: BotBrain; // minigame bots: what they're up to
     shop?: Trade[]; // an EggWars shopkeeper: its own trades, and nobody can hurt it
     persistent?: boolean; // never despawns when you walk away
+    hop?: number; // magma cubes: seconds until the next hop
     tame?: boolean; sit?: boolean; // wolves: tamed with a bone (follows you, fights for you), and told to sit
     fx?: { poison: number; slow: number; regen: number }; // potion effects (seconds left)
     nameTag?: string; nt?: NameTag; // given with a name tag
@@ -10578,6 +10797,10 @@ export function createVoxelGame(
     let y = Math.floor(camera.position.y - PLAYER_EYE);
     for (let i = 0; i < 12 && isSolid(world.getWorldBlock(Math.floor(x), y, Math.floor(z))); i++) y++;
     for (let i = 0; i < 12 && !isSolid(world.getWorldBlock(Math.floor(x), y - 1, Math.floor(z))); i++) y--;
+    if (kind === 'strider') { // striders stand on lava, so look for a lava surface near that spot
+      const fx = Math.floor(x), fz = Math.floor(z);
+      for (let yy = y + 3; yy > y - 6; yy--) if (isLava(world.getWorldBlock(fx, yy, fz)) && world.getWorldBlock(fx, yy + 1, fz) === BLOCK_AIR) { y = yy + 1; break; }
+    }
     spawnMob(kind as MobKind, new THREE.Vector3(x, y, z), undefined, { baby: false, ...opts });
     return true;
   }
@@ -11928,10 +12151,28 @@ export function createVoxelGame(
   }
 
   // ---- The Nether has its own wildlife ----
+  /** Striders are harmless, so they live on the lava seas on every difficulty. */
+  function trySpawnStrider() {
+    let n = 0;
+    for (const m of mobs) if (m.kind === 'strider') n++;
+    if (n >= 6) return;
+    for (let tries = 0; tries < 10; tries++) {
+      const ang = Math.random() * Math.PI * 2, dist = 14 + Math.random() * 30;
+      const x = Math.floor(camera.position.x + Math.cos(ang) * dist), z = Math.floor(camera.position.z + Math.sin(ang) * dist);
+      if (!loadedChunks.has(world.key(Math.floor(x / CHUNK_SIZE), Math.floor(z / CHUNK_SIZE)))) continue;
+      if (!isLava(world.getWorldBlock(x, NETHER_LAVA_LEVEL, z)) || world.getWorldBlock(x, NETHER_LAVA_LEVEL + 1, z) !== BLOCK_AIR || world.getWorldBlock(x, NETHER_LAVA_LEVEL + 2, z) !== BLOCK_AIR) continue;
+      let lava = 0;
+      for (let dx = -2; dx <= 2; dx += 2) for (let dz = -2; dz <= 2; dz += 2) if (isLava(world.getWorldBlock(x + dx, NETHER_LAVA_LEVEL, z + dz))) lava++;
+      if (lava < 8) continue; // a real lake, not a puddle
+      const pack = 1 + Math.floor(Math.random() * 2);
+      for (let i = 0; i < pack && n + i < 6; i++) spawnMob('strider', new THREE.Vector3(x + 0.5 + (Math.random() - 0.5) * 1.5, NETHER_LAVA_LEVEL + 1, z + 0.5 + (Math.random() - 0.5) * 1.5));
+      return;
+    }
+  }
   function trySpawnNetherMob() {
     if (rules.difficulty === 'peaceful') return; // the Nether's wildlife is all hostile
-    let ghasts = 0, piglins = 0;
-    for (const m of mobs) { if (m.kind === 'ghast') ghasts++; else if (m.kind === 'piglin') piglins++; }
+    let ghasts = 0, piglins = 0, cubes = 0;
+    for (const m of mobs) { if (m.kind === 'ghast') ghasts++; else if (m.kind === 'piglin') piglins++; else if (m.kind === 'magma_cube') cubes++; }
     // Inside a Nether fortress: blazes along the corridors and in the courtyard
     const fort = world.fortressInRegion(Math.floor(camera.position.x / FORTRESS_REGION), Math.floor(camera.position.z / FORTRESS_REGION));
     if (fort && Math.abs(camera.position.x - fort.cx) < 64 && Math.abs(camera.position.z - fort.cz) < 64 && Math.random() < 0.6) {
@@ -11949,8 +12190,9 @@ export function createVoxelGame(
       } else spawnMob('blaze', new THREE.Vector3(bx + 0.5, fort.y + 1.2, bz + 0.5));
       return;
     }
-    const wantGhast = Math.random() < 0.35;
-    if (wantGhast ? ghasts >= 2 : piglins >= 6) return;
+    const roll = Math.random();
+    const wantGhast = roll < 0.28, wantCube = !wantGhast && roll < 0.55;
+    if (wantGhast ? ghasts >= 3 : wantCube ? cubes >= 6 : piglins >= 8) return;
     // A few random spots around you per attempt (most spots are solid rock or too tight)
     for (let tries = 0; tries < 12; tries++) {
       const ang = Math.random() * Math.PI * 2;
@@ -11970,9 +12212,14 @@ export function createVoxelGame(
         const g = world.getWorldBlock(x, y, z);
         if (!isSolid(g) || g === BLOCK_BEDROCK) continue;
         if (world.getWorldBlock(x, y + 1, z) !== BLOCK_AIR || world.getWorldBlock(x, y + 2, z) !== BLOCK_AIR) continue;
+        if (wantCube) { // magma cubes hop about on the hot floors near the lava
+          if (g !== BLOCK_NETHERRACK && g !== BLOCK_MAGMA) break;
+          spawnMob('magma_cube', new THREE.Vector3(x + 0.5, y + 1, z + 0.5));
+          return;
+        }
         if (g !== BLOCK_NETHERRACK && g !== BLOCK_SOUL_SAND) break; // glowstone, ore...: look elsewhere
         const pack = 1 + Math.floor(Math.random() * 3);
-        for (let i = 0; i < pack && piglins + i < 6; i++) {
+        for (let i = 0; i < pack && piglins + i < 8; i++) {
           spawnMob('piglin', new THREE.Vector3(x + 0.5 + (Math.random() - 0.5) * 2, y + 1, z + 0.5 + (Math.random() - 0.5) * 2));
         }
         return;
@@ -12063,7 +12310,7 @@ export function createVoxelGame(
   function trySpawnMob() {
     if (arenaKind || worldType === 'oneblock') return; // the OneBlock only spawns what the block gives you
  // minigame arenas have no wildlife
-    if (dimension === 'nether') { trySpawnNetherMob(); return; }
+    if (dimension === 'nether') { trySpawnStrider(); trySpawnNetherMob(); return; }
     if (dimension !== 'overworld') return;
     let passive = 0, hostile = 0;
     for (const m of mobs) { if (m.home) continue; if (infoOf(m).hostile) hostile++; else passive++; } // village folk don't count
@@ -12097,10 +12344,13 @@ export function createVoxelGame(
   }
 
   let mobOpensDoors = false; // set per mob while it moves: villagers walk through wooden doors
+  let mobWalksOnLava = false; // set per mob while it moves: striders stand on lava as if it were ground
+  const LAVA_PROOF = new Set<MobKind>(['strider', 'magma_cube']);
   function mobFootprintSolid(x: number, row: number, z: number, half: number): boolean {
     for (let bx = Math.floor(x - half); bx <= Math.floor(x + half); bx++) {
       for (let bz = Math.floor(z - half); bz <= Math.floor(z + half); bz++) {
         let b = world.getWorldBlock(bx, row, bz), r = row;
+        if (mobWalksOnLava && isLava(b)) return true;
         if (!isSolid(b)) {
           const below = world.getWorldBlock(bx, row - 1, bz);
           if (!isTallBarrier(below)) continue;
@@ -12973,6 +13223,7 @@ export function createVoxelGame(
     }
     m.attackAnim = Math.max(0, m.attackAnim - dt);
     mobOpensDoors = m.kind === 'villager';
+    mobWalksOnLava = m.kind === 'strider';
     if (m.kind === 'ghast') { updateGhast(m, dt); return; } // it flies, so it has its own movement
     if (m.kind === 'blaze') { updateBlaze(m, dt); return; }
     if (m.kind === 'hollow_tyrant') { updateTyrant(m, dt); return; }
@@ -13010,6 +13261,23 @@ export function createVoxelGame(
         if (Math.random() < dt * 2) m.targetYaw = Math.random() * Math.PI * 2;
         wantX = -Math.sin(m.yaw) * info.speed * 2;
         wantZ = -Math.cos(m.yaw) * info.speed * 2;
+      } else if (m.kind === 'strider') {
+        // Strolls about on the lava and never leaves it by choice. On dry ground it plods slowly and looks for lava nearby.
+        const fx = Math.floor(m.pos.x), fz = Math.floor(m.pos.z), fy = Math.floor(m.pos.y - 0.5);
+        const onLava = isLava(world.getWorldBlock(fx, fy, fz));
+        if (!onLava && m.wanderTimer <= dt) {
+          let best = 99, bx = 0, bz = 0;
+          for (let ox = -8; ox <= 8; ox += 2) for (let oz = -8; oz <= 8; oz += 2) {
+            const d = Math.hypot(ox, oz);
+            if (d < best && isLava(world.getWorldBlock(fx + ox, fy, fz + oz))) { best = d; bx = ox; bz = oz; }
+          }
+          if (best < 99) { m.targetYaw = yawToward(bx, bz); m.moving = true; m.wanderTimer = 2; }
+        }
+        wander(onLava ? info.speed : info.speed * 0.5);
+        if (m.moving) {
+          const ahead = world.getWorldBlock(Math.floor(m.pos.x - Math.sin(m.yaw) * 1.1), fy, Math.floor(m.pos.z - Math.cos(m.yaw) * 1.1));
+          if (onLava ? !isLava(ahead) : (!isLava(ahead) && !isSolid(ahead))) { wantX = 0; wantZ = 0; m.targetYaw = m.yaw + Math.PI * (0.6 + Math.random() * 0.8); m.wanderTimer = 1; }
+        }
       } else if (m.kind === 'iron_golem') {
         // Guards the village: smashes monsters, and goes after you if you hurt a villager or it
         let chase: THREE.Vector3 | null = null;
@@ -13145,7 +13413,7 @@ export function createVoxelGame(
     } else {
       m.targetYaw = yawToward(dx, dz);
       const swordCinder = m.kind === 'cinderbone' && m.variant !== 1;
-      if (m.kind === 'zombie' || m.kind === 'spider' || m.kind === 'piglin' || swordCinder) {
+      if (m.kind === 'zombie' || m.kind === 'spider' || m.kind === 'piglin' || m.kind === 'magma_cube' || swordCinder) {
         if (dh > 1.0) toward(info.speed);
         // Zombies break down doors in their way (iron doors take much longer)
         if (m.kind === 'zombie' && dh > 1.3 && (rules.difficulty === 'normal' || rules.difficulty === 'hard')) {
@@ -13181,7 +13449,7 @@ export function createVoxelGame(
           if (swordCinder) {
             // a Cinderbone's sword leaves Blight behind
             if (hurtPlayer(7, m.pos, 7, 'Cinderbone')) giveEffect('blight', 10, 1);
-          } else hurtPlayer(m.kind === 'spider' ? 2 : m.kind === 'piglin' ? 5 : 3, m.pos, 6, m.kind === 'spider' ? 'Spider' : m.kind === 'piglin' ? 'Piglin' : 'Zombie');
+          } else hurtPlayer(m.kind === 'spider' ? 2 : m.kind === 'piglin' ? 5 : m.kind === 'magma_cube' ? 4 : 3, m.pos, 6, m.kind === 'spider' ? 'Spider' : m.kind === 'piglin' ? 'Piglin' : m.kind === 'magma_cube' ? 'Magma Cube' : 'Zombie');
           m.attackCooldown = 1;
           m.attackAnim = 0.3;
         }
@@ -13231,6 +13499,10 @@ export function createVoxelGame(
     }
 
     // Move with wall collision; hop up 1-block steps
+    if (m.kind === 'magma_cube') { // it hops instead of walking: a push off the ground, a glide through the air, then a short rest
+      m.hop = (m.hop ?? 0) - dt;
+      if (m.onGround) { if ((wantX !== 0 || wantZ !== 0) && m.hop <= 0) { m.velY = 6.5; m.hop = 0.6; } else { wantX = 0; wantZ = 0; } }
+    }
     const slowF = m.fx && m.fx.slow > 0 ? 0.5 : 1;
     const vx = wantX * slowF + m.knock.x, vz = wantZ * slowF + m.knock.z;
     m.knock.multiplyScalar(Math.max(0, 1 - 8 * dt));
@@ -13252,7 +13524,7 @@ export function createVoxelGame(
       else if (mc === 'down') m.velY = Math.max(m.velY - 40 * dt, -5); // magma drags them down
       else m.velY = Math.min(m.velY + 30 * dt, 2);
     } else m.velY = Math.max(-40, m.velY + GRAVITY * dt * dimGravity());
-    if (isLava(mobFluid)) hurtMob(m, 4, m.pos, 0);
+    if (isLava(mobFluid) && !LAVA_PROOF.has(m.kind)) hurtMob(m, 4, m.pos, 0);
     const ny = m.pos.y + m.velY * dt;
     let landRow = -1;
     if (m.velY <= 0) {
@@ -13543,8 +13815,9 @@ export function createVoxelGame(
     playerModel.root.position.copy(sleeping ? sleepBodyPos(sleeping) : feet);
     playerModel.root.rotation.y = sleeping ? sleeping.lieYaw : yaw;
     swimLerp += ((swimming && !sleeping && !entityAnimOff ? 1 : 0) - swimLerp) * Math.min(1, dt * 6);
-    playerModel.root.rotation.x = sleeping ? Math.PI / 2 : -SWIM_LEAN * swimLerp;
-    playerModel.head.rotation.x = sleeping ? 0 : pitch + SWIM_LEAN * 0.85 * swimLerp;
+    glideLerp += ((gliding && !sleeping && !entityAnimOff ? 1 : 0) - glideLerp) * Math.min(1, dt * 7);
+    playerModel.root.rotation.x = sleeping ? Math.PI / 2 : -SWIM_LEAN * swimLerp - GLIDE_LEAN * glideLerp;
+    playerModel.head.rotation.x = sleeping ? 0 : pitch + SWIM_LEAN * 0.85 * swimLerp + GLIDE_LEAN * 0.9 * glideLerp;
     playerModel.legs[0].rotation.x = sleeping ? 0 : swing;
     playerModel.legs[1].rotation.x = sleeping ? 0 : -swing;
     holdOnModel(playerModel, ghostOn ? null : heldItem);
@@ -13557,6 +13830,7 @@ export function createVoxelGame(
     });
     crouchPose(playerModel, sleeping || entityAnimOff ? 0 : crouchLerp); // sneaking: lean forward, sink a little
     if (swimLerp > 0.02) swimPose(playerModel, swimLerp, playerWalkPhase + performance.now() / 260);
+    if (glideLerp > 0.02 || playerModel.root.userData.wingsOut) { glidePose(playerModel, glideLerp, performance.now() / 1000, Math.hypot(glideV.x, glideV.y, glideV.z) * 20); playerModel.root.userData.wingsOut = glideLerp > 0.02; }
 
     // Pull the camera in if a wall is in the way
     const dir = new THREE.Vector3();
@@ -13721,13 +13995,13 @@ export function createVoxelGame(
       const b = sleepBodyPos(sleeping);
       return { x: b.x, y: b.y, z: b.z, yaw: sleeping.lieYaw, pitch: 0, mode, held: 0, act: 16 };
     }
-    return { x: camera.position.x, y: camera.position.y - PLAYER_EYE, z: camera.position.z, yaw, pitch, mode, held: heldItem ?? 0, act: (punchPhase > 0 || isMining ? 1 : 0) | (gunAiming ? 2 : 0) | (bowDrawing ? 4 : 0) | (swordBlocking ? 8 : 0) | (crouchNow ? 32 : 0) | (swimming ? 64 : 0) };
+    return { x: camera.position.x, y: camera.position.y - PLAYER_EYE, z: camera.position.z, yaw, pitch, mode, held: heldItem ?? 0, act: (punchPhase > 0 || isMining ? 1 : 0) | (gunAiming ? 2 : 0) | (bowDrawing ? 4 : 0) | (swordBlocking ? 8 : 0) | (crouchNow ? 32 : 0) | (swimming ? 64 : 0) | (gliding ? 128 : 0) };
   }
 
   type RemotePlayer = {
     model: MobModel; tag: THREE.Sprite; tagTex: THREE.Texture; nt?: NameTag;
     pos: THREE.Vector3; target: THREE.Vector3; yaw: number; targetYaw: number; pitch: number;
-    mode: string; walkPhase: number; held: number; act: number; punchClock: number; crouch: number; hurtFlash?: number; name?: string; swim?: number;
+    mode: string; walkPhase: number; held: number; act: number; punchClock: number; crouch: number; hurtFlash?: number; name?: string; swim?: number; glide?: number;
   };
   const remotePlayers = new Map<number, RemotePlayer>();
 
@@ -13841,8 +14115,10 @@ export function createVoxelGame(
       const lying = (rp.act & 16) !== 0;
       const swim = !lying && !entityAnimOff && (rp.act & 64) !== 0;
       rp.swim = (rp.swim ?? 0) + ((swim ? 1 : 0) - (rp.swim ?? 0)) * Math.min(1, dt * 6);
-      m.root.rotation.x = lying ? Math.PI / 2 : -SWIM_LEAN * rp.swim;
-      m.head.rotation.x = lying ? 0 : rp.pitch + SWIM_LEAN * 0.85 * rp.swim; // the head stays up, looking ahead
+      const glide = !lying && !entityAnimOff && (rp.act & 128) !== 0;
+      rp.glide = (rp.glide ?? 0) + ((glide ? 1 : 0) - (rp.glide ?? 0)) * Math.min(1, dt * 7);
+      m.root.rotation.x = lying ? Math.PI / 2 : -SWIM_LEAN * rp.swim - GLIDE_LEAN * rp.glide;
+      m.head.rotation.x = lying ? 0 : rp.pitch + SWIM_LEAN * 0.85 * rp.swim + GLIDE_LEAN * 0.9 * rp.glide; // the head stays up, looking ahead
       m.legs[0].rotation.x = lying ? 0 : swing;
       m.legs[1].rotation.x = lying ? 0 : -swing;
       holdOnModel(m, rp.held > 0 ? rp.held : null);
@@ -13855,6 +14131,7 @@ export function createVoxelGame(
       rp.crouch += (((rp.act & 32) !== 0 && !lying ? 1 : 0) - rp.crouch) * Math.min(1, dt * 14);
       crouchPose(m, entityAnimOff ? 0 : rp.crouch);
       if (rp.swim > 0.02) swimPose(m, rp.swim, rp.walkPhase + performance.now() / 260);
+      if (rp.glide > 0.02 || m.root.userData.wingsOut) { glidePose(m, rp.glide, performance.now() / 1000, moved / Math.max(dt, 0.001)); m.root.userData.wingsOut = rp.glide > 0.02; }
       if (rp.hurtFlash !== undefined) { // hit: a red flash, like mobs
         rp.hurtFlash -= dt;
         const on = rp.hurtFlash > 0;
@@ -19240,6 +19517,7 @@ export function createVoxelGame(
     getChest,
     isGliding: () => gliding,
     glideSpeed: () => Math.hypot(glideV.x, glideV.y, glideV.z) * 20,
+    debugGlidePose: () => { const ws = (playerModel.root.userData.wingGroups ?? []) as THREE.Group[]; return { glide: glideLerp, wingSpread: ws.map((g) => g.rotation.z), lean: playerModel.root.rotation.x, wings: ws.length }; },
     debugStartGlide: () => { if (elytraReady()) { const gl = new THREE.Vector3(); camera.getWorldDirection(gl); const lh = Math.hypot(gl.x, gl.z) || 1; gliding = true; glideAcc = 0; glideV.set(gl.x / lh * 0.22, 0, gl.z / lh * 0.22); fallPeakY = camera.position.y; } },
     useFirework,
     getFurnace,

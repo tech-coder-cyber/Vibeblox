@@ -10,7 +10,7 @@ export type NetMove = [number, number, number, number, number, number, string, n
 export type NetLook = { skin: string; cape: string; /** A Champion's own skin (a small PNG as a data: URL), when skin is 'custom' */ custom?: string };
 export type NetWeather = 'clear' | 'rain' | 'snow' | 'thunder';
 /** What shows in front of a signed-in player's name besides a fake rank: owner, paid rank, creator tier. */
-export type NetBadge = { owner?: boolean; rank?: string; tier?: string; staff?: string | null };
+export type NetBadge = { owner?: boolean; rank?: string; tier?: string; staff?: string | null; og?: boolean; special?: string | null };
 export type NetPlayerInfo = { id: number; name: string; x: number; y: number; z: number; yaw: number; pitch: number; mode: string; look?: NetLook; badge?: NetBadge };
 
 export type ServerSettings = { difficulty: 'peaceful' | 'easy' | 'normal' | 'hard'; keepInventory: boolean; scripts: boolean; mods: boolean; commands: boolean; pvp?: boolean; /** who may run scripts: 'off' | 'all' | 'admin' | 'owner' */ scriptPerm?: 'off' | 'all' | 'admin' | 'owner' };
@@ -212,7 +212,7 @@ export class MultiplayerClient {
       case 'rcmd': e.onRemoteCmd?.(String(m.cmd), (m.args && typeof m.args === 'object' ? m.args : {}) as Record<string, unknown>, String(m.from ?? 'The host')); break;
       case 'title': e.onTitle?.(String(m.text ?? ''), String(m.sub ?? '')); break;
       case 'ranks': e.onRanks?.(m.ranks); break;
-      case 'badge': e.onBadge?.(m.id as number, { owner: !!m.owner, rank: String(m.rank ?? 'none'), tier: String(m.tier ?? 'none'), staff: m.staff === 'helper' || m.staff === 'mod' ? m.staff : null }); break;
+      case 'badge': e.onBadge?.(m.id as number, { owner: !!m.owner, rank: String(m.rank ?? 'none'), tier: String(m.tier ?? 'none'), staff: m.staff === 'helper' || m.staff === 'mod' ? m.staff : null, og: m.og === true, special: m.special === 'youtube' ? 'youtube' : null }); break;
       case 'system': e.onSystem?.(m.text as string); break;
       case 'time': e.onTime?.(m.time as number); break;
       case 'whisper': e.onWhisper?.(String(m.from), String(m.text)); break;
@@ -250,6 +250,9 @@ export class MultiplayerClient {
   sendMove(x: number, y: number, z: number, yaw: number, pitch: number, mode: string, held = 0, act = 0) {
     this.send({ t: 'move', x, y, z, yaw, pitch, mode, held, act });
   }
+
+  /** Tell the world's host that this page runs an outside script (see integrity.ts). Only flags it knows are sent. */
+  sendIntegrity(flags: string[]) { this.send({ t: 'integrity', flags: flags.slice(0, 6).map((f) => String(f).slice(0, 30)) }); }
 
   sendBlocks(list: NetBlock[]) {
     for (let i = 0; i < list.length; i += 256) this.send({ t: 'blocks', list: list.slice(i, i + 256) });

@@ -2,11 +2,30 @@
 // a small update to the current one is a point release (Indev 26.1, 26.2...), a big one is the next number.
 //
 // The News page in the sidebar shows this list, and a dot appears on it until the newest one has been read.
-export const GAME_VERSION = 29;
+export const GAME_VERSION = 30;
 
 export type NewsEntry = { version: number; date: string; title: string; changes: string[] };
 
 export const NEWS: NewsEntry[] = [
+  {
+    version: 30,
+    date: 'October 18, 2026',
+    title: 'A fuller Nether, YOUTUBE rank, OG is back, elytra wings, anti-cheat fixes',
+    changes: [
+      '[OG] is back for everyone who had it. Nobody loses it any more, and nobody can get it from now on: it is only for the players who were here early. OG players get Elite\'s perks again (a bigger planet limit, more script time, no ads).',
+      'New rank: [YOUTUBE], a red tag for video makers, given by the owner. It has Elite\'s perks but no moderation powers.',
+      'Your rank tags show before your name on your profile card and in worlds, like [OG] Name or [YOUTUBE] Name.',
+      'The Nether is much less empty: stalagmites and hanging spikes, rock pillars from floor to roof, fields of hot magma, veins of quartz ore, glowstone chandeliers and ruined brick outposts with a chest of loot.',
+      'Two new Nether mobs: Striders (calm, they stroll on the lava seas and never burn) and Magma Cubes (they hop after you and hit hard). More piglins and ghasts live there too. Both have spawn eggs.',
+      'Better looking worlds: grass and leaves now take the colour of the land (dry and yellow in deserts and savannas, cold blue-green in snow and taiga, deep green in dark forests), and textures stay sharp when you look along the ground.',
+      'The elytra now has an animation: your wings swing out and flutter while you glide, and your body tips forward (others see it too). It is off on Low graphics, like the swimming animation.',
+      'Anti-cheat fixes: gliding with an elytra, firework boosts and switching game mode (creative to survival, /gamemode, F3+F4) are never reported as flying or speed any more.',
+      'Anti-cheat reports can be dismissed: host a world and press Dismiss (or Dismiss all) in the anti-cheat list; admins have Dismiss on every report, on each most-reported player, and Dismiss all. (Run vibeblox_indev30.sql once for the admin part.)',
+      'New check: Outside script. If a userscript manager (Tampermonkey, Greasemonkey, Violentmonkey), an injected script, replaced browser timing functions or scripted clicks are found in the page, you get a notice and the world you join hears about it. A careful script can hide from this, so it is a warning for the host, not a ban.',
+      'Safer sign-up: a new account can no longer give itself a rank or a badge when it is made.',
+      'Fixes from a bug hunt (see the list in the update message).',
+    ],
+  },
   {
     version: 29,
     date: 'October 18, 2026',

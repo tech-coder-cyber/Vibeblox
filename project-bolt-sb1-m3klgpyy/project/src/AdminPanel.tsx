@@ -9,7 +9,7 @@ import AccountPanel from './AccountPanel';
 import { ShieldCheck, Megaphone, Gavel, UserX, Ban, X, Loader2, Undo2, Crown, Sun, Moon, ShieldAlert, Tv, UserPlus } from 'lucide-react';
 import {
   postAnnouncement, banEverywhere, unbanEverywhere, listBans, getLastAnnouncement, setLastAnnouncement, isOwnerName, giveRank, rankInfo, rankPending, RANKS, RANK_LABELS, ANNOUNCE_MAX, USERNAME_RE,
-  listAdmins, setAdmin, listCheatReports, listStaff, setStaffRank, STAFF_RANKS, STAFF_LABELS, type StaffRank, type StaffRow, type Account, type Ban as BanRow, type RankName, type CheatReport,
+  listAdmins, setAdmin, listCheatReports, dismissCheatReports, clearCheatReports, listStaff, setStaffRank, STAFF_RANKS, STAFF_LABELS, listSpecial, setSpecialRank, setOgRank, type SpecialRow, type StaffRank, type StaffRow, type Account, type Ban as BanRow, type RankName, type CheatReport,
 } from './social';
 import { adStatus } from './adEconomy';
 import { useTheme, setTheme } from './layout';
@@ -35,7 +35,7 @@ type Props = {
 };
 
 const MODES = ['survival', 'creative', 'adventure', 'spectator'] as const;
-const CHEATS: Record<string, string> = { fly: 'Flying', speed: 'Speed', reach: 'Reach', killaura: 'Kill aura', autoclicker: 'Auto clicker', nuker: 'Nuker', spam: 'Chat spam' };
+const CHEATS: Record<string, string> = { fly: 'Flying', speed: 'Speed', reach: 'Reach', killaura: 'Kill aura', autoclicker: 'Auto clicker', nuker: 'Nuker', spam: 'Chat spam', script: 'Outside script' };
 
 /** Shared class names (they follow light/dark mode through index.css). */
 const ui = {
@@ -59,6 +59,7 @@ const SECTIONS: Section[] = [
   { id: 'ranks', label: 'Ranks', render: (c) => <RanksSection {...c} /> },
   { id: 'admins', label: 'Admins', ownerOnly: true, render: (c) => <AdminsSection {...c} /> },
   { id: 'staff', label: 'Staff', ownerOnly: true, render: (c) => <StaffSection {...c} /> },
+  { id: 'special', label: 'YouTube & OG', ownerOnly: true, render: (c) => <SpecialSection {...c} /> },
   { id: 'ads', label: 'Ads', render: () => <AdsSection /> },
   { id: 'account', label: 'My account', render: (c) => <AccountPanel summary={{ username: c.account.username, signedIn: true, isOwner: c.owner, isAdmin: true, openAdmin: () => undefined, inPanel: true }} /> },
 ];
@@ -276,6 +277,18 @@ function AntiCheatSection({ account, say }: Ctx) {
   const counts = new Map<string, number>();
   for (const r of reports ?? []) counts.set(r.player, (counts.get(r.player) ?? 0) + 1);
   const top = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
+  async function dismiss(ids: number[], what: string) {
+    setReports((prev) => (prev ?? []).filter((x) => !ids.includes(x.id))); // gone at once; the list comes back if the database says no
+    const r = await dismissCheatReports(ids);
+    if (!r.ok) { say(false, r.error); void refresh(); return; }
+    say(true, `${what} dismissed.`);
+  }
+  async function dismissPlayer(name: string) {
+    setReports((prev) => (prev ?? []).filter((x) => x.player !== name));
+    const r = await clearCheatReports(name);
+    if (!r.ok) { say(false, r.error); void refresh(); return; }
+    say(true, `Every report about ${name} is dismissed.`);
+  }
   async function ban(name: string) {
     const r = await banEverywhere(account, name, 'Cheating (anti-cheat)');
     say(r.ok, r.ok ? `${name} is banned from every world.` : r.error);
@@ -283,13 +296,14 @@ function AntiCheatSection({ account, say }: Ctx) {
   return (
     <div className={ui.section} data-testid="admin-anticheat">
       <div className={ui.h2}><ShieldAlert className="w-5 h-5 text-[#ff6b6b]" />Anti-cheat reports</div>
-      <p className="text-[#5a6b80] text-xs mb-3">Every world players host watches for flying, speed, reach, kill aura, auto clickers, nukers and chat spam. What it catches lands here (the last two weeks). One report can be lag: look for players who show up again and again.</p>
+      <p className="text-[#5a6b80] text-xs mb-3">Every world players host watches for flying, speed, reach, kill aura, auto clickers, nukers, chat spam and outside scripts (Tampermonkey and the like). Creative mode, elytra and the game's own commands are never counted. What it catches lands here (the last two weeks). One report can be lag: look for players who show up again and again.</p>
       {error && <p className="text-[#ff9a3c] text-xs mb-2">{error}</p>}
       {top.length > 0 && (
         <div className="flex flex-wrap gap-2 mb-3" data-testid="ac-top">
           {top.map(([name, n]) => (
             <span key={name} className="inline-flex items-center gap-2 rounded-lg bg-[#ff5252]/10 border border-[#ff5252]/30 px-2.5 py-1 text-xs">
               <b className="text-white">{name}</b><span className="text-[#ff8a8a]">{n} reports</span>
+              <button onClick={() => dismissPlayer(name)} data-testid="ac-dismiss-player" className="text-[#8ea0b8] font-bold hover:text-white hover:underline">Dismiss</button>
               {!isOwnerName(name) && <button onClick={() => ban(name)} className="text-[#ff5252] font-bold hover:underline">Ban</button>}
             </span>
           ))}
@@ -300,6 +314,7 @@ function AntiCheatSection({ account, say }: Ctx) {
           <button key={k} onClick={() => setFilter(k)} className={`${ui.btn} ${filter === k ? 'bg-[#00e676] text-[#0a0e14]' : 'bg-[#121822] border border-[#243044] text-[#8ea0b8] hover:text-white'}`}>{k === 'all' ? 'All' : CHEATS[k]}</button>
         ))}
       </div>
+      {shown.length > 0 && <div className="flex justify-end mb-2"><button onClick={() => dismiss(shown.map((r) => r.id), shown.length === 1 ? 'The report' : `${shown.length} reports`)} data-testid="ac-dismiss-all" className={`${ui.btn} bg-[#243044] text-[#8ea0b8] hover:text-white`}>Dismiss {filter === 'all' ? 'all' : 'these'} ({shown.length})</button></div>}
       {reports === null ? <p className={ui.muted}>Loading…</p> : !shown.length ? <p className={ui.muted} data-testid="ac-empty">No reports.</p> : (
         <div className="space-y-1.5 max-h-[420px] overflow-y-auto vb-scroll">
           {shown.map((r) => (
@@ -309,6 +324,7 @@ function AntiCheatSection({ account, say }: Ctx) {
                 <span className="text-white font-semibold">{r.player}</span> <span className="text-[#8ea0b8]">{r.detail}</span>
                 <div className="text-[10px] text-[#5a6b80]">in {r.world || 'a world'} (host {r.host}) · {new Date(r.at).toLocaleString()}</div>
               </div>
+              <button onClick={() => dismiss([r.id], 'The report')} data-testid="ac-report-dismiss" className={`${ui.btn} bg-[#243044] text-[#8ea0b8] hover:text-white`}>Dismiss</button>
               {!isOwnerName(r.player) && <button onClick={() => ban(r.player)} className={`${ui.btn} bg-[#ff5252]/15 text-[#ff5252] hover:bg-[#ff5252]/30`}>Ban</button>}
             </div>
           ))}
@@ -495,6 +511,70 @@ function StaffSection({ say }: Ctx) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ---------------- Special ranks ([YOUTUBE]) and OG fixes ----------------
+function SpecialSection({ say }: Ctx) {
+  const [rows, setRows] = useState<SpecialRow[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [name, setName] = useState('');
+  const [ogName, setOgName] = useState('');
+  const [busy, setBusy] = useState(false);
+  async function refresh() {
+    const r = await listSpecial();
+    if (r.ok) { setRows(r.special); setError(null); } else { setRows([]); setError(r.error); }
+  }
+  useEffect(() => { void refresh(); }, []);
+  async function change(n: string, to: 'youtube' | 'none') {
+    if (busy) return;
+    setBusy(true);
+    const r = await setSpecialRank(n, to);
+    setBusy(false);
+    if (!r.ok) { say(false, r.error); return; }
+    say(true, to === 'none' ? `${r.username} is no longer [YOUTUBE].` : `${r.username} is [YOUTUBE] now. They get it the next time they sign in.`);
+    if (to !== 'none') setName('');
+    void refresh();
+  }
+  async function og(n: string, on: boolean) {
+    if (busy) return;
+    setBusy(true);
+    const r = await setOgRank(n, on);
+    setBusy(false);
+    if (!r.ok) { say(false, r.error); return; }
+    say(true, on ? `${r.username} has [OG] now.` : `${r.username} no longer has [OG].`);
+    setOgName('');
+  }
+  const btn = 'inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm disabled:opacity-40 active:scale-95';
+  return (
+    <div className={ui.section} data-testid="admin-special">
+      <div className={ui.h2}><Tv className="w-5 h-5 text-[#ff4d4d]" />[YOUTUBE] rank</div>
+      <p className="text-[#5a6b80] text-xs mb-3">For video makers. [YOUTUBE] gets Elite's perks (a bigger planet limit, more script time, no ads) and a red tag. It has no moderation powers.</p>
+      <div className="flex flex-wrap gap-2 mb-3">
+        <input value={name} onChange={(e) => setName(e.target.value.replace(/[^A-Za-z0-9_]/g, '').slice(0, 16))} placeholder="Username" data-testid="special-name" className={`${ui.input} flex-1 min-w-[140px]`} />
+        <button onClick={() => change(name, 'youtube')} disabled={!USERNAME_RE.test(name) || busy} data-testid="special-add" className={`${btn} bg-[#ff4d4d] text-white`}>{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}Give [YOUTUBE]</button>
+      </div>
+      {error && <p className="text-[#ff9a3c] text-xs mb-2">{error}</p>}
+      {rows === null ? <p className={ui.muted}>Loading…</p> : (
+        <div className="space-y-1.5" data-testid="special-list">
+          {!rows.length && !error && <p className={ui.muted}>Nobody has [YOUTUBE] yet.</p>}
+          {rows.map((x) => (
+            <div key={x.username} className={ui.row} data-testid="special-row">
+              <span className="flex-1 text-white text-sm font-semibold">{x.username}</span>
+              <span className="text-[10px] uppercase font-bold text-[#ff4d4d]">YOUTUBE</span>
+              <button onClick={() => change(x.username, 'none')} disabled={busy} className={`${ui.btn} border border-[#243044] text-[#8ea0b8] hover:text-white`}>Remove</button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className={`${ui.h2} mt-6`}><ShieldCheck className="w-5 h-5 text-[#22e6e6]" />[OG] rank</div>
+      <p className="text-[#5a6b80] text-xs mb-3">Everyone who had [OG] keeps it. Nobody can earn it any more. If an account was left out by mistake, give it back here.</p>
+      <div className="flex flex-wrap gap-2">
+        <input value={ogName} onChange={(e) => setOgName(e.target.value.replace(/[^A-Za-z0-9_]/g, '').slice(0, 16))} placeholder="Username" data-testid="og-name" className={`${ui.input} flex-1 min-w-[140px]`} />
+        <button onClick={() => og(ogName, true)} disabled={!USERNAME_RE.test(ogName) || busy} data-testid="og-give" className={`${btn} bg-[#22e6e6] text-[#0a0e14]`}>Give [OG]</button>
+        <button onClick={() => og(ogName, false)} disabled={!USERNAME_RE.test(ogName) || busy} data-testid="og-take" className={`${btn} border border-[#243044] text-[#8ea0b8] hover:text-white`}>Take away</button>
+      </div>
     </div>
   );
 }

@@ -11,7 +11,7 @@ import { cleanTags } from './worldTags';
 export const SUPABASE_URL = 'https://okhtosecqytklgwouwxv.supabase.co';
 export const SUPABASE_ANON_KEY = 'sb_publishable_kyklbTdQk64bRSdGSrEX0w_1lKAD4X0';
 
-export type Account = { userId: string; username: string; token: string; /** 'none' | 'vanguard' | 'elite' | 'champion' (set by the database, never by the player) */ rank?: string; /** When a temporary rank runs out (ISO time), or null/undefined if it lasts for good */ rankUntil?: string | null; /** When the name was last changed (you can change it once a week) */ nameChangedAt?: string | null; /** 'helper' | 'mod' (set by the owner in the Admin panel) or null */ staff?: string | null };
+export type Account = { userId: string; username: string; token: string; /** 'none' | 'vanguard' | 'elite' | 'champion' (set by the database, never by the player) */ rank?: string; /** When a temporary rank runs out (ISO time), or null/undefined if it lasts for good */ rankUntil?: string | null; /** When the name was last changed (you can change it once a week) */ nameChangedAt?: string | null; /** 'helper' | 'mod' (set by the owner in the Admin panel) or null */ staff?: string | null; /** Had OG back when it could be earned: kept for good */ og?: boolean; /** 'youtube' (given by the owner) or null */ special?: string | null };
 export type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string };
 
 type Config = {
@@ -150,17 +150,19 @@ async function profilesById(ids: string[]): Promise<Map<string, Profile>> {
 
 /** Makes sure the signed-in user has a profile (the database trigger normally does it) and returns their account. */
 export async function loadAccount(userId: string, token: string, wantedName: string): Promise<Account> {
-  type Full = Profile & { rank?: string; rank_until?: string | null; username_changed_at?: string | null; staff?: string | null };
+  type Full = Profile & { rank?: string; rank_until?: string | null; username_changed_at?: string | null; staff?: string | null; og?: boolean; special?: string | null };
   const id = encodeURIComponent(userId);
   // Temporary ranks that ran out are taken away first (older databases just don't have this function)
   await rest('POST', 'rpc/expire_ranks', {}, {}, token).catch(() => undefined);
   // Older databases do not have the rank_until / rank / username_changed_at columns yet: fall back step by step
-  let r = await rest('GET', `profiles?select=id,username,rank,rank_until,username_changed_at,staff&id=eq.${id}&limit=1`, undefined, {}, token);
+  let r = await rest('GET', `profiles?select=id,username,rank,rank_until,username_changed_at,staff,og,special&id=eq.${id}&limit=1`, undefined, {}, token);
+  if (!r.ok) r = await rest('GET', `profiles?select=id,username,rank,rank_until,username_changed_at,staff,og&id=eq.${id}&limit=1`, undefined, {}, token);
+  if (!r.ok) r = await rest('GET', `profiles?select=id,username,rank,rank_until,username_changed_at,staff&id=eq.${id}&limit=1`, undefined, {}, token);
   if (!r.ok) r = await rest('GET', `profiles?select=id,username,rank,rank_until,username_changed_at&id=eq.${id}&limit=1`, undefined, {}, token);
   if (!r.ok) r = await rest('GET', `profiles?select=id,username,rank,username_changed_at&id=eq.${id}&limit=1`, undefined, {}, token);
   if (!r.ok) r = await rest('GET', `profiles?select=id,username&id=eq.${id}&limit=1`, undefined, {}, token);
   const row = r.ok ? (r.data as Full[])[0] : undefined;
-  if (row) return { userId, username: row.username, token, rank: row.rank ?? 'none', rankUntil: row.rank_until ?? null, nameChangedAt: row.username_changed_at ?? null, staff: row.staff === 'helper' || row.staff === 'mod' ? row.staff : null };
+  if (row) return { userId, username: row.username, token, rank: row.rank ?? 'none', rankUntil: row.rank_until ?? null, nameChangedAt: row.username_changed_at ?? null, staff: row.staff === 'helper' || row.staff === 'mod' ? row.staff : null, og: row.og === true, special: row.special === 'youtube' ? 'youtube' : null };
   // No profile yet (the SQL trigger was not installed, or this account is older): make one
   let name = wantedName.replace(/[^A-Za-z0-9_]/g, '').slice(0, 16);
   if (name.length < 3) name = 'Player' + Math.floor(Math.random() * 9000 + 1000);
@@ -197,26 +199,26 @@ export async function fetchLeaderboard(limit = 50): Promise<LeaderRow[] | null> 
   if (!r.ok || !Array.isArray(r.data)) return null;
   return (r.data as Array<{ username: string; plays: number | string; rank?: string; level?: number | string }>).map((x) => ({ username: x.username, plays: Number(x.plays) || 0, rank: x.rank ?? 'none', ...(x.level != null ? { level: Number(x.level) || 1 } : {}) }));
 }
-export type Standing = { plays: number; rank: string; rising: boolean; staff?: string | null };
+export type Standing = { plays: number; rank: string; rising: boolean; staff?: string | null; og?: boolean; special?: string | null };
 /** One player's plays and rank (null if unknown). */
 export async function fetchStanding(username: string): Promise<Standing | null> {
   if (!USERNAME_RE.test(username)) return null;
   const r = await rpcPublic('player_standing', { p_username: username });
   if (!r.ok || !Array.isArray(r.data) || !r.data[0]) return null;
-  const d = r.data[0] as { plays: number | string; rank?: string; rising?: boolean; staff?: string | null };
+  const d = r.data[0] as { plays: number | string; rank?: string; rising?: boolean; staff?: string | null; og?: boolean; special?: string | null };
   const plays = Number(d.plays) || 0;
-  return { plays, rank: d.rank ?? 'none', rising: !!d.rising || plays >= RISING_CREATOR_PLAYS, staff: d.staff === 'helper' || d.staff === 'mod' ? d.staff : null };
+  return { plays, rank: d.rank ?? 'none', rising: !!d.rising || plays >= RISING_CREATOR_PLAYS, staff: d.staff === 'helper' || d.staff === 'mod' ? d.staff : null, og: d.og === true, special: d.special === 'youtube' ? 'youtube' : null };
 }
-export type PlayerProfile = { username: string; level: number; xp: number; rank: string; staff: 'helper' | 'mod' | null; plays: number; joined: string | null; friends: number; worlds: number };
+export type PlayerProfile = { username: string; level: number; xp: number; rank: string; staff: 'helper' | 'mod' | null; og: boolean; special: 'youtube' | null; plays: number; joined: string | null; friends: number; worlds: number };
 /** What a player's profile card shows (null if there is no such player, or the database is not set up yet). */
 export async function fetchProfile(username: string): Promise<PlayerProfile | null> {
   if (!USERNAME_RE.test(username)) return null;
   const r = await rpcPublic('player_profile', { p_username: username });
   if (!r.ok || !Array.isArray(r.data) || !r.data[0]) return null;
-  const d = r.data[0] as { username: string; level?: number | string; xp?: number | string; rank?: string; staff?: string | null; plays?: number | string; joined?: string | null; friends?: number | string; worlds?: number | string };
+  const d = r.data[0] as { username: string; level?: number | string; xp?: number | string; rank?: string; staff?: string | null; og?: boolean; special?: string | null; plays?: number | string; joined?: string | null; friends?: number | string; worlds?: number | string };
   return {
     username: String(d.username), level: Math.max(1, Number(d.level) || 1), xp: Number(d.xp) || 0, rank: d.rank ?? 'none',
-    staff: d.staff === 'helper' || d.staff === 'mod' ? d.staff : null, plays: Number(d.plays) || 0, joined: d.joined ?? null,
+    staff: d.staff === 'helper' || d.staff === 'mod' ? d.staff : null, og: d.og === true, special: d.special === 'youtube' ? 'youtube' : null, plays: Number(d.plays) || 0, joined: d.joined ?? null,
     friends: Number(d.friends) || 0, worlds: Number(d.worlds) || 0,
   };
 }
@@ -657,6 +659,33 @@ export async function listStaff(): Promise<Result<{ staff: StaffRow[] }>> {
   const rows = (Array.isArray(r.data) ? r.data : []) as Array<{ username?: string; role?: string }>;
   return { ok: true, staff: rows.filter((x) => x.role === 'helper' || x.role === 'mod').map((x) => ({ username: String(x.username), role: x.role as StaffRank })) };
 }
+// ---------------- Special ranks ([YOUTUBE]) and [OG] fixes: the owner uses these in the Admin panel ----------------
+export type SpecialRow = { username: string; role: 'youtube' };
+const RUN_INDEV30 = 'Run vibeblox_indev30.sql in Supabase to add the YOUTUBE rank';
+/** Owner only: give a player [YOUTUBE] (role 'none' takes it away). Returns their name as the database spells it. */
+export async function setSpecialRank(username: string, role: 'youtube' | 'none'): Promise<Result<{ username: string }>> {
+  const name = username.trim();
+  if (!USERNAME_RE.test(name)) return fail('That is not a valid username');
+  const r = await rest('POST', 'rpc/set_special', { p_username: name, p_role: role });
+  if (!r.ok) return /owner only/i.test(r.error) || r.status === 403 ? fail('Only the owner can give special ranks') : fail(/function|schema cache|not find/i.test(r.error) || r.status === 404 ? RUN_INDEV30 : r.error);
+  if (typeof r.data !== 'string' || !r.data) return fail(`Nobody is called ${name}`);
+  return { ok: true, username: r.data };
+}
+export async function listSpecial(): Promise<Result<{ special: SpecialRow[] }>> {
+  const r = await rest('POST', 'rpc/list_special', {});
+  if (!r.ok) return fail(/function|schema cache|not find/i.test(r.error) || r.status === 404 ? RUN_INDEV30 : r.error);
+  const rows = (Array.isArray(r.data) ? r.data : []) as Array<{ username?: string; role?: string }>;
+  return { ok: true, special: rows.filter((x) => x.role === 'youtube').map((x) => ({ username: String(x.username), role: 'youtube' as const })) };
+}
+/** Owner only: give back (or take away) [OG] for one player. OG can't be earned any more, so this is the only way to fix a mistake. */
+export async function setOgRank(username: string, on: boolean): Promise<Result<{ username: string }>> {
+  const name = username.trim();
+  if (!USERNAME_RE.test(name)) return fail('That is not a valid username');
+  const r = await rest('POST', 'rpc/set_og', { p_username: name, p_on: on });
+  if (!r.ok) return /owner only/i.test(r.error) || r.status === 403 ? fail('Only the owner can change OG') : fail(/function|schema cache|not find/i.test(r.error) || r.status === 404 ? RUN_INDEV30 : r.error);
+  if (typeof r.data !== 'string' || !r.data) return fail(`Nobody is called ${name}`);
+  return { ok: true, username: r.data };
+}
 export async function checkAdmin(): Promise<boolean> {
   const r = await rest('POST', 'rpc/is_admin', {});
   return r.ok && r.data === true;
@@ -687,6 +716,19 @@ export async function reportCheat(me: Account | null, rep: { world: string; play
   await rest('POST', 'anticheat_reports', {
     world: rep.world.slice(0, 40), host_name: me.username, player: rep.player.slice(0, 16), kind: rep.kind.slice(0, 20), detail: rep.detail.slice(0, 200),
   }, { prefer: 'return=minimal' });
+}
+/** Admins: remove reports (a mistake, lag, or a player who only changed game mode). Needs vibeblox_indev30.sql. */
+export async function dismissCheatReports(ids: number[]): Promise<Result<{ removed: number }>> {
+  if (!ids.length) return { ok: true, removed: 0 };
+  const r = await rest('POST', 'rpc/dismiss_cheat_reports', { p_ids: ids.slice(0, 300) });
+  if (!r.ok) return fail(/function|schema cache|not find/i.test(String(r.error)) || r.status === 404 ? 'Run vibeblox_indev30.sql in Supabase to dismiss reports' : r.error);
+  return { ok: true, removed: Number(r.data) || 0 };
+}
+/** Admins: remove every report about one player, or all of them (no name). */
+export async function clearCheatReports(player = ''): Promise<Result<{ removed: number }>> {
+  const r = await rest('POST', 'rpc/clear_cheat_reports', { p_player: player });
+  if (!r.ok) return fail(/function|schema cache|not find/i.test(String(r.error)) || r.status === 404 ? 'Run vibeblox_indev30.sql in Supabase to dismiss reports' : r.error);
+  return { ok: true, removed: Number(r.data) || 0 };
 }
 /** The latest reports from every world (admins only). */
 export async function listCheatReports(limit = 100): Promise<Result<{ reports: CheatReport[] }>> {

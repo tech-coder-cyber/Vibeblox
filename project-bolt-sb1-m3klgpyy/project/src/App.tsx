@@ -9,7 +9,7 @@ import {
 } from '@/progression';
 import { ModBuilder } from '@/ModBuilder';
 import { parseModCode } from '@/modBuilderLogic';
-import { readRank, worldLimit, WORLD_LIMITS, RANK_NAMES, effectiveRank, playerCap, scriptBudgetMs, canUploadSkin, SCRIPT_BUDGET_MS, creatorTier, CREATOR_PLAYS, CREATOR_NAMES, PLAYER_CAP, adsAllowedFor, badgeTags, perkRank, isStaffId, type StaffId, type RankId, type CreatorTier } from '@/ranks';
+import { readRank, worldLimit, WORLD_LIMITS, RANK_NAMES, effectiveRank, playerCap, scriptBudgetMs, canUploadSkin, SCRIPT_BUDGET_MS, creatorTier, CREATOR_PLAYS, CREATOR_NAMES, PLAYER_CAP, adsAllowedFor, badgeTags, perkRank, isStaffId, isSpecialId, type SpecialId, type StaffId, type RankId, type CreatorTier } from '@/ranks';
 import { GAME_VERSION, NEWS } from '@/news';
 import { t, useLanguage, setLanguage, LANGUAGES, type LangCode } from '@/i18n';
 import { useKeybinds, rebind, resetBinds, keyLabel, KEY_ACTIONS, setCapturingKey, isCapturingKey, getBinds } from '@/keybinds';
@@ -56,6 +56,7 @@ import { WORLD_TAGS, MAX_WORLD_TAGS, cleanTags, toggleTag, tagInfo } from './wor
 import { fetchProfile, type PlayerProfile, type Account } from './social';
 import { openProfile, setProfileOpener } from './profileBus';
 import { setWorldWaker, wakeWorld } from './wakeBus';
+import { watchOutsideScripts, FLAG_LABELS, type Flag } from './integrity';
 import { saveWorldSnapshot, releaseWorld, deleteWorldSnapshot, listSleepingWorlds, claimWorld, transferWorld, type SleepingWorld, setWorldLike, saveProgressToAccount, loadProgressFromAccount, fetchLevelLeaderboard, reportCheat, cleanWorldImage, type LevelRow, addFriend, unfriendByName, loadFriends, sendDM, startPolling, isGuestName, reportActivity, fetchPlayingCounts, fetchLeaderboard, fetchStanding, recordPlay, setServerPresence, isOwnerName, listHostedWorlds, publishHostedWorld, unpublishHostedWorld, verifyToken, isFriendOf, isBannedName, isAdminToken, banEverywhere, unbanEverywhere, type DM, type Activity, type Friend, type LeaderRow, type Standing, type HostedWorld } from './social';
 
 // Multiplayer is optional: Vite only includes src/multiplayer.ts if the file
@@ -83,7 +84,7 @@ const AC_KEY = 'vb-anticheat';
 function loadAcSettings(): AcSettings {
   try { const o = JSON.parse(localStorage.getItem(AC_KEY) ?? '{}') as Partial<AcSettings>; return { enabled: o.enabled !== false, autoKick: o.autoKick !== false, kickAt: typeof o.kickAt === 'number' && o.kickAt >= 4 && o.kickAt <= 60 ? o.kickAt : 12 }; } catch { return { enabled: true, autoKick: true, kickAt: 12 }; }
 }
-const CHEAT_NAMES: Record<string, string> = { fly: 'Flying', speed: 'Speed', reach: 'Reach', killaura: 'Kill aura', autoclicker: 'Auto clicker', nuker: 'Nuker', spam: 'Chat spam' };
+const CHEAT_NAMES: Record<string, string> = { fly: 'Flying', speed: 'Speed', reach: 'Reach', killaura: 'Kill aura', autoclicker: 'Auto clicker', nuker: 'Nuker', spam: 'Chat spam', script: 'Outside script' };
 /** An online EggWars / Bridge Duels match, as the host's room sends it (see hosting.ts). */
 type NetMatch = {
   phase: 'waiting' | 'countdown' | 'playing' | 'over'; left: number; round: number; winner: number | null;
@@ -2741,6 +2742,8 @@ function ProfileModal({ name, me, onClose }: { name: string; me: Account | null;
               {isMe && <span className="px-2 py-0.5 rounded-full bg-[#00e676]/15 text-[#00e676] text-[10px] font-bold">YOU</span>}
               {owner && <span className="px-2 py-0.5 rounded-full bg-[#ffd23a]/15 text-[#ffd23a] text-[10px] font-bold">OWNER</span>}
               {p?.staff && <span className="px-2 py-0.5 rounded-full bg-[#4dd0e1]/15 text-[#4dd0e1] text-[10px] font-bold">{p.staff.toUpperCase()}</span>}
+              {p?.special && <span className="px-2 py-0.5 rounded-full bg-[#ff4d4d]/15 text-[#ff6b6b] text-[10px] font-bold">{p.special.toUpperCase()}</span>}
+              {(p?.og || (isMe && me?.og === true)) && <span className="px-2 py-0.5 rounded-full bg-[#22e6e6]/15 text-[#22e6e6] text-[10px] font-bold">OG</span>}
               {rank && <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${RANK_CHIP[rank] ?? 'bg-[#243044] text-white'}`}>{RANK_NAMES[rank as RankId] ?? rank}</span>}
               {p && <TierBadge tier={tier} small />}
               {guestName && <span className="px-2 py-0.5 rounded-full bg-[#243044] text-[#8ea0b8] text-[10px] font-bold">GUEST</span>}
@@ -3121,9 +3124,9 @@ const WEATHER_OPTIONS: Array<{ kind: WeatherKind; label: string }> = [
 ];
 
 /** Manage Server > Anti-cheat: its switches, and what it caught in the world you host. */
-function AntiCheatPanel({ settings, onChange, alerts, onKick, onBan, hosting }: {
+function AntiCheatPanel({ settings, onChange, alerts, onKick, onBan, onDismiss, onClear, hosting }: {
   settings: AcSettings; onChange: (s: AcSettings) => void; alerts: CheatAlertLike[]; hosting: boolean;
-  onKick: (name: string) => void; onBan: (name: string) => void;
+  onKick: (name: string) => void; onBan: (name: string) => void; onDismiss: (a: CheatAlertLike) => void; onClear: () => void;
 }) {
   const row = (on: boolean, label: string, hint: string, flip: () => void, id: string) => (
     <button onClick={flip} data-testid={id} aria-pressed={on}
@@ -3134,7 +3137,7 @@ function AntiCheatPanel({ settings, onChange, alerts, onKick, onBan, hosting }: 
   );
   return (
     <div className="flex flex-col gap-3" data-testid="anticheat-panel">
-      <p className="text-[#8ea0b8] text-xs">Watches players who join your world for flying, speed, reach, kill aura, auto clickers, nukers and chat spam. Alerts show here and in chat, and go to the VibeBlox admins.</p>
+      <p className="text-[#8ea0b8] text-xs">Watches players who join your world for flying, speed, reach, kill aura, auto clickers, nukers, chat spam and outside scripts (Tampermonkey and the like). Creative mode, elytra and the game's own commands are never counted. Alerts show here and in chat, and go to the VibeBlox admins.</p>
       <div className="grid sm:grid-cols-2 gap-2">
         {row(settings.enabled, 'Anti-cheat', 'Check players in your world', () => onChange({ ...settings, enabled: !settings.enabled }), 'ac-enabled')}
         {row(settings.autoKick, 'Kick cheaters', `Kick a player after ${settings.kickAt} warning points`, () => onChange({ ...settings, autoKick: !settings.autoKick }), 'ac-autokick')}
@@ -3144,7 +3147,10 @@ function AntiCheatPanel({ settings, onChange, alerts, onKick, onBan, hosting }: 
         <span className="text-white tabular-nums w-16 text-right">{settings.kickAt} points</span>
       </label>
       <div className="rounded-xl bg-[#121822] border border-[#243044] p-3">
-        <div className="text-white text-sm font-medium mb-2">Caught in this world</div>
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <div className="text-white text-sm font-medium">Caught in this world</div>
+          {alerts.length > 0 && <button onClick={onClear} data-testid="ac-clear" className="px-2 py-1 rounded-md bg-[#243044] text-[#8ea0b8] hover:text-white text-[11px] font-bold">Dismiss all</button>}
+        </div>
         {!hosting && <p className="text-[#5a6b80] text-xs">Your world isn't open to others right now.</p>}
         {hosting && !alerts.length && <p className="text-[#5a6b80] text-xs" data-testid="ac-none">Nothing suspicious so far.</p>}
         <div className="flex flex-col gap-1.5 max-h-72 overflow-y-auto vb-scroll">
@@ -3152,6 +3158,7 @@ function AntiCheatPanel({ settings, onChange, alerts, onKick, onBan, hosting }: 
             <div key={`${a.at}-${i}`} className="flex items-center gap-2 rounded-lg bg-[#0a0e14] border border-[#243044] px-3 py-2" data-testid="ac-alert">
               <span className="text-[#ff6b6b] text-[11px] font-bold w-24 shrink-0">{CHEAT_NAMES[a.kind] ?? a.kind}</span>
               <span className="flex-1 min-w-0 text-xs"><span className="text-white font-semibold">{a.player}</span> <span className="text-[#5a6b80]">{a.detail} · {new Date(a.at).toLocaleTimeString()}</span></span>
+              <button onClick={() => onDismiss(a)} data-testid="ac-dismiss" title="It was a mistake or lag: remove this report" className="px-2 py-1 rounded-md bg-[#243044] text-[#8ea0b8] hover:text-white text-[11px] font-bold">Dismiss</button>
               <button onClick={() => onKick(a.player)} className="px-2 py-1 rounded-md bg-[#ff9800]/15 text-[#ff9800] text-[11px] font-bold">Kick</button>
               <button onClick={() => onBan(a.player)} className="px-2 py-1 rounded-md bg-[#ff5252]/15 text-[#ff5252] text-[11px] font-bold">Ban</button>
             </div>
@@ -5970,13 +5977,17 @@ export default function App() {
   const myRank: RankId = effectiveRank(account, isOwnerAccount);
   const myStaff: StaffId | null = account && !isGuestName(account.username) && isStaffId(account.staff) ? account.staff : null;
   /** The rank whose perks you get: Staff (HELPER, MOD) get Elite's perks. The tag still shows the real rank. */
-  const myPerk: RankId = perkRank(myRank, { staff: myStaff });
+  const myOg = !!account && !isGuestName(account.username) && account.og === true;
+  const mySpecial: SpecialId | null = account && !isGuestName(account.username) && isSpecialId(account.special) ? account.special : null;
+  const myPerk: RankId = perkRank(myRank, { staff: myStaff, og: myOg, special: mySpecial });
   const myTier: CreatorTier = isOwnerAccount ? 'star' : creatorTier(standing?.plays ?? 0);
   /** Admins and staff can kick, ban, mute and use commands in every world. */
   const canModerate = !!admin || !!myStaff;
   const canModerateRef = useRef(canModerate);
   canModerateRef.current = canModerate;
   const myStaffRef = useRef<StaffId | null>(myStaff); myStaffRef.current = myStaff;
+  const myOgRef = useRef(myOg); myOgRef.current = myOg;
+  const mySpecialRef = useRef<SpecialId | null>(mySpecial); mySpecialRef.current = mySpecial;
   const rising = myTier !== 'none';
   const budgetRef = useRef(scriptBudgetMs(myPerk, myTier));
   budgetRef.current = scriptBudgetMs(myPerk, myTier);
@@ -6000,7 +6011,7 @@ export default function App() {
     if (fr) parts.push(`${fr}\\reset\\`);
     const me = name.toLowerCase() === (usernameRef.current || '').toLowerCase();
     const a = accountRef.current;
-    const badge: NetBadge | undefined = me ? (a && !isGuestName(a.username) ? { owner: isOwnerRef.current, rank: myRankRef.current, tier: myTierRef.current, staff: myStaffRef.current } : undefined) : badgesRef.current[name.toLowerCase()];
+    const badge: NetBadge | undefined = me ? (a && !isGuestName(a.username) ? { owner: isOwnerRef.current, rank: myRankRef.current, tier: myTierRef.current, staff: myStaffRef.current, og: myOgRef.current, special: mySpecialRef.current } : undefined) : badgesRef.current[name.toLowerCase()];
     parts.push(...badgeTags(badge));
     return parts.length ? parts.join(' ') + ' ' : '';
   }
@@ -6071,6 +6082,15 @@ export default function App() {
   const memberTeamsRef = useRef<Record<number, number>>({});
   // Anti-cheat alerts about players in the world you host
   const [cheatAlerts, setCheatAlerts] = useState<CheatAlertLike[]>([]);
+  // Outside scripts (Tampermonkey and the like) in this page: online worlds hear about it, and so do you, once
+  const outsideFlagsRef = useRef<string[]>([]);
+  const outsideToldRef = useRef(false);
+  const [outsideNotice, setOutsideNotice] = useState<string[] | null>(null);
+  useEffect(() => watchOutsideScripts((flags) => {
+    outsideFlagsRef.current = flags;
+    if (flags.length && mpRef.current?.connected) mpRef.current.sendIntegrity(flags);
+    if (flags.length && !outsideToldRef.current) { outsideToldRef.current = true; setOutsideNotice(flags); }
+  }), []); // eslint-disable-line react-hooks/exhaustive-deps
   /** Co-owners: the anti-cheat settings of the world you are in (the host's room sends them) */
   const [remoteAc, setRemoteAc] = useState<AcSettings | null>(null);
   const [acSettings, setAcSettingsState] = useState<AcSettings>(loadAcSettings);
@@ -7045,7 +7065,7 @@ export default function App() {
   useEffect(() => installUiSounds(), []);
   useEffect(() => subscribeQol(() => gameHandleRef.current?.setBlockOutline(getQol().outline)), []);
   // keep it right when you log in, your rank changes, or a fake rank is given
-  useEffect(() => { if (gameMode === 'playing') refreshNameTags(); }, [gameMode, account?.username, myRank, myTier, isOwnerAccount, fakeRanks, myStaff]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (gameMode === 'playing') refreshNameTags(); }, [gameMode, account?.username, myRank, myTier, isOwnerAccount, fakeRanks, myStaff, myOg, mySpecial]); // eslint-disable-line react-hooks/exhaustive-deps
   // block sounds: the switches and volume in Settings > Audio
   const applyBlockSounds = () => { const q = getQol(); gameHandleRef.current?.setBlockSoundPrefs({ breaking: q.blockBreak, placing: q.blockPlace, footsteps: q.footsteps, volume: q.blockVolume }); };
   useEffect(() => subscribeQol(applyBlockSounds), []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -7353,6 +7373,7 @@ export default function App() {
         }
         myNetIdRef.current = w.id;
         mp.sendLook(currentLook());
+        if (outsideFlagsRef.current.length) mp.sendIntegrity(outsideFlagsRef.current);
         pendingWelcomeRef.current = w;
         const names: Record<number, string> = { [w.id]: w.name };
         for (const p of w.players) names[p.id] = p.name;
@@ -7644,7 +7665,7 @@ export default function App() {
       isFriend: (uid: string) => isFriendOf(me.userId, uid),
       isBanned: isBannedName,
       isAdmin: isAdminToken,
-      standing: async (name: string) => { const st = await fetchStanding(name); return { rank: st?.rank ?? 'none', tier: creatorTier(st?.plays ?? 0), staff: st?.staff ?? null }; },
+      standing: async (name: string) => { const st = await fetchStanding(name); return { rank: st?.rank ?? 'none', tier: creatorTier(st?.plays ?? 0), staff: st?.staff ?? null, og: st?.og === true, special: st?.special ?? null }; },
     };
   }
   /** Anti-cheat for a world you host: alerts go to you (chat + Manage Server) and to the admins' report list. */
@@ -9395,8 +9416,15 @@ export default function App() {
 
   return (
     <AccountSummaryContext.Provider value={{ username: account?.username ?? '', signedIn: !!account && !isGuestName(account.username), isOwner: isOwnerAccount, isAdmin: !!admin, openAdmin: () => openPanel() }}>
-    <StandingContext.Provider value={{ nameTags: badgeTags({ owner: isOwnerAccount, rank: myRank, staff: myStaff }), rank: myPerk, rising, tier: myTier, isOwner: isOwnerAccount, standing, signedIn: !!account && !isGuestName(account.username), guest: (accountChecked || authWaitOver) && (!account || isGuestName(account.username)) }}>
+    <StandingContext.Provider value={{ nameTags: badgeTags({ owner: isOwnerAccount, rank: myRank, staff: myStaff, og: myOg, special: mySpecial }), rank: myPerk, rising, tier: myTier, isOwner: isOwnerAccount, standing, signedIn: !!account && !isGuestName(account.username), guest: (accountChecked || authWaitOver) && (!account || isGuestName(account.username)) }}>
       <DailyUiContext.Provider value={{ openDaily: () => setShowDaily(true) }}>
+      {outsideNotice && (
+        <div className="fixed top-3 left-1/2 -translate-x-1/2 z-[9999] max-w-[92vw] w-[520px] rounded-xl border border-[#ff9800]/50 bg-[#1c1408]/95 px-4 py-3 shadow-xl" data-testid="outside-script-notice" role="alert">
+          <div className="text-[#ffb74d] text-sm font-bold">An outside script is running in this page</div>
+          <div className="text-[#d9b98a] text-xs mt-1">{outsideNotice.map((f) => FLAG_LABELS[f as Flag] ?? f).join('. ')}. Worlds you join online are told about it, and the game may act oddly. If it is not yours, turn it off and reload.</div>
+          <button onClick={() => setOutsideNotice(null)} data-testid="outside-script-dismiss" className="mt-2 px-3 py-1 rounded-md bg-[#ff9800]/20 text-[#ffb74d] text-xs font-bold">Got it</button>
+        </div>
+      )}
       {/* Persistent soundtrack element — lives at the App level (not inside
           any view) so it keeps playing across sidebar navigation and while
           the game itself is running. */}
@@ -9728,7 +9756,7 @@ export default function App() {
                 onTime={(t) => { changeTime(t); }}
                 onWeather={(k) => { changeWeather(k); }}
                 anticheat={
-                  <AntiCheatPanel settings={hostingInfo ? acSettings : remoteAc ?? acSettings} onChange={(a) => { if (hostingInfo || !remoteAc) setAcSettings(a); else mpRef.current?.sendAnticheat(a); }} alerts={cheatAlerts} hosting={!!hostingInfo || !!remoteAc}
+                  <AntiCheatPanel settings={hostingInfo ? acSettings : remoteAc ?? acSettings} onChange={(a) => { if (hostingInfo || !remoteAc) setAcSettings(a); else mpRef.current?.sendAnticheat(a); }} alerts={cheatAlerts} onDismiss={(a) => setCheatAlerts((prev) => prev.filter((x) => x !== a))} onClear={() => setCheatAlerts([])} hosting={!!hostingInfo || !!remoteAc}
                     onKick={(n) => { const id = (Object.entries(onlinePlayers) as Array<[string, string]>).find(([, nm]) => nm.toLowerCase() === n.toLowerCase())?.[0]; if (id) mpRef.current?.kick(Number(id)); }}
                     onBan={(n) => { const id = (Object.entries(onlinePlayers) as Array<[string, string]>).find(([, nm]) => nm.toLowerCase() === n.toLowerCase())?.[0]; if (id) mpRef.current?.ban(Number(id)); }} />
                 }

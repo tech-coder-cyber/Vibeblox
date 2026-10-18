@@ -58,14 +58,21 @@ export const STAFF_TAGS: Record<StaffId, string> = {
   mod: '\\cyan\\\\bold\\[MOD]\\reset\\',
 };
 export const isStaffId = (v: unknown): v is StaffId => v === 'helper' || v === 'mod';
+/** [OG]: players who were here before it ended. They keep it for good; nobody can earn it any more. */
+export const OG_TAG = '\\cyan\\\\shiny\\[OG]\\reset\\';
+/** Special ranks the owner gives out by hand ([YOUTUBE] for video makers). They are not staff: no moderation powers. */
+export type SpecialId = 'youtube';
+export const SPECIAL_TAGS: Record<SpecialId, string> = { youtube: '\\red\\\\bold\\[YOUTUBE]\\reset\\' };
+export const SPECIAL_LABELS: Record<SpecialId, string> = { youtube: 'YOUTUBE' };
+export const isSpecialId = (v: unknown): v is SpecialId => v === 'youtube';
 
 /**
- * The rank whose perks you get. OG players and staff (HELPER, MOD) get Elite's perks (a bigger planet limit, more script
- * time, no ads); a paid rank that is better than Elite still counts. The name tag shows the real rank, not this one.
+ * The rank whose perks you get. OG players, [YOUTUBE] and staff (HELPER, MOD) get Elite's perks (a bigger planet limit,
+ * more script time, no ads); a paid rank that is better than Elite still counts. The name tag shows the real rank, not this one.
  */
-export function perkRank(rank: RankId, extra: { staff?: string | null } | null | undefined): RankId {
+export function perkRank(rank: RankId, extra: { staff?: string | null; og?: boolean; special?: string | null } | null | undefined): RankId {
   if (rank === 'champion') return rank;
-  return extra && isStaffId(extra.staff) ? 'elite' : rank;
+  return extra && (isStaffId(extra.staff) || extra.og || isSpecialId(extra.special)) ? 'elite' : rank;
 }
 export const RANK_TAGS: Record<RankId, string> = {
   none: '',
@@ -73,12 +80,14 @@ export const RANK_TAGS: Record<RankId, string> = {
   elite: '\\light_purple\\[Elite]\\reset\\',
   champion: '\\gold\\\\shiny\\[Champion]\\reset\\',
 };
-export type Badge = { owner?: boolean; rank?: RankId | string; tier?: CreatorTier | string; staff?: StaffId | string | null };
+export type Badge = { owner?: boolean; rank?: RankId | string; tier?: CreatorTier | string; staff?: StaffId | string | null; og?: boolean; special?: SpecialId | string | null };
 export function badgeTags(b: Badge | null | undefined): string[] {
   if (!b) return [];
   const out: string[] = [];
   if (b.owner) out.push(OWNER_TAG);
   if (isStaffId(b.staff)) out.push(STAFF_TAGS[b.staff]);
+  if (isSpecialId(b.special)) out.push(SPECIAL_TAGS[b.special]);
+  if (b.og) out.push(OG_TAG);
   const r = b.rank as RankId;
   if (r && RANK_TAGS[r]) out.push(RANK_TAGS[r]);
   const t = b.tier as CreatorTier;

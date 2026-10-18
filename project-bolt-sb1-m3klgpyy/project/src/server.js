@@ -560,7 +560,7 @@ function handle(p, msg) {
       p.x = msg.x; p.y = msg.y; p.z = msg.z; p.yaw = msg.yaw; p.pitch = msg.pitch;
       p.mode = typeof msg.mode === 'string' ? msg.mode.slice(0, 12) : 'survival';
       p.held = Number.isInteger(msg.held) && msg.held >= 0 && msg.held < 4000 ? msg.held : 0; // item id in hand (1400+: newer items)
-      p.act = Number.isInteger(msg.act) ? msg.act & 127 : 0; // swinging / aiming / drawing a bow / blocking / sleeping / sneaking / swimming
+      p.act = Number.isInteger(msg.act) ? msg.act & 255 : 0; // (128: gliding) swinging / aiming / drawing a bow / blocking / sleeping / sneaking / swimming
       p.moved = true;
       return;
     }
