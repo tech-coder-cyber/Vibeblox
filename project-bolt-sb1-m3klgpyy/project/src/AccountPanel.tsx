@@ -19,6 +19,9 @@ export default function AccountPanel({ summary }: { summary: AccountSummary }) {
   const [emailMsg, setEmailMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [pwMsg, setPwMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [typed, setTyped] = useState('');
+  const [delMsg, setDelMsg] = useState<string | null>(null);
 
   useEffect(() => {
     if (!summary.signedIn) return;
@@ -61,6 +64,15 @@ export default function AccountPanel({ summary }: { summary: AccountSummary }) {
     if (r.error) { setPwMsg({ ok: false, text: r.error }); return; }
     setPwMsg({ ok: true, text: 'Password changed. Use the new one next time you sign in.' });
     setPw1(''); setPw2('');
+  }
+  async function doDelete() {
+    if (!auth || busy || typed !== summary.username) return;
+    setBusy(true); setDelMsg(null);
+    const r = await auth.deleteAccount();
+    setBusy(false);
+    if (r.error) { setDelMsg(r.error); return; }
+    try { localStorage.removeItem('vibeblox_username'); } catch { /* storage blocked */ }
+    window.location.reload();
   }
   const note = (m: { ok: boolean; text: string } | null) => m && (
     <p className={`text-xs mt-2 ${m.ok ? 'text-[#9ff0c4]' : 'text-red-300'}`} data-testid="account-msg">{m.text}</p>
@@ -106,6 +118,27 @@ export default function AccountPanel({ summary }: { summary: AccountSummary }) {
         </form>
         {note(pwMsg)}
       </section>
+
+      <section className="rounded-2xl border border-red-500/50 bg-red-950/20 p-6" data-testid="danger-zone">
+        <h2 className="text-red-400 text-sm font-bold mb-1">Danger zone</h2>
+        <p className="text-[#8ea0b8] text-xs mb-3">Deleting your account removes your profile, friends, messages, ranks and hosted worlds for good. This can not be undone.</p>
+        <button onClick={() => { setConfirming(true); setTyped(''); setDelMsg(null); }} data-testid="delete-account"
+          className="px-4 py-2 rounded-lg bg-red-600 text-white text-xs font-bold hover:bg-red-500 active:scale-95">Delete account</button>
+      </section>
+      {confirming && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 px-4" data-testid="delete-dialog" onClick={() => !busy && setConfirming(false)}>
+          <div className="w-[420px] max-w-full rounded-2xl bg-[#121822] border border-red-500/60 p-6" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-red-400 font-bold text-sm mb-2">Delete your account?</h3>
+            <p className="text-[#8ea0b8] text-xs mb-3">This is permanent. To confirm, type your username <span className="text-white font-bold">{summary.username}</span> below.</p>
+            <input value={typed} onChange={(e) => setTyped(e.target.value)} placeholder={summary.username} data-testid="delete-confirm-input" autoComplete="off" onKeyDown={(e) => e.stopPropagation()} className={input} />
+            {delMsg && <p className="text-xs mt-2 text-red-300" data-testid="delete-msg">{delMsg}</p>}
+            <div className="flex gap-2 mt-4">
+              <button onClick={() => setConfirming(false)} disabled={busy} data-testid="delete-cancel" className="flex-1 py-2 rounded-lg bg-[#1a2230] border border-[#364860] text-white text-xs font-bold">Cancel</button>
+              <button onClick={doDelete} disabled={busy || typed !== summary.username} data-testid="delete-confirm" className="flex-1 py-2 rounded-lg bg-red-600 text-white text-xs font-bold disabled:opacity-40">{busy ? 'Deleting…' : 'Delete my account'}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

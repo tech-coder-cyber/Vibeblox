@@ -2213,6 +2213,7 @@ function MainContent({
     <main className="flex-1 min-h-0 overflow-y-auto vb-scroll bg-[#0a0e14]" style={backgroundStyle(bgPic)} data-testid="main-bg" data-bg={bgPic.url ? 'on' : 'off'}>
       <div className={compact ? 'px-3 py-3' : 'px-8 py-6'}>
         {view === 'home' && compact && <MobileProfileBar username={username} onPlayNow={() => onPlaySurvival()} />}
+        {view === 'home' && compact && <div className="mb-4"><LeaderboardCard collapsible onOpenLeaderboard={() => onNavClick('leaderboard')} /></div>}
         {view === 'home' && !compact && <DiscordBanner />}
         {view === 'home' && <HomeView username={username} onPlaySurvival={onPlaySurvival} savedWorlds={savedWorlds} onPlayWorld={onPlayWorld} onCreatePreset={onCreatePreset} onMinigame={onMinigame} counts={playingCounts} />}
         {view === 'shop' && <ShopView />}
@@ -2623,7 +2624,39 @@ function MobileProfileBar({ username, onPlayNow }: { username: string; onPlayNow
   );
 }
 
-function ProfilePanel({ username }: { username: string }) {
+/** The top creators list on the right of Home (on a phone it can be shown or hidden). */
+function LeaderboardCard({ onOpenLeaderboard, collapsible = false }: { onOpenLeaderboard: () => void; collapsible?: boolean }) {
+  useLanguage();
+  const top = useLeaderboard(5);
+  const [open, setOpen] = useState(() => { try { return localStorage.getItem('vb-lb-open') !== '0'; } catch { return true; } });
+  const toggle = () => setOpen((o) => { const n = !o; try { localStorage.setItem('vb-lb-open', n ? '1' : '0'); } catch { /* storage blocked */ } return n; });
+  return (
+    <div className="bg-[#121822] rounded-2xl border border-[#243044] p-4" data-testid="lb-card">
+      <h3 className="font-[var(--font-display)] text-white text-sm tracking-wide flex items-center gap-2">
+        <Trophy className="w-4 h-4 text-[#ffd23a]" /> {t('lb.title').toUpperCase()}
+        {collapsible && <button onClick={toggle} data-testid="lb-toggle" className="ml-auto px-2.5 py-1 rounded-lg bg-[#1a2230] text-[#8ea0b8] text-[11px] font-bold">{open ? 'Hide' : 'Show'}</button>}
+      </h3>
+      {open && (
+        <div className="mt-3">
+          {top === null && <p className="text-[#5a6b80] text-xs">…</p>}
+          {top !== null && top.length === 0 && <p className="text-[#5a6b80] text-xs">{t('lb.empty')}</p>}
+          <ol className="space-y-1.5">
+            {top?.map((r, i) => (
+              <li key={r.username} className="flex items-center gap-2 text-xs">
+                <span className={`w-4 text-center font-bold ${i === 0 ? 'text-[#ffd23a]' : 'text-[#5a6b80]'}`}>{i + 1}</span>
+                <span className="text-white truncate flex-1">{r.username}</span>
+                <span className="text-[#8ea0b8] tabular-nums">{r.plays.toLocaleString()}</span>
+              </li>
+            ))}
+          </ol>
+          <button onClick={() => { nextBoard = 'creators'; onOpenLeaderboard(); }} data-testid="lb-see-all" className="mt-3 w-full py-1.5 rounded-lg bg-[#1a2230] text-[#8ea0b8] text-xs font-bold hover:text-white hover:bg-[#243044] transition-colors">{t('lb.seeAll')}</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProfilePanel({ username, onOpenLeaderboard }: { username: string; onOpenLeaderboard: () => void }) {
   useLanguage();
   const p = useProgress();
   const { rising, tier, signedIn, guest } = useContext(StandingContext);
@@ -2671,6 +2704,7 @@ function ProfilePanel({ username }: { username: string }) {
 
       <DailyCard />
 
+      <LeaderboardCard onOpenLeaderboard={onOpenLeaderboard} />
     </aside>
   );
 }
@@ -6376,8 +6410,8 @@ export default function App() {
 
   // The soundtrack you picked last time starts again at your first click or key press (browsers don't allow sound before that)
   useEffect(() => {
-    let saved = '';
-    try { saved = localStorage.getItem('vb-soundtrack') ?? ''; } catch { /* storage blocked */ }
+    let saved = 'overworld'; // the default soundtrack (until you pick another one, or stop the music)
+    try { const v = localStorage.getItem('vb-soundtrack'); if (v !== null) saved = v; } catch { /* storage blocked */ }
     if (!saved || !SOUNDTRACKS.some((t) => t.value === saved && t.value !== 'arcade')) return;
     const go = () => { cleanup(); playBuiltInTrack(saved as AnySoundtrack); };
     const cleanup = () => { removeEventListener('pointerdown', go, true); removeEventListener('keydown', go, true); };
@@ -9200,7 +9234,7 @@ export default function App() {
           netStatus={netStatus}
           netError={netError}
         />
-        {!compactLayout && <ProfilePanel username={currentUsername} />}
+        {!compactLayout && <ProfilePanel username={currentUsername} onOpenLeaderboard={() => handleNavClick('leaderboard')} />}
         {showModal && <LoginOverlay onGuest={handleGuest} onClose={username ? () => setShowModal(false) : undefined} />}
       </div>
 

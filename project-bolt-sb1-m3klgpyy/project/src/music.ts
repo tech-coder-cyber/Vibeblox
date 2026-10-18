@@ -160,14 +160,16 @@ const PENTA = [0, 2, 4, 7, 9];
 const DORIAN = [0, 2, 3, 5, 7, 9, 10];
 function overworld(i: number): Track {
   const defs = [
-    { name: 'Meadow', root: 60, scale: PENTA, prog: [0, 3, 4, 0, 5, 3, 4, 0], bpm: 66, seed: 11 },
-    { name: 'Daybreak', root: 62, scale: MAJOR, prog: [0, 4, 5, 3, 0, 4, 3, 4], bpm: 72, seed: 23 },
-    { name: 'Quiet Hollow', root: 57, scale: DORIAN, prog: [0, 6, 3, 4, 0, 6, 5, 4], bpm: 60, seed: 37 },
-    { name: 'Stargazer', root: 65, scale: PENTA, prog: [0, 5, 3, 4, 0, 5, 4, 0], bpm: 58, seed: 41 },
+    { name: 'Meadow', root: 60, scale: PENTA, prog: [0, 3, 4, 0, 5, 3, 4, 0], bpm: 78, seed: 11, groove: 0 },
+    { name: 'Daybreak', root: 62, scale: MAJOR, prog: [0, 4, 5, 3, 0, 4, 3, 4], bpm: 88, seed: 23, groove: 1 },
+    { name: 'Quiet Hollow', root: 57, scale: DORIAN, prog: [0, 6, 3, 4, 0, 6, 5, 4], bpm: 72, seed: 37, groove: 0 },
+    { name: 'Stargazer', root: 65, scale: PENTA, prog: [0, 5, 3, 4, 0, 5, 4, 0], bpm: 76, seed: 41, groove: 2 },
+    { name: 'Sunrise Trail', root: 64, scale: MAJOR, prog: [0, 3, 4, 5, 0, 3, 4, 4], bpm: 98, seed: 53, groove: 1 },
+    { name: 'Crystal Caves', root: 59, scale: DORIAN, prog: [0, 5, 3, 6, 0, 5, 4, 6], bpm: 84, seed: 67, groove: 2 },
   ];
   const d = defs[i % defs.length];
   const r = rng(d.seed);
-  const beat = 60 / d.bpm;
+  const beat = 60 / d.bpm, eighth = beat / 2;
   const events: Ev[] = [];
   const triad = (deg: number) => [0, 2, 4].map((k) => { const x = deg + k; return d.root - 12 + MAJOR[x % 7] + 12 * Math.floor(x / 7); });
   const chords = 16;
@@ -177,7 +179,28 @@ function overworld(i: number): Track {
     const t0 = 0.5 + c * 4 * beat;
     const tri = triad(deg);
     tri.forEach((m, k) => events.push({ t: t0 + k * 0.04, dur: 4.4 * beat, midi: m, v: 'pad', vel: 0.12 }));
-    events.push({ t: t0, dur: 3 * beat, midi: tri[0] - 12, v: 'tri', vel: 0.2 });
+    // a walking bass: root on the beat, the fifth on the "and" of two, back to the root
+    events.push({ t: t0, dur: 1.6 * beat, midi: tri[0] - 12, v: 'bass', vel: 0.3 });
+    events.push({ t: t0 + 2 * beat, dur: 1.2 * beat, midi: tri[0] - 12, v: 'bass', vel: 0.24 });
+    events.push({ t: t0 + 2.5 * beat, dur: 0.8 * beat, midi: tri[2] - 12, v: 'bass', vel: 0.2 });
+    events.push({ t: t0 + 3.5 * beat, dur: 0.5 * beat, midi: tri[0] - 5, v: 'tri', vel: 0.18 });
+    // an arpeggio of soft plucks from the second chord on (it gets busier in the middle of the piece)
+    if (c >= 1) {
+      const busy = c >= 4 && c < 12;
+      for (let k = 0; k < 8; k++) {
+        if (!busy && k % 2 === 1) continue;
+        const seq = [0, 1, 2, 1, 2, 1, 0, 1];
+        events.push({ t: t0 + k * eighth, dur: eighth * 1.6, midi: tri[seq[k]] + 12, v: 'pluck', vel: busy ? 0.15 : 0.11 });
+      }
+    }
+    // the beat: kick and hats from the third chord, a soft snare from the fifth, a fill at the end of every eighth chord
+    if (c >= 2) {
+      const kicks = d.groove === 1 ? [0, 1.5, 2, 3.5] : d.groove === 2 ? [0, 2.5, 3] : [0, 2];
+      for (const k of kicks) events.push({ t: t0 + k * beat, dur: 0.25, midi: 36, v: 'kick', vel: 0.34 });
+      for (let k = 0; k < 8; k++) events.push({ t: t0 + k * eighth + (k % 2 ? eighth * 0.06 : 0), dur: 0.05, midi: 42, v: 'hat', vel: k % 2 ? 0.07 : 0.11 });
+    }
+    if (c >= 4) for (const k of [1, 3]) events.push({ t: t0 + k * beat, dur: 0.15, midi: 38, v: 'snare', vel: 0.2 });
+    if (c >= 4 && c % 8 === 7) for (let k = 0; k < 4; k++) events.push({ t: t0 + 3 * beat + k * eighth / 2, dur: 0.1, midi: 38, v: 'snare', vel: 0.12 + k * 0.04 });
     // a few soft notes of a melody that wanders up and down
     for (let b = 0; b < 8; b++) {
       if (r() < 0.38) continue;
@@ -257,7 +280,7 @@ function arcade(i: number): Track {
 }
 
 const BUILDERS: Record<SoundtrackStyle, Array<() => Track>> = {
-  overworld: [0, 1, 2, 3].map((i) => () => overworld(i)),
+  overworld: [0, 1, 2, 3, 4, 5].map((i) => () => overworld(i)),
   classical: [bachPrelude, canon, gymnopedie, furElise, odeToJoy],
   phonk: [0, 1, 2].map((i) => () => phonk(i)),
   arcade: [0, 1, 2].map((i) => () => arcade(i)),
