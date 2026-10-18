@@ -82,6 +82,51 @@ html.vb-light .vb-themed .placeholder\:text-\[\#5a6b80\]::placeholder, html.vb-l
 html.vb-light .vb-themed .hover\:bg-\[\#1a2230\]:hover, html.vb-light .vb-themed.hover\:bg-\[\#1a2230\]:hover { background-color: #e4e9ef !important; }
 html.vb-light .vb-themed .hover\:text-white:hover, html.vb-light .vb-themed.hover\:text-white:hover { color: #000000 !important; }
 
+/* ---------------- vb-superdark ---------------- */
+html.vb-superdark .vb-themed { color-scheme: dark; }
+html.vb-superdark .vb-themed .bg-\[\#05080c\], html.vb-superdark .vb-themed.bg-\[\#05080c\] { background-color: #000000 !important; }
+html.vb-superdark .vb-themed .bg-\[\#0a0e14\], html.vb-superdark .vb-themed.bg-\[\#0a0e14\] { background-color: #000000 !important; }
+html.vb-superdark .vb-themed .bg-\[\#0d131b\], html.vb-superdark .vb-themed.bg-\[\#0d131b\] { background-color: #050505 !important; }
+html.vb-superdark .vb-themed .bg-\[\#121822\], html.vb-superdark .vb-themed.bg-\[\#121822\] { background-color: #0a0a0a !important; }
+html.vb-superdark .vb-themed .bg-\[\#1a2230\], html.vb-superdark .vb-themed.bg-\[\#1a2230\] { background-color: #141414 !important; }
+html.vb-superdark .vb-themed .bg-\[\#243044\], html.vb-superdark .vb-themed.bg-\[\#243044\] { background-color: #1f1f1f !important; }
+html.vb-superdark .vb-themed .bg-\[\#2a3444\], html.vb-superdark .vb-themed.bg-\[\#2a3444\] { background-color: #262626 !important; }
+html.vb-superdark .vb-themed .bg-\[\#0a0e14\]\/95, html.vb-superdark .vb-themed.bg-\[\#0a0e14\]\/95 { background-color: rgba(0,0,0,0.97) !important; }
+html.vb-superdark .vb-themed .bg-\[\#0a0e14\]\/80, html.vb-superdark .vb-themed.bg-\[\#0a0e14\]\/80 { background-color: rgba(0,0,0,0.85) !important; }
+html.vb-superdark .vb-themed .border-\[\#243044\], html.vb-superdark .vb-themed.border-\[\#243044\] { border-color: #1f1f1f !important; }
+html.vb-superdark .vb-themed .border-\[\#1a2230\], html.vb-superdark .vb-themed.border-\[\#1a2230\] { border-color: #141414 !important; }
+html.vb-superdark .vb-themed .border-\[\#364860\], html.vb-superdark .vb-themed.border-\[\#364860\] { border-color: #333333 !important; }
+html.vb-superdark .vb-themed .border-\[\#3a4a60\], html.vb-superdark .vb-themed.border-\[\#3a4a60\] { border-color: #333333 !important; }
+html.vb-superdark .vb-themed .text-\[\#8ea0b8\], html.vb-superdark .vb-themed.text-\[\#8ea0b8\] { color: #a0a0a0 !important; }
+html.vb-superdark .vb-themed .text-\[\#5a6b80\], html.vb-superdark .vb-themed.text-\[\#5a6b80\] { color: #6e6e6e !important; }
+html.vb-superdark .vb-themed .text-\[\#364860\], html.vb-superdark .vb-themed.text-\[\#364860\] { color: #4a4a4a !important; }
+html.vb-superdark .vb-themed .text-\[\#d6e2f0\], html.vb-superdark .vb-themed.text-\[\#d6e2f0\] { color: #e6e6e6 !important; }
+html.vb-superdark .vb-themed .text-\[\#c8d2e0\], html.vb-superdark .vb-themed.text-\[\#c8d2e0\] { color: #d8d8d8 !important; }
+
+/* ---------------- vb-gray ---------------- */
+html.vb-gray .vb-themed { color-scheme: dark; }
+html.vb-gray .vb-themed .bg-\[\#05080c\], html.vb-gray .vb-themed.bg-\[\#05080c\] { background-color: #1b1c1f !important; }
+html.vb-gray .vb-themed .bg-\[\#0a0e14\], html.vb-gray .vb-themed.bg-\[\#0a0e14\] { background-color: #232428 !important; }
+html.vb-gray .vb-themed .bg-\[\#0d131b\], html.vb-gray .vb-themed.bg-\[\#0d131b\] { background-color: #2b2d31 !important; }
+html.vb-gray .vb-themed .bg-\[\#121822\], html.vb-gray .vb-themed.bg-\[\#121822\] { background-color: #303338 !important; }
+html.vb-gray .vb-themed .bg-\[\#1a2230\], html.vb-gray .vb-themed.bg-\[\#1a2230\] { background-color: #3a3d43 !important; }
+html.vb-gray .vb-themed .bg-\[\#243044\], html.vb-gray .vb-themed.bg-\[\#243044\] { background-color: #464a52 !important; }
+html.vb-gray .vb-themed .bg-\[\#2a3444\], html.vb-gray .vb-themed.bg-\[\#2a3444\] { background-color: #4c5059 !important; }
+html.vb-gray .vb-themed .bg-\[\#0a0e14\]\/95, html.vb-gray .vb-themed.bg-\[\#0a0e14\]\/95 { background-color: rgba(35,36,40,0.97) !important; }
+html.vb-gray .vb-themed .bg-\[\#0a0e14\]\/80, html.vb-gray .vb-themed.bg-\[\#0a0e14\]\/80 { background-color: rgba(35,36,40,0.85) !important; }
+html.vb-gray .vb-themed .border-\[\#243044\], html.vb-gray .vb-themed.border-\[\#243044\] { border-color: #464a52 !important; }
+html.vb-gray .vb-themed .border-\[\#1a2230\], html.vb-gray .vb-themed.border-\[\#1a2230\] { border-color: #3a3d43 !important; }
+html.vb-gray .vb-themed .border-\[\#364860\], html.vb-gray .vb-themed.border-\[\#364860\] { border-color: #5c616b !important; }
+html.vb-gray .vb-themed .border-\[\#3a4a60\], html.vb-gray .vb-themed.border-\[\#3a4a60\] { border-color: #5c616b !important; }
+html.vb-gray .vb-themed .text-\[\#8ea0b8\], html.vb-gray .vb-themed.text-\[\#8ea0b8\] { color: #b4b8c0 !important; }
+html.vb-gray .vb-themed .text-\[\#5a6b80\], html.vb-gray .vb-themed.text-\[\#5a6b80\] { color: #8e939c !important; }
+html.vb-gray .vb-themed .text-\[\#364860\], html.vb-gray .vb-themed.text-\[\#364860\] { color: #6f747d !important; }
+html.vb-gray .vb-themed .text-\[\#d6e2f0\], html.vb-gray .vb-themed.text-\[\#d6e2f0\] { color: #eceef2 !important; }
+html.vb-gray .vb-themed .text-\[\#c8d2e0\], html.vb-gray .vb-themed.text-\[\#c8d2e0\] { color: #dcdfe5 !important; }
+
+html.vb-superdark .vb-themed .hover\:bg-\[\#1a2230\]:hover { background-color: #141414 !important; }
+html.vb-gray .vb-themed .hover\:bg-\[\#1a2230\]:hover { background-color: #3a3d43 !important; }
+
 /* ---------------- Phones ----------------
    Short landscape screens (a phone turned sideways): everything sized in rem gets smaller, so menus fit. */
 @media (pointer: coarse) and (max-height: 500px), (max-height: 430px) and (max-width: 1000px) {

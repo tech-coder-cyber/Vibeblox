@@ -1100,6 +1100,9 @@ function buildMobModel(kind: MobKind | 'player', variant = 0): MobModel {
     box(head, [2, 2, 1], [0, 0, 0], [-2, 4, -1.5], earM);
     box(head, [2, 2, 1], [0, 0, 0], [2, 4, -1.5], earM);
     box(root, [2, 2, 8], [0, 12.5, 6.5], [0, -2.5, 3], mat(fur())); // the tail, hanging down behind
+    const collar = box(root, [7, 2, 6.4], [0, 11.5, -3.5], [0, 0, 0], mat(mobTex('#d62a2a', ['#b81f1f', '#ea4040'], 0.15))); // a red collar: only once it is tamed
+    collar.visible = false;
+    root.userData.collar = collar;
   } else if (kind === 'creeper') {
     const camo = () => mobTex('#4caf3f', ['#2f7d2a', '#7ad66b', '#3c9a33'], 0.45);
     const legM = mat(camo());
@@ -8101,7 +8104,7 @@ export type GameHandle = {
   /** Experience: drop orbs worth this much at your feet. */
   dropXp: (amount: number) => void;
   /** For tests and tools: a plain look at mobs and orbs. */
-  debugMobs: () => Array<{ id: number; kind: string; baby: boolean; sheared: boolean; color: number; fire: number; love: number; health: number; x: number; y: number; z: number; width: number; height: number; charge: number; team: number; goal: string | null; shop: boolean; botName?: string; role?: string; style?: string; climbing?: string; bridging?: boolean; yaw?: number; tier?: number; coins?: number }>;
+  debugMobs: () => Array<{ tame?: boolean; sit?: boolean; id: number; kind: string; baby: boolean; sheared: boolean; color: number; fire: number; love: number; health: number; x: number; y: number; z: number; width: number; height: number; charge: number; team: number; goal: string | null; shop: boolean; botName?: string; role?: string; style?: string; climbing?: string; bridging?: boolean; yaw?: number; tier?: number; coins?: number }>;
   debugOrbs: () => Array<{ value: number; size: string; x: number; y: number; z: number }>;
   debugDoorCracks: () => Array<{ key: string; stage: number }>;
   onPlayerDeath: (cb: (reason: string) => void) => void;
@@ -10505,6 +10508,7 @@ export function createVoxelGame(
     bot?: BotBrain; // minigame bots: what they're up to
     shop?: Trade[]; // an EggWars shopkeeper: its own trades, and nobody can hurt it
     persistent?: boolean; // never despawns when you walk away
+    tame?: boolean; sit?: boolean; // wolves: tamed with a bone (follows you, fights for you), and told to sit
     fx?: { poison: number; slow: number; regen: number }; // potion effects (seconds left)
     nameTag?: string; nt?: NameTag; // given with a name tag
   };
@@ -12156,7 +12160,7 @@ export function createVoxelGame(
     if (byPlayer) {
       if (m.kind === 'iron_golem') m.grudge = 25;
       // Hit a wolf and it (and every wolf near it) comes for you
-      if (m.kind === 'wolf') for (const o of mobs) if (o.kind === 'wolf' && o.deathTime < 0 && o.pos.distanceTo(m.pos) < 20) o.grudge = 45;
+      if (m.kind === 'wolf' && !m.tame) for (const o of mobs) if (o.kind === 'wolf' && !o.tame && o.deathTime < 0 && o.pos.distanceTo(m.pos) < 20) o.grudge = 45;
       // Golems protect villagers: hurt one and every golem nearby comes for you
       if (m.kind === 'villager') for (const g of mobs) if (g.kind === 'iron_golem' && g.pos.distanceTo(m.pos) < 32) g.grudge = 25;
       // Piglins stick together
@@ -12533,7 +12537,7 @@ export function createVoxelGame(
   function useOnMob(m: Mob): boolean {
     if (m.deathTime >= 0) return false;
     const st = slots[selectedSlot];
-    if (!st) return false;
+    if (!st && !(m.kind === 'wolf' && m.tame)) return false; // (an empty hand can still tell a tame wolf to sit)
     if (m.kind === 'sheep' && heldItem === ITEM_SHEARS) {
       if (m.baby) { showHint('A baby sheep has no wool yet'); return true; }
       if (m.sheared) { showHint('This sheep has already been sheared'); return true; }
@@ -12562,13 +12566,34 @@ export function createVoxelGame(
     }
     if (heldItem === ITEM_NAME_TAG) {
       if (m.kind === 'bot') return false;
-      const nm = (st.name ?? '').trim();
+      const nm = (st?.name ?? '').trim();
       if (!nm) { showHint('Rename the Name Tag in an Anvil first'); return true; }
       nameMob(m, nm);
       consumeHeld(1);
       playSfx('pop', m.pos);
       punchPhase = PUNCH_DURATION;
       return true;
+    }
+    // Wolves: a bone tames one (it follows you and fights for you), and a tamed wolf can be told to sit
+    if (m.kind === 'wolf') {
+      if (!m.tame && heldItem === ITEM_BONE) {
+        consumeHeld(1);
+        playSfx('eat', m.pos);
+        punchPhase = PUNCH_DURATION;
+        if (Math.random() < 1 / 3) {
+          m.tame = true; m.grudge = 0; m.angry = false; m.persistent = true; m.health = Math.max(m.health, 20);
+          const c = m.model.root.userData.collar as THREE.Object3D | undefined; if (c) c.visible = true;
+          spawnHearts(m); playSfx('pop', m.pos);
+          showHint('The wolf is tamed! It follows you and fights for you. Right-click it to sit.');
+        } else spawnParticles(m.pos.clone().add(new THREE.Vector3(0, 1, 0)), ['#cfcfcf', '#9a9a9a'], 5, 1, 0.1, 0.6);
+        return true;
+      }
+      if (m.tame) {
+        if (heldItem === ITEM_BONE || heldItem === ITEM_BEEF || heldItem === ITEM_STEAK) { if (m.health < 20) { m.health = Math.min(20, m.health + 6); consumeHeld(1); playSfx('eat', m.pos); spawnHearts(m, 'green'); return true; } }
+        m.sit = !m.sit;
+        showHint(m.sit ? 'The wolf sits.' : 'The wolf follows you.');
+        return true;
+      }
     }
     // Breeding food: wheat for cows and sheep, seeds for chickens, apples for pigs
     if (BREED_FOOD[m.kind] === heldItem && heldItem !== null) {
@@ -13009,6 +13034,22 @@ export function createVoxelGame(
           }
         } else {
           homeSteer(info.speed * 0.6);
+        }
+      } else if (m.kind === 'wolf' && m.tame) {
+        // A tamed wolf: sits when told, otherwise follows you, bites monsters that come near, and hurries back if you get far away
+        if (m.sit) { m.moving = false; }
+        else {
+          const victim = nearestMob(m, ['zombie', 'skeleton', 'spider', 'cinderbone', 'creeper'], 9);
+          if (dh > 26) { m.pos.set(feet.x + (Math.random() - 0.5) * 3, feet.y + 0.2, feet.z + (Math.random() - 0.5) * 3); m.velY = 0; }
+          else if (victim) {
+            const cdx = victim.pos.x - m.pos.x, cdz = victim.pos.z - m.pos.z, cd = Math.hypot(cdx, cdz) || 0.001;
+            m.targetYaw = yawToward(cdx, cdz); m.moving = true;
+            if (cd > 1.5) { wantX = (cdx / cd) * info.speed * 1.4; wantZ = (cdz / cd) * info.speed * 1.4; }
+            else if (m.attackCooldown <= 0 && m.onGround) { m.attackCooldown = 1; m.attackAnim = 0.35; hurtMob(victim, 4, m.pos, 5, false, false); playMobSound('wolf', m.pos, false); }
+          } else if (dh > 4) {
+            m.targetYaw = yawToward(dx, dz); m.moving = true;
+            wantX = (dx / dh) * info.speed * (dh > 9 ? 1.5 : 1.1); wantZ = (dz / dh) * info.speed * (dh > 9 ? 1.5 : 1.1);
+          } else wander(info.speed * 0.4);
         }
       } else if (m.kind === 'wolf') {
         // Peaceful until you hit one; then it runs you down and bites
@@ -19247,7 +19288,7 @@ export function createVoxelGame(
     isSleeping: () => sleeping !== null,
     setSleepOnline: (on) => { sleepOnline = on; },
     dropXp: (amount) => spawnXpOrbs(amount, playerFeet().add(new THREE.Vector3(0, 1, 0))),
-    debugMobs: () => mobs.filter((m) => m.deathTime < 0).map((m) => ({ id: m.id, kind: m.kind, baby: m.baby, sheared: m.sheared, color: m.variant, fire: m.fire, love: m.love, health: m.health, x: m.pos.x, y: m.pos.y, z: m.pos.z, width: infoOf(m).width, height: infoOf(m).height, charge: m.charge, team: m.team, goal: m.bot?.goal ?? null, shop: !!m.shop, botName: m.bot?.name, role: m.bot?.role, style: m.bot?.style, climbing: m.bot?.climbing, bridging: m.bot?.bridging, yaw: m.yaw, tier: m.bot?.tier, coins: m.bot?.coins })),
+    debugMobs: () => mobs.filter((m) => m.deathTime < 0).map((m) => ({ tame: !!m.tame, sit: !!m.sit, id: m.id, kind: m.kind, baby: m.baby, sheared: m.sheared, color: m.variant, fire: m.fire, love: m.love, health: m.health, x: m.pos.x, y: m.pos.y, z: m.pos.z, width: infoOf(m).width, height: infoOf(m).height, charge: m.charge, team: m.team, goal: m.bot?.goal ?? null, shop: !!m.shop, botName: m.bot?.name, role: m.bot?.role, style: m.bot?.style, climbing: m.bot?.climbing, bridging: m.bot?.bridging, yaw: m.yaw, tier: m.bot?.tier, coins: m.bot?.coins })),
     debugDoorCracks,
     debugOrbs: () => xpOrbs.map((o) => ({ value: o.value, size: xpOrbSize(o.value), x: o.pos.x, y: o.pos.y, z: o.pos.z })),
     onPlayerDeath: (cb: (reason: string) => void) => { deathCallback = cb; },

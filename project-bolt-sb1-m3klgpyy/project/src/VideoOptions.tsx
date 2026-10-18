@@ -1,7 +1,7 @@
 // The extra video settings: clouds, stars, fast render, frame cap, bobbing and dynamic FOV.
 import { useState, useSyncExternalStore } from 'react';
 import { getVideo, updateVideo, subscribeVideo, CLOUD_HEIGHT_RANGE, FPS_RANGE, type CloudMode } from './videoPrefs';
-import { useTheme, setTheme } from './layout';
+import { useTheme, setTheme, THEMES, type Theme } from './layout';
 
 const card = 'bg-[#121822] rounded-2xl border border-[#243044] p-6';
 
@@ -40,13 +40,13 @@ export default function VideoOptions() {
       <section className={card} data-testid="video-theme">
         <div className="mb-3">
           <label className="text-white text-sm font-medium">Theme</label>
-          <p className="text-[#5a6b80] text-xs mt-0.5">Light or dark menus (the game itself doesn't change).</p>
+          <p className="text-[#5a6b80] text-xs mt-0.5">Dark, Super Dark (black), Gray or Light menus (the game itself doesn't change). It's remembered.</p>
         </div>
-        <div className="grid grid-cols-2 gap-2">
-          {(['dark', 'light'] as const).map((t) => (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {THEMES.map((t: Theme) => (
             <button key={t} onClick={() => setTheme(t)} data-testid={`theme-${t}`} aria-pressed={theme === t}
               className={`py-2.5 rounded-xl border text-sm font-medium transition-all ${theme === t ? 'bg-[#00e676]/15 border-[#00e676] text-[#00e676]' : 'bg-[#0a0e14] border-[#243044] text-[#8ea0b8] hover:text-white'}`}>
-              {t === 'dark' ? '🌙 Dark' : '☀️ Light'}
+              {t === 'dark' ? '🌙 Dark' : t === 'superdark' ? '⚫ Super Dark' : t === 'gray' ? '🩶 Gray' : '☀️ Light'}
             </button>
           ))}
         </div>

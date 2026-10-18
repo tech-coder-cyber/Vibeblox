@@ -37,8 +37,9 @@ export type ShaderPrefs = {
 export type ShaderPack = { name: string; settings?: Partial<Omit<ShaderPrefs, 'custom' | 'pack'>>; grade?: Partial<Grade>; glsl?: string };
 
 export const DEFAULT_SHADERS: ShaderPrefs = {
-  custom: false, lighting: 'fancy', dynamicLighting: false, globalIllumination: 'low', volumetricFog: false, godRays: 'high',
-  bloom: 55, eyeAdaptation: 0, motionBlur: false, waterShaders: true, shadows: 'medium', grassWave: true, pack: null,
+  // The plain, fast look (what Medium graphics draws): no bloom, god rays, fog, shadows or waving grass. Turn on what you like.
+  custom: false, lighting: 'fast', dynamicLighting: false, globalIllumination: 'off', volumetricFog: false, godRays: 'off',
+  bloom: 0, eyeAdaptation: 0, motionBlur: false, waterShaders: false, shadows: 'none', grassWave: false, pack: null,
 };
 export const NEUTRAL_GRADE: Grade = { saturation: 1, contrast: 1, brightness: 1, warmth: 0, vignette: 0 };
 

@@ -22,7 +22,7 @@ type Role = 'owner' | 'coowner' | 'admin' | null;
 const roleLevel = (r: Role) => (r === 'owner' ? 3 : r === 'coowner' ? 2 : r === 'admin' ? 1 : 0);
 const SCRIPT_PERMS = ['off', 'all', 'admin', 'owner'];
 /** Everything a player needs to keep this world running after its host leaves (they become the new host). */
-export type Handoff = { seed: number; worldType: RoomOptions['worldType']; mode: RoomOptions['mode']; changes: NetBlock[]; time: number; weather: 'clear' | 'rain' | 'snow' | 'thunder'; settings: Settings; ranks: unknown; roles: RoleMap; bans: string[]; privacy: Privacy; maxPlayers: number; owner: string; experimental: boolean; name: string };
+export type Handoff = { seed: number; worldType: RoomOptions['worldType']; mode: RoomOptions['mode']; changes: NetBlock[]; time: number; weather: 'clear' | 'rain' | 'snow' | 'thunder'; settings: Settings; ranks: unknown; roles: RoleMap; bans: string[]; privacy: Privacy; maxPlayers: number; owner: string; experimental: boolean; name: string; /** the saved copy's id (see the sleeping worlds) */ sid?: string };
 
 // ---------------- Online EggWars and Bridge Duels ----------------
 /** An online minigame: teams of real players. The room keeps the score, eggs, who is out, and the countdowns. */
@@ -69,6 +69,8 @@ export type RoomServices = {
 };
 
 export type RoomOptions = {
+  /** The id the world's saved copy goes by (a world that keeps existing after its host leaves) */
+  sid?: string;
   seed: number;
   worldType: 'default' | 'superflat' | 'eggwars' | 'bridge';
   /** An online EggWars / Bridge Duels match (worldType is then the arena) */
@@ -886,6 +888,17 @@ export class HostRoom {
     if (privacy === 'private') for (const p of this.players.values()) if (!p.conn.local) p.conn.close(4007, 'The host made this world private');
   }
 
+  /** Everything needed to run this world somewhere else (a player taking over, or a sleeping world woken up later). */
+  snapshot(): Handoff {
+    const changes: NetBlock[] = [];
+    for (const [k, b] of this.changes) { const [x, y, z] = k.split(',').map(Number); changes.push([x, y, z, b]); }
+    return {
+      seed: this.opts.seed, worldType: this.opts.worldType, mode: this.opts.mode, changes, time: this.currentTime(), weather: this.weather,
+      settings: { ...this.settings }, ranks: this.ranks, roles: this.getRoles(), bans: this.bans.slice(), privacy: this.privacy,
+      maxPlayers: this.opts.maxPlayers, owner: this.owner, experimental: !!this.opts.experimental, name: (this.opts.worldName ?? `${this.opts.hostName}'s world`).slice(0, 40), sid: this.opts.sid,
+    };
+  }
+
   /**
    * The host is leaving, but the world stays open: the player who has been here longest (admins and co-owners first,
    * signed-in players only) gets everything needed to run it, and everyone else is told to reconnect to them.
@@ -897,13 +910,7 @@ export class HostRoom {
       .sort((a, b) => roleLevel(this.roleOf(b)) - roleLevel(this.roleOf(a)) || a.joinedAt - b.joinedAt);
     const next = others[0];
     if (!next) return null;
-    const changes: NetBlock[] = [];
-    for (const [k, b] of this.changes) { const [x, y, z] = k.split(',').map(Number); changes.push([x, y, z, b]); }
-    const state: Handoff = {
-      seed: this.opts.seed, worldType: this.opts.worldType, mode: this.opts.mode, changes, time: this.currentTime(), weather: this.weather,
-      settings: { ...this.settings }, ranks: this.ranks, roles: this.getRoles(), bans: this.bans.slice(), privacy: this.privacy,
-      maxPlayers: this.opts.maxPlayers, owner: this.owner, experimental: !!this.opts.experimental, name: (this.opts.worldName ?? `${this.opts.hostName}'s world`).slice(0, 40),
-    };
+    const state = this.snapshot();
     next.conn.send({ t: 'becomeHost', room: newRoomId, state });
     for (const o of this.players.values()) if (o.joined && !o.conn.local && o !== next) o.conn.send({ t: 'migrate', room: newRoomId, host: next.name });
     this.system(`${this.opts.hostName} left. ${next.name} is keeping the world open.`);

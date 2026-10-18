@@ -2,11 +2,26 @@
 // a small update to the current one is a point release (Indev 26.1, 26.2...), a big one is the next number.
 //
 // The News page in the sidebar shows this list, and a dot appears on it until the newest one has been read.
-export const GAME_VERSION = 28;
+export const GAME_VERSION = 29;
 
 export type NewsEntry = { version: number; date: string; title: string; changes: string[] };
 
 export const NEWS: NewsEntry[] = [
+  {
+    version: 29,
+    date: 'October 18, 2026',
+    title: 'Sleeping worlds, tameable wolves, Super Dark and Gray themes',
+    changes: [
+      'Join a world even when its host has left: while someone hosts, a saved copy of the world is kept online. When nobody is running it any more it shows on the Servers page as a "Sleeping world". Press "Wake up & join" and it starts on your device from the saved copy, with its blocks, time, rules, roles and bans, and other players can join you from the list. Run vibeblox_indev29.sql in Supabase to turn this on.',
+      'Tame a wolf with a bone (it can take a few tries): it gets a red collar, follows you, bites monsters that come near, and hurries back if you wander off. Right-click it to make it sit or follow, or feed it a bone or meat to heal it.',
+      'Two new menu themes: Super Dark (pure black) and Gray, next to Dark and Light in Settings > Video > Theme. Your choice is remembered.',
+      'The default look is now plain and fast: Shaders start with no bloom, shadows, god rays or waving grass, and graphics are Medium. Everything you change is saved and stays after you reload.',
+      'Your rank shows before your name on your profile card: [OWNER], [HELPER], [MOD], [Vanguard], [Elite] or [Champion].',
+      'The Jetpacks mod is in Mods (iron, gold and diamond jetpacks, hold right-click to fly, burns Jet Fuel). Turn it on there.',
+      'Fixed: re-running the Supabase SQL no longer stops with "cannot change return type of existing function". Every function that changed shape is dropped first, so the file is safe to run again and again.',
+      'Fixed: clicking a friend opens the chat again (their picture opens their profile).',
+    ],
+  },
   {
     version: 28,
     date: 'October 18, 2026',

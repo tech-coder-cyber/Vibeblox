@@ -86,9 +86,9 @@ export default function AdminPanel(props: Props) {
             </div>
             <div className="text-[#5a6b80] text-xs">Signed in as {account.username}{owner ? ' · the owner of VibeBlox' : ''}</div>
           </div>
-          <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} data-testid="admin-theme" title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
+          <button onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')} data-testid="admin-theme" title={theme === 'light' ? 'Dark mode' : 'Light mode'}
             className="w-9 h-9 rounded-lg text-[#8ea0b8] hover:text-white hover:bg-[#1a2230] flex items-center justify-center" aria-label="Switch light or dark mode">
-            {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+            {theme === 'light' ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
           </button>
           <button onClick={onClose} className="w-9 h-9 rounded-lg text-[#8ea0b8] hover:text-white hover:bg-[#1a2230] flex items-center justify-center" aria-label="Close"><X className="w-5 h-5" /></button>
         </div>

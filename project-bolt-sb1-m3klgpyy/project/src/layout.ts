@@ -15,13 +15,14 @@ function subscribe(f: () => void): () => void {
 export function useCompactLayout(): boolean { return useSyncExternalStore(subscribe, isCompactScreen, () => false); }
 
 // ---------------- Light / dark mode ----------------
-// The menus (home, settings, Esc pages, the Admin panel) can be light or dark. The game itself never changes.
+// The menus (home, settings, Esc pages, the Admin panel) can be dark, super dark (black), gray or light. The game itself never changes.
 // Light mode is a set of CSS overrides in index.css that apply inside elements marked with the class "vb-themed".
-export type Theme = 'dark' | 'light';
+export type Theme = 'dark' | 'light' | 'superdark' | 'gray';
+export const THEMES: Theme[] = ['dark', 'superdark', 'gray', 'light'];
 const THEME_KEY = 'vb-theme';
-let theme: Theme = (() => { try { return localStorage.getItem(THEME_KEY) === 'light' ? 'light' : 'dark'; } catch { return 'dark'; } })();
+let theme: Theme = (() => { try { const v = localStorage.getItem(THEME_KEY) as Theme | null; return v && THEMES.includes(v) ? v : 'dark'; } catch { return 'dark'; } })();
 const themeListeners = new Set<() => void>();
-function applyTheme() { try { document.documentElement.classList.toggle('vb-light', theme === 'light'); } catch { /* no document */ } }
+function applyTheme() { try { const c = document.documentElement.classList; c.toggle('vb-light', theme === 'light'); c.toggle('vb-superdark', theme === 'superdark'); c.toggle('vb-gray', theme === 'gray'); } catch { /* no document */ } }
 applyTheme();
 export const getTheme = () => theme;
 export function setTheme(t: Theme) {

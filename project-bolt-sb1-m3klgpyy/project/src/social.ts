@@ -338,6 +338,48 @@ export function cleanWorldImage(img?: string): string | null {
   if (/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(img) && img.length <= 60_000) return img;
   return null;
 }
+// ---------------- Sleeping worlds (join even when the host has left) ----------------
+// While a world is hosted its snapshot is saved to the database (vibeblox_indev29.sql). When nobody runs it any more the
+// world is "sleeping": the first player who joins wakes it up and hosts it from the snapshot.
+export type SleepingWorld = { id: string; name: string; owner: string; mode: string; worldType: string; privacy: 'public' | 'accounts' | 'friends'; max: number; updatedAt: string };
+export type WorldSnapshotData = Record<string, unknown> & { seed: number; changes: Array<[number, number, number, number]> };
+export type WokenWorld = { id: string; name: string; owner: string; mode: string; worldType: string; privacy: 'public' | 'accounts' | 'friends'; maxPlayers: number; data: WorldSnapshotData };
+/** Snapshots bigger than this are not saved (the world then simply goes away with its host, like before). */
+export const MAX_SNAPSHOT_CHARS = 2_500_000;
+let snapshotsAvailable = true;
+export async function saveWorldSnapshot(w: { id: string; name: string; mode: string; worldType: string; privacy: string; max: number; data: WorldSnapshotData }): Promise<Result<{ saved: boolean }>> {
+  if (!snapshotsAvailable || !HOSTED_ID_RE.test(w.id)) return fail('not available');
+  if (JSON.stringify(w.data).length > MAX_SNAPSHOT_CHARS) return fail('The world is too big to keep while nobody is hosting it');
+  const r = await rest('POST', 'rpc/save_world_snapshot', { p_id: w.id, p_name: w.name.slice(0, 40) || 'World', p_mode: w.mode, p_world_type: w.worldType === 'superflat' ? 'superflat' : 'default', p_privacy: w.privacy, p_max: w.max, p_data: w.data });
+  if (!r.ok && r.status === 404) { snapshotsAvailable = false; return fail('Sleeping worlds are not set up yet (run vibeblox_indev29.sql in Supabase)'); }
+  return r.ok ? { ok: true, saved: r.data === true } : fail(r.error);
+}
+/** The host left for good: the world goes to sleep. */
+export async function releaseWorld(id: string): Promise<void> { if (snapshotsAvailable && HOSTED_ID_RE.test(id)) await rest('POST', 'rpc/release_world', { p_id: id }); }
+/** Delete the saved copy of a world you own. */
+export async function deleteWorldSnapshot(id: string): Promise<void> { if (snapshotsAvailable && HOSTED_ID_RE.test(id)) await rest('POST', 'rpc/delete_world_snapshot', { p_id: id }); }
+export async function listSleepingWorlds(): Promise<Result<{ worlds: SleepingWorld[] }>> {
+  if (!snapshotsAvailable) return { ok: true, worlds: [] };
+  const r = await rest('POST', 'rpc/list_sleeping_worlds', {});
+  if (!r.ok && r.status === 404) { snapshotsAvailable = false; return { ok: true, worlds: [] }; }
+  if (!r.ok) return fail(r.error);
+  const rows = (Array.isArray(r.data) ? r.data : []) as Array<{ id: string; name: string; owner_name: string; mode: string; world_type: string; privacy: string; max_players: number; updated_at: string }>;
+  return { ok: true, worlds: rows.map((x) => ({ id: x.id, name: x.name, owner: x.owner_name, mode: x.mode, worldType: x.world_type, privacy: x.privacy === 'friends' || x.privacy === 'accounts' ? x.privacy : 'public', max: Number(x.max_players) || 18, updatedAt: x.updated_at })) };
+}
+/** Wake a sleeping world: you get its snapshot and you are the one hosting it from now on. */
+export async function claimWorld(id: string): Promise<Result<{ world: WokenWorld }>> {
+  if (!HOSTED_ID_RE.test(id)) return fail('Bad world id');
+  const r = await rest('POST', 'rpc/claim_world', { p_id: id });
+  if (!r.ok) {
+    const m = /world is awake|no such world|sign in first/.exec(String(r.error));
+    return fail(m ? ({ 'world is awake': 'Someone just woke that world up. Look for it in the open worlds.', 'no such world': 'That world is not there any more.', 'sign in first': 'Sign in to join worlds.' } as Record<string, string>)[m[0]] : r.error);
+  }
+  const x = r.data as { id: string; name: string; owner: string; mode: string; worldType: string; privacy: string; maxPlayers: number; data: WorldSnapshotData } | null;
+  if (!x || !x.data || typeof x.data.seed !== 'number') return fail('That world could not be loaded.');
+  return { ok: true, world: { id: x.id, name: x.name, owner: x.owner, mode: x.mode, worldType: x.worldType, privacy: x.privacy === 'friends' || x.privacy === 'accounts' ? x.privacy : 'public', maxPlayers: Number(x.maxPlayers) || 18, data: x.data } };
+}
+/** A leaving host passes the saved world to the player who takes over. */
+export async function transferWorld(id: string, toName: string): Promise<void> { if (snapshotsAvailable && HOSTED_ID_RE.test(id)) await rest('POST', 'rpc/transfer_world', { p_id: id, p_to: toName }); }
 export async function unpublishHostedWorld(id: string): Promise<void> {
   if (!HOSTED_ID_RE.test(id)) return;
   await rest('DELETE', `hosted_worlds?id=eq.${id}`);

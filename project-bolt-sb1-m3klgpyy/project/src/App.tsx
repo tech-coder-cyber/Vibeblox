@@ -55,7 +55,8 @@ import { fetchLoyalty, claimLoyalty, type LoyaltyInfo } from './social';
 import { WORLD_TAGS, MAX_WORLD_TAGS, cleanTags, toggleTag, tagInfo } from './worldTags';
 import { fetchProfile, type PlayerProfile, type Account } from './social';
 import { openProfile, setProfileOpener } from './profileBus';
-import { setWorldLike, saveProgressToAccount, loadProgressFromAccount, fetchLevelLeaderboard, reportCheat, cleanWorldImage, type LevelRow, addFriend, unfriendByName, loadFriends, sendDM, startPolling, isGuestName, reportActivity, fetchPlayingCounts, fetchLeaderboard, fetchStanding, recordPlay, setServerPresence, isOwnerName, listHostedWorlds, publishHostedWorld, unpublishHostedWorld, verifyToken, isFriendOf, isBannedName, isAdminToken, banEverywhere, unbanEverywhere, type DM, type Activity, type Friend, type LeaderRow, type Standing, type HostedWorld } from './social';
+import { setWorldWaker, wakeWorld } from './wakeBus';
+import { saveWorldSnapshot, releaseWorld, deleteWorldSnapshot, listSleepingWorlds, claimWorld, transferWorld, type SleepingWorld, setWorldLike, saveProgressToAccount, loadProgressFromAccount, fetchLevelLeaderboard, reportCheat, cleanWorldImage, type LevelRow, addFriend, unfriendByName, loadFriends, sendDM, startPolling, isGuestName, reportActivity, fetchPlayingCounts, fetchLeaderboard, fetchStanding, recordPlay, setServerPresence, isOwnerName, listHostedWorlds, publishHostedWorld, unpublishHostedWorld, verifyToken, isFriendOf, isBannedName, isAdminToken, banEverywhere, unbanEverywhere, type DM, type Activity, type Friend, type LeaderRow, type Standing, type HostedWorld } from './social';
 
 // Multiplayer is optional: Vite only includes src/multiplayer.ts if the file
 // exists, so deleting it (or the server folder) never breaks the game.
@@ -74,7 +75,7 @@ const PRIVACY_INFO: Record<WorldPrivacy, { label: string; hint: string }> = {
 };
 const PRIVACY_ORDER: WorldPrivacy[] = ['public', 'accounts', 'friends', 'private'];
 type AntiCheatLike = { settings: AcSettings };
-type HostRoomLike = { count: number; full: boolean; setPrivacy(p: WorldPrivacy): void; stop(reason?: string): void; anticheat?: AntiCheatLike; handOff?(newRoomId: string): string | null; setRole?(byRole: ServerRole | null, byName: string, name: string, to: 'admin' | 'coowner' | 'none'): string; getRoles?(): Record<string, 'admin' | 'coowner'>; owner?: string };
+type HostRoomLike = { count: number; full: boolean; setPrivacy(p: WorldPrivacy): void; stop(reason?: string): void; anticheat?: AntiCheatLike; handOff?(newRoomId: string): string | null; snapshot?(): Record<string, unknown> & { seed: number; changes: Array<[number, number, number, number]> }; setRole?(byRole: ServerRole | null, byName: string, name: string, to: 'admin' | 'coowner' | 'none'): string; getRoles?(): Record<string, 'admin' | 'coowner'>; owner?: string };
 /** Anti-cheat (anticheat.ts): an alert about a player in the world you host, and its switches. */
 type CheatAlertLike = { at: number; id: number; player: string; kind: string; detail: string; points: number };
 type AcSettings = { enabled: boolean; autoKick: boolean; kickAt: number };
@@ -978,6 +979,8 @@ type WorldConfig = {
   roles?: Record<string, 'admin' | 'coowner'>; // admins and co-owners the owner promoted (lowercase names)
   description?: string;   // shown with the world's picture on the Servers page while it is open
   tags?: string[];        // up to three server tags (Survival, PvP...) shown on the Servers page
+  owner?: string;         // a world woken up from the Servers page keeps its first owner (roles and Manage Server follow them)
+  sharedId?: string;      // the id of this world's saved copy online, so it can be joined even when its host has left
 };
 
 const modeConfig: Record<WorldMode, { image: string; tag: string; accent: string; icon: typeof Swords; description: string }> = {
@@ -2319,7 +2322,7 @@ function DailyCard() {
 }
 
 /** Your rank, whether you are a Rising Creator, and your plays: provided by App, read by the shop and the panels. */
-const StandingContext = createContext<{ rank: RankId; rising: boolean; tier: CreatorTier; isOwner: boolean; standing: Standing | null; signedIn: boolean; /** known not to be signed in: worlds, levels, the shop and social are switched off */ guest: boolean }>({ rank: 'none', rising: false, tier: 'none', isOwner: false, standing: null, signedIn: false, guest: false });
+const StandingContext = createContext<{ /** the tags shown before your name: [OWNER], [MOD], [Elite] ... */ nameTags?: string[]; rank: RankId; rising: boolean; tier: CreatorTier; isOwner: boolean; standing: Standing | null; signedIn: boolean; /** known not to be signed in: worlds, levels, the shop and social are switched off */ guest: boolean }>({ rank: 'none', rising: false, tier: 'none', isOwner: false, standing: null, signedIn: false, guest: false });
 /** Lets the profile panel (right side of Home) open the daily reward window. */
 const DailyUiContext = createContext<{ openDaily: () => void }>({ openDaily: () => {} });
 
@@ -2602,7 +2605,7 @@ function LeaderboardView({ username }: { username: string }) {
 function MobileProfileBar({ username, onPlayNow }: { username: string; onPlayNow: () => void }) {
   useLanguage();
   const p = useProgress();
-  const { guest } = useContext(StandingContext);
+  const { guest, nameTags } = useContext(StandingContext);
   const curXp = xpForLevel(p.level), nextXp = xpForLevel(p.level + 1);
   const pct = Math.max(0, Math.min(100, ((p.xp - curXp) / (nextXp - curXp)) * 100));
   return (
@@ -2611,7 +2614,7 @@ function MobileProfileBar({ username, onPlayNow }: { username: string; onPlayNow
       <button onClick={() => openProfile(username || 'PlayerOne')} aria-label="Your profile" className="shrink-0"><HeadAvatar className="w-12 h-12" width={96} height={96} fallback={(username || 'P').charAt(0).toUpperCase()} /></button>
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-2">
-          <span className="text-white text-sm font-bold truncate">{username || 'PlayerOne'}</span>
+          <span className="text-white text-sm font-bold truncate" data-testid="mobile-name">{!guest && (nameTags ?? []).map((tg, i) => <span key={i} className="mr-1"><FancyText text={tg} /></span>)}{username || 'PlayerOne'}</span>
           <span className={`text-[#8ea0b8] text-[11px] shrink-0 ${guest ? 'opacity-40' : ''}`} data-testid="panel-level">{t('profile.level', { n: p.level })} · {p.coins} coins</span>
         </div>
         <div className="h-1.5 mt-1.5 bg-[#0a0e14] rounded-full overflow-hidden"><div className="h-full bg-gradient-to-r from-[#00e676] to-[#00b248]" style={{ width: `${pct}%` }} /></div>
@@ -2782,7 +2785,7 @@ function ProfileModal({ name, me, onClose }: { name: string; me: Account | null;
 function ProfilePanel({ username, onOpenLeaderboard }: { username: string; onOpenLeaderboard: () => void }) {
   useLanguage();
   const p = useProgress();
-  const { rising, tier, signedIn, guest } = useContext(StandingContext);
+  const { rising, tier, signedIn, guest, nameTags } = useContext(StandingContext);
   const displayName = username || 'PlayerOne';
   const initial = username ? username.charAt(0).toUpperCase() : 'P';
   const curXp = xpForLevel(p.level), nextXp = xpForLevel(p.level + 1);
@@ -2795,7 +2798,10 @@ function ProfilePanel({ username, onOpenLeaderboard }: { username: string; onOpe
             <HeadAvatar className="w-16 h-16" width={128} height={128} fallback={initial} />
           </button>
           <div className="min-w-0">
-            <button onClick={() => openProfile(displayName)} data-testid="panel-name" className="block text-left font-[var(--font-display)] text-white text-sm truncate max-w-[160px] hover:underline">{displayName}</button>
+            <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0 text-sm" data-testid="panel-namerow">
+              {!guest && (nameTags ?? []).length > 0 && <span className="shrink-0 font-bold" data-testid="panel-tags">{(nameTags ?? []).map((tg, i) => <span key={i} className="mr-1"><FancyText text={tg} /></span>)}</span>}
+              <button onClick={() => openProfile(displayName)} data-testid="panel-name" className="block text-left font-[var(--font-display)] text-white text-sm truncate max-w-[160px] hover:underline">{displayName}</button>
+            </div>
             <p className="text-[#5a6b80] text-xs">{signedIn ? 'Online' : 'Guest'}</p>
             {rising && <div className="mt-1"><TierBadge tier={tier} small /></div>}
           </div>
@@ -5235,6 +5241,16 @@ function TagPicker({ value, onChange, disabled = false, testid = 'tag-picker' }:
   );
 }
 
+/** "5 min ago", "3 days ago": how long ago a world's host left. */
+function timeAgo(iso: string): string {
+  const mins = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+  if (!Number.isFinite(mins)) return '';
+  if (mins < 2) return 'just now';
+  if (mins < 120) return `${mins} min ago`;
+  const h = Math.round(mins / 60);
+  return h < 48 ? `${h} hours ago` : `${Math.round(h / 24)} days ago`;
+}
+
 type NetStatus = 'offline' | 'connecting' | 'online';
 
 function ServersView({ serverUrl, onServerUrlChange, onJoin, status, error, available }: {
@@ -5255,6 +5271,14 @@ function ServersView({ serverUrl, onServerUrlChange, onJoin, status, error, avai
   const [sortBy, setSortBy] = useState<'players' | 'likes'>('players');
   const [likeMsg, setLikeMsg] = useState<string | null>(null);
   const [liking, setLiking] = useState<string | null>(null);
+  const [sleeping, setSleeping] = useState<SleepingWorld[]>([]);
+  const [waking, setWaking] = useState<string | null>(null);
+  const [wakeError, setWakeError] = useState<string | null>(null);
+  async function wakeUp(w: SleepingWorld) {
+    setWaking(w.id); setWakeError(null);
+    const err = await wakeWorld(w.id);
+    if (err) { setWakeError(err); setWaking(null); }
+  }
   const signedIn = !!summary.username && !isGuestName(summary.username);
   /** Like or un-like a world: shows the change at once, then the real count from the database. */
   async function toggleLike(w: HostedWorld) {
@@ -5278,6 +5302,8 @@ function ServersView({ serverUrl, onServerUrlChange, onJoin, status, error, avai
       const r = await listHostedWorlds();
       if (!live) return;
       if (r.ok) { setWorlds(r.worlds); setListError(null); } else setListError(r.error);
+      const sl = await listSleepingWorlds();
+      if (live && sl.ok) setSleeping(sl.worlds);
     };
     void load();
     const t = window.setInterval(load, 8000);
@@ -5389,6 +5415,28 @@ function ServersView({ serverUrl, onServerUrlChange, onJoin, status, error, avai
             );
           })}
         </div>
+        {sleeping.length > 0 && (
+          <div className="mt-6" data-testid="sleeping-worlds">
+            <h3 className="text-white text-sm font-bold mb-1">💤 Sleeping worlds</h3>
+            <p className="text-[#8ea0b8] text-xs mb-3">Their host has left, but you can still join: the world wakes up on your device from its saved copy and others can join you.</p>
+            {wakeError && <p className="text-[#ff8a8a] text-xs mb-2" data-testid="wake-error">{wakeError}</p>}
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+              {sleeping.map((w) => (
+                <div key={w.id} className="rounded-2xl bg-[#0a0e14] border border-[#243044] p-3 flex flex-col gap-1.5" data-testid="sleeping-row">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-white text-sm font-bold truncate" data-testid="sleeping-name">{w.name}</span>
+                    <span className="shrink-0 px-2 py-0.5 rounded-md text-[10px] font-bold bg-[#243044] text-[#8ea0b8]">{w.mode.charAt(0).toUpperCase() + w.mode.slice(1)}{w.worldType === 'superflat' ? ' · Superflat' : ''}</span>
+                  </div>
+                  <div className="text-[#5a6b80] text-[11px]">by <span className="text-[#8ea0b8]">{w.owner}</span> · {timeAgo(w.updatedAt)}</div>
+                  <button disabled={!canJoin || connecting || !!waking || !signedIn} onClick={() => void wakeUp(w)} data-testid="sleeping-join"
+                    className="mt-1 w-full py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-[#00e676] to-[#00b248] text-[#0a0e14] disabled:opacity-50">
+                    {waking === w.id ? 'Waking up…' : !signedIn ? 'Sign in to join' : 'Wake up & join'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         <p className="text-[#5a6b80] text-[11px] mt-4 leading-relaxed">
           To open your own world, sign in and play it. Pick who can join (Public, Accounts only, Friends only or Private) when you create it, or in
           Esc → Manage Server. Players connect straight to your game, so it stays open only while you're playing.
@@ -6898,6 +6946,13 @@ export default function App() {
           }
         } catch { /* a broken save just starts fresh */ }
       }
+      // A sleeping world that was just woken up: its blocks and time come from the saved copy
+      const wake = pendingWakeRef.current;
+      if (wake && worldId && wake.worldId === worldId) {
+        pendingWakeRef.current = null;
+        try { handle.applyRemoteBlocks(wake.changes, true); handle.setTime(wake.time); handle.setWeather?.(wake.weather); } catch { /* a bad copy just starts fresh */ }
+        pushMessage(`You woke up ${wake.name}. Others can join you now.`, '#7cfc7c');
+      }
       // Your own world opens to others (as its privacy allows) a moment after it has loaded
       if (worldId && !mpRef.current) window.setTimeout(() => { if (gameHandleRef.current === handle) void maybeStartHostingRef.current(); }, 1200);
       handle.onEngineEvent((name, data) => {
@@ -7445,7 +7500,7 @@ export default function App() {
   }
 
   // ---------------- Hosting: your world, open to others while you play ----------------
-  type Hosting = { id: string; room: HostRoomLike; peer: { start(): Promise<void>; stop(): void }; worldId: string; privacy: WorldPrivacy; name: string; mode: string; worldType: string; max: number; timer: number; description?: string; image?: string; tags?: string[] };
+  type Hosting = { sid?: string; snapAt?: number; id: string; room: HostRoomLike; peer: { start(): Promise<void>; stop(): void }; worldId: string; privacy: WorldPrivacy; name: string; mode: string; worldType: string; max: number; timer: number; description?: string; image?: string; tags?: string[] };
   const hostingRef = useRef<Hosting | null>(null);
   const [hostingInfo, setHostingInfo] = useState<{ privacy: WorldPrivacy; players: number } | null>(null);
   function publishHosting() {
@@ -7453,6 +7508,16 @@ export default function App() {
     if (!hs || !me) return;
     void publishHostedWorld(me, { id: hs.id, name: hs.name, mode: hs.mode, worldType: hs.worldType, privacy: hs.privacy, players: hs.room.count, max: hs.max, description: hs.description, image: hs.image, tags: hs.tags });
     void setServerPresence('p2p:' + hs.id);
+    if (hs.sid && Date.now() - (hs.snapAt ?? 0) > 60_000) snapshotHosting(hs);
+  }
+  /** Saves a copy of the world you host online, so it can be joined even after you leave (a "sleeping world"). */
+  function snapshotHosting(hs: Hosting): Promise<unknown> {
+    const me = accountRef.current;
+    if (!hs.sid || !me || isGuestName(me.username) || hs.privacy === 'private' || !HOSTABLE_TYPES.includes(hs.worldType as WorldType)) return Promise.resolve();
+    const data = hs.room.snapshot?.();
+    if (!data) return Promise.resolve();
+    hs.snapAt = Date.now();
+    return saveWorldSnapshot({ id: hs.sid, name: hs.name, mode: hs.mode, worldType: hs.worldType, privacy: hs.privacy, max: hs.max, data }).catch(() => null);
   }
   /** Opens the world you're playing to others (unless it's private, you're a guest, or it's a minigame). */
   async function maybeStartHosting() {
@@ -7472,7 +7537,11 @@ export default function App() {
     const worldType = cfg.worldType === 'superflat' ? 'superflat' : 'default';
     const max = playerCap(isOwnerRef.current ? 'star' : myTierRef.current);
     const id = hMod.randomId(16);
+    // every world you open has a saved copy online, so it can be joined even when you are not playing it
+    let sid = cfg.sharedId;
+    if (!sid) { sid = hMod.randomId(16); const made = sid; setSavedWorlds((prev) => prev.map((w) => (w.id === worldId ? { ...w, sharedId: made } : w))); }
     const room = new hMod.HostRoom({
+      sid, owner: cfg.owner,
       seed: activeSeedRef.current, worldType, mode, changes: save.edits, time: save.time, weather: weatherRef.current,
       settings: serverSettingsRef.current, ranks: fakeRanksRef.current, experimental: !!cfg.experimental, privacy, hostName: me.username, maxPlayers: max, bans: cfg.bans ?? [],
       services: roomServices(me),
@@ -7484,7 +7553,7 @@ export default function App() {
       onAnticheat: (a: AcSettings) => setAcSettings(a),
     });
     const peer = new hMod.PeerHost(id, signalingFor(hMod), room);
-    hostingRef.current = { id, room, peer, worldId, privacy, name: cfg.name, mode, worldType, max, timer: 0, description: cfg.description, image: await listImage(cfg.image), tags: cleanTags(cfg.tags) };
+    hostingRef.current = { sid, id, room, peer, worldId, privacy, name: cfg.name, mode, worldType, max, timer: 0, description: cfg.description, image: await listImage(cfg.image), tags: cleanTags(cfg.tags) };
     joinedAddressRef.current = 'p2p:' + id;
     connectWith((mpMod as { MultiplayerClient: new () => MpClient }).MultiplayerClient, undefined, { hostSocket: hMod.loopback(room) });
     setHostingInfo({ privacy, players: 1 });
@@ -7616,7 +7685,9 @@ export default function App() {
     saveMpProgress();
     const worldType = st.worldType === 'superflat' ? 'superflat' : 'default';
     const mode = st.mode === 'creative' || st.mode === 'adventure' ? st.mode : 'survival';
+    const sid = typeof st.sid === 'string' ? st.sid : undefined;
     const room = new hMod.HostRoom({
+      sid,
       seed: st.seed, worldType, mode, changes: Array.isArray(st.changes) ? st.changes : [], time: Number(st.time) || 0, weather: st.weather ?? 'clear',
       settings: { ...DEFAULT_SERVER, ...(st.settings ?? {}) }, ranks: st.ranks, experimental: !!st.experimental, privacy: st.privacy ?? 'public',
       hostName: me.username, owner: st.owner, roles: st.roles ?? {}, worldName: st.name, maxPlayers: Math.max(2, Math.min(40, Number(st.maxPlayers) || 18)), bans: Array.isArray(st.bans) ? st.bans : [],
@@ -7629,7 +7700,7 @@ export default function App() {
     const old = mpRef.current; mpRef.current = null; old?.disconnect();
     for (const k of Object.keys(onlineNamesRef.current)) if (Number(k) !== myNetIdRef.current) h.removeRemotePlayer(Number(k));
     setHandedOver(true);
-    hostingRef.current = { id: roomId, room, peer, worldId: '', privacy: (st.privacy ?? 'public') as WorldPrivacy, name: st.name, mode, worldType, max: Number(st.maxPlayers) || 18, timer: 0, tags: [] };
+    hostingRef.current = { sid, id: roomId, room, peer, worldId: '', privacy: (st.privacy ?? 'public') as WorldPrivacy, name: st.name, mode, worldType, max: Number(st.maxPlayers) || 18, timer: 0, tags: [] };
     joinedAddressRef.current = 'p2p:' + roomId;
     connectWith((mpMod as { MultiplayerClient: new () => MpClient }).MultiplayerClient, undefined, { hostSocket: hMod.loopback(room) });
     setHostingInfo({ privacy: (st.privacy ?? 'public') as WorldPrivacy, players: 1 });
@@ -7641,6 +7712,39 @@ export default function App() {
   const becomeHostRef = useRef(becomeHost);
   becomeHostRef.current = becomeHost;
 
+  // ---------------- Sleeping worlds ----------------
+  const pendingWakeRef = useRef<{ worldId: string; name: string; changes: Array<[number, number, number, number]>; time: number; weather: WeatherKind } | null>(null);
+  /** Wakes a world whose host left (from the Servers page): you host it from its saved copy. Gives an error message, or null when it starts. */
+  async function wakeSleepingWorld(sid: string): Promise<string | null> {
+    const me = accountRef.current;
+    if (!me || isGuestName(me.username)) return 'Sign in to join worlds.';
+    if (!multiplayerAvailable || !hostingAvailable) return "Hosting isn't installed in this copy of the game.";
+    const r = await claimWorld(sid);
+    if (!r.ok) return r.error;
+    const w = r.world, d = w.data as Record<string, unknown>;
+    const settings = (d.settings ?? {}) as Partial<ServerSettings>;
+    const mode: WorldMode = w.mode === 'creative' || w.mode === 'adventure' ? w.mode : 'survival';
+    const existing = savedWorldsRef.current.find((x) => x.sharedId === sid);
+    const id = existing?.id ?? newWorldId();
+    const config: WorldConfig = {
+      ...(existing ?? { image: mode === 'creative' ? '/images/creative-bg.jpg' : '/images/survival-bg.jpg', tag: 'Shared', accent: '#00e676', createdAt: Date.now(), playSeconds: 0 }),
+      name: w.name, mode, worldType: w.worldType === 'superflat' ? 'superflat' : 'default', seed: Number(d.seed) || 0, id,
+      difficulty: (settings.difficulty as Difficulty | undefined) ?? 'normal', keepInventory: !!settings.keepInventory,
+      creator: w.owner, owner: w.owner, sharedId: sid, experimental: !!d.experimental, privacy: w.privacy,
+      bans: Array.isArray(d.bans) ? (d.bans as string[]) : [], roles: (d.roles ?? {}) as WorldConfig['roles'], lastPlayed: Date.now(),
+    };
+    setSavedWorlds((prev) => (prev.some((x) => x.id === id) ? prev.map((x) => (x.id === id ? config : x)) : [...prev, config]));
+    savedWorldsRef.current = savedWorldsRef.current.some((x) => x.id === id) ? savedWorldsRef.current.map((x) => (x.id === id ? config : x)) : [...savedWorldsRef.current, config];
+    try { localStorage.removeItem(`vb-save-${id}`); } catch { /* storage blocked */ } // the saved copy online is the truth now
+    pendingWakeRef.current = { worldId: id, name: w.name, changes: Array.isArray(d.changes) ? (d.changes as Array<[number, number, number, number]>) : [], time: Number(d.time) || 0, weather: (d.weather as WeatherKind) ?? 'clear' };
+    if (!startGuard()) { pendingWakeRef.current = null; return 'Hold on a second and try again.'; }
+    beginWorld(config);
+    return null;
+  }
+  const wakeSleepingWorldRef = useRef(wakeSleepingWorld);
+  wakeSleepingWorldRef.current = wakeSleepingWorld;
+  useEffect(() => { setWorldWaker((id) => wakeSleepingWorldRef.current(id)); return () => setWorldWaker(null); }, []);
+
   /** Closes your world to others. stillPlaying: you stay in it (it was made private). */
   function stopHosting(stillPlaying: boolean) {
     const hs = hostingRef.current;
@@ -7650,7 +7754,15 @@ export default function App() {
     window.clearInterval(hs.timer);
     // Leaving (not just closing the door): the world stays open, run by another player
     let handedTo: string | null = null;
+    // the saved copy first (everything up to now), so the world can be joined after you are gone
+    const saved = hs.sid ? snapshotHosting({ ...hs, snapAt: 0 }) : Promise.resolve();
     if (!stillPlaying && hs.room.handOff && hs.privacy !== 'private') { try { handedTo = hs.room.handOff(randomRoomId()); } catch { handedTo = null; } }
+    if (hs.sid) {
+      const sid = hs.sid;
+      if (stillPlaying) void saved.then(() => deleteWorldSnapshot(sid)); // closing the door: no saved copy for others
+      else if (handedTo) void saved.then(() => transferWorld(sid, handedTo!)); // the next player keeps it up to date
+      else void saved.then(() => releaseWorld(sid)); // nobody else here: the world goes to sleep, and anyone can wake it
+    }
     if (handedTo) window.setTimeout(() => hs.peer.stop(), 2600); else hs.peer.stop();
     if (mpRef.current) { mpRef.current.disconnect(); mpRef.current = null; }
     if (!handedTo) hs.room.stop();
@@ -9110,6 +9222,9 @@ export default function App() {
     setSavedWorlds((prev) => prev.filter((w) => (world.id ? w.id !== world.id : w !== world)));
     if (world.id) { try { localStorage.removeItem(`vb-save-${world.id}`); } catch { /* storage blocked */ } }
     if (world.id) clearAdvancements(world.id);
+    // deleting a planet you own also removes its saved copy online (a world someone else owns stays for them)
+    const gone = savedWorldsRef.current.find((w) => w.id === world.id);
+    if (gone?.sharedId && (!gone.owner || gone.owner.toLowerCase() === currentUsername.toLowerCase())) void deleteWorldSnapshot(gone.sharedId);
   }
 
   const guestNow = (accountChecked || authWaitOver) && (!account || isGuestName(account.username));
@@ -9280,7 +9395,7 @@ export default function App() {
 
   return (
     <AccountSummaryContext.Provider value={{ username: account?.username ?? '', signedIn: !!account && !isGuestName(account.username), isOwner: isOwnerAccount, isAdmin: !!admin, openAdmin: () => openPanel() }}>
-    <StandingContext.Provider value={{ rank: myPerk, rising, tier: myTier, isOwner: isOwnerAccount, standing, signedIn: !!account && !isGuestName(account.username), guest: (accountChecked || authWaitOver) && (!account || isGuestName(account.username)) }}>
+    <StandingContext.Provider value={{ nameTags: badgeTags({ owner: isOwnerAccount, rank: myRank, staff: myStaff }), rank: myPerk, rising, tier: myTier, isOwner: isOwnerAccount, standing, signedIn: !!account && !isGuestName(account.username), guest: (accountChecked || authWaitOver) && (!account || isGuestName(account.username)) }}>
       <DailyUiContext.Provider value={{ openDaily: () => setShowDaily(true) }}>
       {/* Persistent soundtrack element — lives at the App level (not inside
           any view) so it keeps playing across sidebar navigation and while
