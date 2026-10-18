@@ -157,6 +157,22 @@ export async function sendPasswordReset(email) {
   }
 }
 
+/** Delete the signed-in account for good (profile, friends, messages and so on go with it). Needs server/vibeblox_indev27_1.sql. */
+export async function deleteAccount() {
+  try {
+    const supabase = await getSupabase();
+    const { error } = await supabase.rpc('delete_my_account');
+    if (error) {
+      if (/delete_my_account|schema cache|does not exist/i.test(error.message)) return { error: 'Deleting accounts is not set up on the server yet (run vibeblox_indev27_1.sql in Supabase).' };
+      return { error: error.message };
+    }
+    try { await supabase.auth.signOut(); } catch { /* the account is gone anyway */ }
+    return { error: null };
+  } catch {
+    return { error: OFFLINE };
+  }
+}
+
 export async function signOutAccount() {
   try {
     const supabase = await getSupabase();
