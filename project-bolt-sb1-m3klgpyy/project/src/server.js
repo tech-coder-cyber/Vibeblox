@@ -160,7 +160,7 @@ async function standingOf(name) {
   const r = await sb('/rest/v1/rpc/player_standing', null, { method: 'POST', body: JSON.stringify({ p_username: name }) });
   const row = Array.isArray(r) ? r[0] : null;
   const plays = row ? Number(row.plays) || 0 : 0;
-  const out = { plays, tier: tierOfPlays(plays), rising: !!(row && row.rising), rank: row && typeof row.rank === 'string' ? row.rank : 'none', og: !!(row && row.og === true), staff: row && (row.staff === 'helper' || row.staff === 'mod') ? row.staff : null, until: Date.now() + 5 * 60_000 };
+  const out = { plays, tier: tierOfPlays(plays), rising: !!(row && row.rising), rank: row && typeof row.rank === 'string' ? row.rank : 'none', staff: row && (row.staff === 'helper' || row.staff === 'mod') ? row.staff : null, until: Date.now() + 5 * 60_000 };
   standingCache.set(key, out);
   if (standingCache.size > 300) standingCache.clear();
   return out;
@@ -176,7 +176,7 @@ async function sendBadge(p) {
   if (!p.verified) return;
   const st = await standingOf(p.name);
   if (p.conn.closed) return;
-  p.badge = { owner: p.name.toLowerCase() === OWNER_NAME, rank: st.rank, tier: p.name.toLowerCase() === OWNER_NAME ? 'star' : st.tier, og: st.og, staff: st.staff };
+  p.badge = { owner: p.name.toLowerCase() === OWNER_NAME, rank: st.rank, tier: p.name.toLowerCase() === OWNER_NAME ? 'star' : st.tier, staff: st.staff };
   broadcast({ t: 'badge', id: p.id, ...p.badge });
 }
 

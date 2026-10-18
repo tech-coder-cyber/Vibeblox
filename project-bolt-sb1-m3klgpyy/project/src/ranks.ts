@@ -50,9 +50,8 @@ export const tierAtLeast = (t: CreatorTier, min: CreatorTier) => TIER_ORDER.inde
 export const PLAYER_CAP: Record<CreatorTier, number> = { none: 18, rising: 24, popular: 32, star: 48 };
 export const playerCap = (tier: CreatorTier | boolean) => PLAYER_CAP[tier === true ? 'rising' : tier === false ? 'none' : tier];
 
-/** The tags shown in front of a name for the things the game itself knows (owner, staff, paid rank, OG, creator tier). */
+/** The tags shown in front of a name for the things the game itself knows (owner, staff, paid rank, creator tier). */
 export const OWNER_TAG = '\\crimson\\\\bold\\[OWNER]\\reset\\';
-export const OG_TAG = '\\cyan\\[OG]\\reset\\';
 export type StaffId = 'helper' | 'mod';
 export const STAFF_TAGS: Record<StaffId, string> = {
   helper: '\\mint\\\\bold\\[HELPER]\\reset\\',
@@ -64,9 +63,9 @@ export const isStaffId = (v: unknown): v is StaffId => v === 'helper' || v === '
  * The rank whose perks you get. OG players and staff (HELPER, MOD) get Elite's perks (a bigger planet limit, more script
  * time, no ads); a paid rank that is better than Elite still counts. The name tag shows the real rank, not this one.
  */
-export function perkRank(rank: RankId, extra: { og?: boolean; staff?: string | null } | null | undefined): RankId {
+export function perkRank(rank: RankId, extra: { staff?: string | null } | null | undefined): RankId {
   if (rank === 'champion') return rank;
-  return extra && (extra.og || isStaffId(extra.staff)) ? 'elite' : rank;
+  return extra && isStaffId(extra.staff) ? 'elite' : rank;
 }
 export const RANK_TAGS: Record<RankId, string> = {
   none: '',
@@ -74,7 +73,7 @@ export const RANK_TAGS: Record<RankId, string> = {
   elite: '\\light_purple\\[Elite]\\reset\\',
   champion: '\\gold\\\\shiny\\[Champion]\\reset\\',
 };
-export type Badge = { owner?: boolean; rank?: RankId | string; tier?: CreatorTier | string; og?: boolean; staff?: StaffId | string | null };
+export type Badge = { owner?: boolean; rank?: RankId | string; tier?: CreatorTier | string; staff?: StaffId | string | null };
 export function badgeTags(b: Badge | null | undefined): string[] {
   if (!b) return [];
   const out: string[] = [];
@@ -82,7 +81,6 @@ export function badgeTags(b: Badge | null | undefined): string[] {
   if (isStaffId(b.staff)) out.push(STAFF_TAGS[b.staff]);
   const r = b.rank as RankId;
   if (r && RANK_TAGS[r]) out.push(RANK_TAGS[r]);
-  if (b.og) out.push(OG_TAG);
   const t = b.tier as CreatorTier;
   if (t && CREATOR_TAGS[t]) out.push(CREATOR_TAGS[t]);
   return out;

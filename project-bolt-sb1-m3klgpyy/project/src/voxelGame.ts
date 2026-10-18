@@ -866,21 +866,21 @@ function drawMiscItemCanvas(id: number): HTMLCanvasElement {
 }
 
 export type MobKind = 'pig' | 'cow' | 'chicken' | 'sheep' | 'zombie' | 'skeleton' | 'creeper' | 'spider' | 'ghast' | 'blaze' | 'piglin' | 'villager' | 'iron_golem'
-  | 'cinderbone' | 'hollow_tyrant' | 'bot';
+  | 'cinderbone' | 'hollow_tyrant' | 'bot' | 'wolf';
 /** Mobs you can /summon ('bot' players only exist in minigames). */
-export const MOB_KINDS: MobKind[] = ['pig', 'cow', 'chicken', 'sheep', 'zombie', 'skeleton', 'creeper', 'spider', 'ghast', 'blaze', 'piglin', 'villager', 'iron_golem', 'cinderbone', 'hollow_tyrant'];
+export const MOB_KINDS: MobKind[] = ['pig', 'cow', 'chicken', 'sheep', 'zombie', 'skeleton', 'creeper', 'spider', 'ghast', 'blaze', 'piglin', 'villager', 'iron_golem', 'cinderbone', 'hollow_tyrant', 'wolf'];
 /** Every mob that has a spawn egg (all but the boss). */
 export const SPAWN_EGG_KINDS: MobKind[] = MOB_KINDS.filter((k) => k !== 'hollow_tyrant');
 export const MOB_NAMES: Record<MobKind, string> = {
   pig: 'Pig', cow: 'Cow', chicken: 'Chicken', sheep: 'Sheep', zombie: 'Zombie', skeleton: 'Skeleton', creeper: 'Creeper', spider: 'Spider',
-  ghast: 'Ghast', blaze: 'Blaze', piglin: 'Piglin', villager: 'Villager', iron_golem: 'Iron Golem', cinderbone: 'Cinderbone', hollow_tyrant: 'Hollow Tyrant', bot: 'Bot',
+  ghast: 'Ghast', blaze: 'Blaze', piglin: 'Piglin', villager: 'Villager', iron_golem: 'Iron Golem', cinderbone: 'Cinderbone', hollow_tyrant: 'Hollow Tyrant', bot: 'Bot', wolf: 'Wolf',
 };
 /** Spawn egg colors: the shell and its spots. */
 const EGG_COLORS: Partial<Record<MobKind, [string, string]>> = {
   pig: ['#f0a5a2', '#db635f'], cow: ['#443626', '#a1a1a1'], chicken: ['#a1a1a1', '#ff0000'], sheep: ['#e7e7e7', '#ffb5b5'],
   zombie: ['#00afaf', '#799c65'], skeleton: ['#c1c1c1', '#494949'], creeper: ['#0da70b', '#000000'], spider: ['#342d27', '#a80e0e'],
   ghast: ['#f9f9f9', '#bcbcbc'], blaze: ['#f6b201', '#fff87e'], piglin: ['#c66e55', '#f9f3a4'], villager: ['#563c33', '#bd8b72'],
-  iron_golem: ['#dbcdc1', '#74a332'], cinderbone: ['#1e1b18', '#ff7a1a'],
+  iron_golem: ['#dbcdc1', '#74a332'], cinderbone: ['#1e1b18', '#ff7a1a'], wolf: ['#d7d3cd', '#6a5a4a'],
 };
 export const spawnEggId = (kind: MobKind) => ITEM_SPAWN_EGG + SPAWN_EGG_KINDS.indexOf(kind);
 export const spawnEggKind = (id: number): MobKind | null => (id >= ITEM_SPAWN_EGG && id < ITEM_SPAWN_EGG + SPAWN_EGG_KINDS.length ? SPAWN_EGG_KINDS[id - ITEM_SPAWN_EGG] : null);
@@ -1085,6 +1085,21 @@ function buildMobModel(kind: MobKind | 'player', variant = 0): MobModel {
       }
     }
     if (cinder) root.userData.scale = 1.25; // a head taller than a normal skeleton
+  } else if (kind === 'wolf') {
+    const fur = () => mobTex('#cfcac3', ['#bdb8b0', '#dedad4', '#a9a49c'], 0.35);
+    const legM = mat(fur());
+    for (const [x, z] of [[-2, -4], [2, -4], [-2, 5], [2, 5]]) legs.push(box(root, [3, 8, 3], [x, 8, z], [0, -4, 0], legM));
+    body = box(root, [6, 6, 11], [0, 11, 1], [0, 0, 0], mat(fur()));
+    const face = mobTex('#cfcac3', ['#bdb8b0'], 0.2, (ctx) => {
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(1, 2, 2, 1); ctx.fillRect(5, 2, 2, 1);
+      ctx.fillStyle = '#2b2b2b'; ctx.fillRect(2, 2, 1, 1); ctx.fillRect(5, 2, 1, 1);
+    });
+    head = box(root, [6, 6, 5], [0, 12.5, -5], [0, 0, -2.5], headMats(fur(), face));
+    box(head, [3, 3, 3], [0, 0, 0], [0, -1, -6.5], mat(mobTex('#e6e2dc', ['#d3cfc8'], 0.15, (ctx) => { ctx.fillStyle = '#222222'; ctx.fillRect(3, 0, 2, 2); })));
+    const earM = mat(mobTex('#b3aea6', ['#a39e96'], 0.2));
+    box(head, [2, 2, 1], [0, 0, 0], [-2, 4, -1.5], earM);
+    box(head, [2, 2, 1], [0, 0, 0], [2, 4, -1.5], earM);
+    box(root, [2, 2, 8], [0, 12.5, 6.5], [0, -2.5, 3], mat(fur())); // the tail, hanging down behind
   } else if (kind === 'creeper') {
     const camo = () => mobTex('#4caf3f', ['#2f7d2a', '#7ad66b', '#3c9a33'], 0.45);
     const legM = mat(camo());
@@ -1358,6 +1373,13 @@ export function applyArmorOverlay(model: MobModel, armorIds: Array<number | null
   armorIds.forEach((id, slot) => {
     const def = id !== null ? ARMOR[id] : undefined;
     if (!def) return;
+    if (def.elytra) { // two folded wings on the back
+      for (const side of [-1, 1]) {
+        add(model.body, [5, 12, 1], [side * 2.6, 6, 3], '#8b94ab');
+        add(model.body, [3, 8, 1], [side * 3.6, 4, 3.8], '#aab3c8');
+      }
+      return;
+    }
     const color = ARMOR_COLORS[def.material];
     if (slot === 0) add(model.head, [9, 9, 9], [0, 4, 0], color);
     else if (slot === 1) { add(model.body, [9, 13, 5], [0, 6, 0], color); for (const arm of model.arms) add(arm, [5, 6, 5], [0, -1, 0], color); }
@@ -1371,7 +1393,7 @@ export function applyArmorOverlay(model: MobModel, armorIds: Array<number | null
  * The little 3D player in the inventory screen. Its head follows your
  * cursor, like Minecraft's. It has its own small renderer.
  */
-export function createPlayerPreview(canvas: HTMLCanvasElement) {
+export function createPlayerPreview(canvas: HTMLCanvasElement, opts: { bust?: boolean } = {}) {
   const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
   renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
   renderer.setSize(canvas.clientWidth || canvas.width, canvas.clientHeight || canvas.height, false);
@@ -1381,8 +1403,8 @@ export function createPlayerPreview(canvas: HTMLCanvasElement) {
   light.position.set(2, 3, 4);
   scene.add(light);
   const cam = new THREE.PerspectiveCamera(30, (canvas.clientWidth || canvas.width) / (canvas.clientHeight || canvas.height), 0.1, 50);
-  cam.position.set(0, 1.05, 4.6);
-  cam.lookAt(0, 0.95, 0);
+  if (opts.bust) { cam.position.set(0, 1.62, 3.3); cam.lookAt(0, 1.5, 0); } // head and shoulders (the little avatar on Home)
+  else { cam.position.set(0, 1.05, 4.6); cam.lookAt(0, 0.95, 0); }
   const model = buildMobModel('player');
   model.root.rotation.y = Math.PI; // face the viewer
   scene.add(model.root);
@@ -1433,6 +1455,7 @@ const MOB_INFO: Record<MobKind, { hp: number; speed: number; hostile: boolean; w
   cinderbone: { hp: 20, speed: 2.7, hostile: true, width: 0.7, height: 2.4 }, // a tall charred skeleton of the Nether fortresses
   hollow_tyrant: { hp: 300, speed: 4.5, hostile: true, width: 1.0, height: 3.3 }, // the three-headed boss
   bot: { hp: 20, speed: 4.3, hostile: true, width: 0.6, height: 1.8 }, // a computer player in EggWars and Bridge Duels
+  wolf: { hp: 16, speed: 3.4, hostile: false, width: 0.6, height: 0.85 }, // leaves you alone until you hit it (then the whole pack comes)
 };
 
 /** Seconds the Hollow Tyrant takes to wake up after it is summoned (it can't be hurt until then). */
@@ -1455,7 +1478,7 @@ function sizeOf(kind: MobKind, baby: boolean) {
 /** Every mob drops at least one item when killed. */
 /** Experience for killing each mob, like Minecraft. */
 const MOB_XP: Partial<Record<MobKind, number>> = {
-  pig: 2, cow: 2, chicken: 1, sheep: 2, zombie: 5, skeleton: 5, spider: 5, creeper: 5, ghast: 5, blaze: 10, piglin: 5, cinderbone: 5, hollow_tyrant: 50,
+  pig: 2, cow: 2, chicken: 1, sheep: 2, zombie: 5, skeleton: 5, spider: 5, creeper: 5, ghast: 5, blaze: 10, piglin: 5, cinderbone: 5, hollow_tyrant: 50, wolf: 3,
 };
 /** Rare drops: Looting raises their chance a little instead of multiplying them. */
 const isRareDrop = (id: number) => id === ITEM_CINDERBONE_SKULL || id === ITEM_HOLLOW_STAR;
@@ -1561,6 +1584,49 @@ function drawChestCanvas(top: boolean): HTMLCanvasElement {
     ctx.fillStyle = '#7a7a7a';
     ctx.fillRect(7, 6, 2, 1);
   }
+  return c;
+}
+
+/** The Ender Chest: dark obsidian-green with a glowing teal band and latch. */
+function drawEnderChestCanvas(top: boolean): HTMLCanvasElement {
+  const c = makeCanvas(16, 16), ctx = c.getContext('2d')!;
+  ctx.fillStyle = '#1b2b30'; ctx.fillRect(0, 0, 16, 16);
+  ctx.fillStyle = '#243a40';
+  for (let y = 3; y < 16; y += 4) ctx.fillRect(1, y, 14, 1);
+  ctx.fillStyle = '#0c1518';
+  ctx.fillRect(0, 0, 16, 1); ctx.fillRect(0, 15, 16, 1); ctx.fillRect(0, 0, 1, 16); ctx.fillRect(15, 0, 1, 16);
+  ctx.fillStyle = '#2a8f86'; ctx.fillRect(2, 2, 12, 1); ctx.fillRect(2, 13, 12, 1);
+  if (!top) {
+    ctx.fillStyle = '#0c1518'; ctx.fillRect(0, 5, 16, 1);
+    ctx.fillStyle = '#5ff2dc'; ctx.fillRect(7, 4, 2, 3);
+    ctx.fillStyle = '#1f7a72'; ctx.fillRect(7, 6, 2, 1);
+  } else { ctx.fillStyle = '#5ff2dc'; ctx.fillRect(7, 7, 2, 2); }
+  return c;
+}
+/** The elytra: two folded grey-purple wings. */
+function drawElytraIcon(): HTMLCanvasElement {
+  const c = makeCanvas(16, 16), ctx = c.getContext('2d')!;
+  for (const dir of [-1, 1]) {
+    const x0 = dir < 0 ? 7 : 8;
+    for (let i = 0; i < 12; i++) {
+      const len = i < 3 ? 3 + i : 11 - Math.floor(i / 2);
+      for (let k = 0; k < Math.max(2, Math.min(7, len)); k++) {
+        const x = x0 + dir * k, y = 2 + i;
+        if (x < 0 || x > 15) continue;
+        ctx.fillStyle = (k + i) % 3 === 0 ? '#aab3c8' : (k === 0 ? '#6b7388' : '#8b94ab');
+        ctx.fillRect(x, y, 1, 1);
+      }
+    }
+  }
+  ctx.fillStyle = '#4a5166'; ctx.fillRect(7, 2, 2, 12);
+  return c;
+}
+/** A firework rocket: a red tube on a stick with a spark. */
+function drawFireworkIcon(): HTMLCanvasElement {
+  const c = makeCanvas(16, 16), ctx = c.getContext('2d')!;
+  for (let i = 0; i < 6; i++) { setPx(ctx, 2 + i, 14 - i, '#8a5a2a'); }
+  for (let i = 0; i < 6; i++) { setPx(ctx, 7 + i, 9 - i, '#d83a2a'); setPx(ctx, 8 + i, 9 - i, '#a82418'); setPx(ctx, 6 + i, 9 - i, '#f0604a'); }
+  setPx(ctx, 13, 3, '#ffe066'); setPx(ctx, 14, 2, '#fff2b0'); setPx(ctx, 12, 2, '#ffd23a'); setPx(ctx, 14, 4, '#ffd23a'); setPx(ctx, 12, 4, '#ffb347');
   return c;
 }
 
@@ -2258,6 +2324,7 @@ function drawNewFaces(): Record<string, HTMLCanvasElement> {
     brewBase: drawBrewingStandCanvas('base'), brewRod: drawBrewingStandCanvas('rod'),
     spawner: drawSpawnerCanvas(),
     ...Object.fromEntries(TERRA_DYED.map((t) => [`tc_${t.key}`, terracottaCanvas(t.color)])),
+    enderChestTop: drawEnderChestCanvas(true), enderChestSide: drawEnderChestCanvas(false),
     cobweb: drawCobwebCanvas(), cinderLog: drawCinderCanvas('log'), cinderLogTop: drawCinderCanvas('logTop'), cinderPlanks: drawCinderCanvas('planks'), cinderLeaves: drawCinderCanvas('leaves'),
     allium: drawNewFlowerCanvas('allium'), orangeTulip: drawNewFlowerCanvas('orangeTulip'), pinkTulip: drawNewFlowerCanvas('pinkTulip'), oxeyeDaisy: drawNewFlowerCanvas('oxeyeDaisy'),
   };
@@ -2683,6 +2750,7 @@ export function blockFaces(id: number): FaceSet | null {
   if (isMineralBlock(id)) return all(f[MINERAL_TEX[id]]);
   if (id === BLOCK_SPAWNER) return all(f.spawner);
   if (isDyedTerracotta(id)) return all(f[`tc_${TERRA_DYED[id - TERRA_DYED_FIRST].key}`]);
+  if (id === BLOCK_ENDER_CHEST) return { top: f.enderChestTop, side: f.enderChestSide, bottom: f.enderChestTop };
   if (id === BLOCK_CINDER_LOG) return { top: f.cinderLogTop, side: f.cinderLog, bottom: f.cinderLogTop };
   if (id === BLOCK_CINDER_PLANKS) return all(f.cinderPlanks);
   if (id === BLOCK_CINDER_LEAVES) return all(f.cinderLeaves);
@@ -2782,6 +2850,8 @@ function itemCanvasBase(id: number): HTMLCanvasElement | null {
   if (ci) return ci.canvas;
   const cb = CUSTOM_BLOCKS.get(id);
   if (cb && cb.shape === 'cross') return cb.canvas;
+  if (id === ITEM_ELYTRA) return drawElytraIcon();
+  if (id === ITEM_FIREWORK) return drawFireworkIcon();
   const armor = ARMOR[id];
   if (armor) return drawPixelMap(ARMOR_MAPS[armor.slot], ARMOR_PALETTES[armor.material]);
   if (isHead(id)) return drawHeadIcon(headKind(id));
@@ -3179,7 +3249,7 @@ export const ARMOR_COLORS: Record<ArmorMaterial, string> = {
   leather: '#8b5a2b', iron: '#d6d6d6', gold: '#f2c218', diamond: '#4fd8e6', emerald: '#2ad46a',
 };
 /** slot: 0 helmet, 1 chestplate, 2 leggings, 3 boots */
-export const ARMOR: Record<number, { slot: number; material: ArmorMaterial; points: number }> = {};
+export const ARMOR: Record<number, { slot: number; material: ArmorMaterial; points: number; elytra?: true }> = {};
 ARMOR_MATERIALS.forEach((m, mi) => {
   for (let slot = 0; slot < 4; slot++) ARMOR[142 + mi * 4 + slot] = { slot, material: m, points: ARMOR_POINTS[m][slot] };
 });
@@ -3301,6 +3371,10 @@ export const ITEM_XP_BOTTLE = 1420;
 export const ITEM_BOAT = 1421;
 /** Dropped by the Hollow Tyrant. It looks like a star and does nothing (yet). */
 export const ITEM_HOLLOW_STAR = 1422;
+export const ITEM_ELYTRA = 1423, ITEM_FIREWORK = 1424;
+/** The elytra is worn in the chestplate slot (no armor points) and lets you glide. */
+export const ELYTRA_DURABILITY = 432;
+ARMOR[ITEM_ELYTRA] = { slot: 1, material: 'leather', points: 0, elytra: true };
 export const ITEM_BRIDGE_EGG = 1460;
 /** Spawn eggs: + index into SPAWN_EGG_KINDS. */
 export const ITEM_SPAWN_EGG = 1430;
@@ -3428,10 +3502,11 @@ export function mirrorBlockId(b: number, axis: 'x' | 'z'): number {
 }
 // Indev 27: cobwebs, Cinderwood (the Nether's own trees) and more flowers
 export const BLOCK_COBWEB = 1353;
+export const BLOCK_ENDER_CHEST = 1361;
 export const BLOCK_CINDER_LOG = 1354, BLOCK_CINDER_PLANKS = 1355, BLOCK_CINDER_LEAVES = 1356;
 export const BLOCK_ALLIUM = 1357, BLOCK_ORANGE_TULIP = 1358, BLOCK_PINK_TULIP = 1359, BLOCK_OXEYE_DAISY = 1360;
 export const NEW_FLOWERS = [BLOCK_ALLIUM, BLOCK_ORANGE_TULIP, BLOCK_PINK_TULIP, BLOCK_OXEYE_DAISY] as const;
-export const LAST_BUILTIN_BLOCK = BLOCK_OXEYE_DAISY; // 1360
+export const LAST_BUILTIN_BLOCK = BLOCK_ENDER_CHEST; // 1361
 export const isMineralBlock = (b: number) => b >= BLOCK_DIAMOND_BLOCK && b <= BLOCK_INFERNIUM_BLOCK;
 /** New items of round 10 */
 export const ITEM_GLASS_BOTTLE = 1480, ITEM_BLAZE_POWDER = 1481, ITEM_NAME_TAG = 1482;
@@ -3978,7 +4053,7 @@ function newBlockKind(b: number): 'cube' | 'see' | 'pass' | null {
   if (isTorch(b)) return 'pass';
   if (isHead(b) || isEgg(b)) return 'see';
   if (b === BLOCK_REDSTONE_BLOCK || isMineralBlock(b) || b === BLOCK_SPAWNER || isDyedTerracotta(b)) return 'cube';
-  if (b === BLOCK_CINDER_LOG || b === BLOCK_CINDER_PLANKS) return 'cube';
+  if (b === BLOCK_CINDER_LOG || b === BLOCK_CINDER_PLANKS || b === BLOCK_ENDER_CHEST) return 'cube';
   if (b === BLOCK_CINDER_LEAVES) return 'see'; // like leaves: solid, see-through
   if (b === BLOCK_COBWEB || isFlower(b)) return 'pass'; // you walk into a cobweb (and get stuck in it)
   if (b === BLOCK_BREWING_STAND) return 'see';
@@ -4054,6 +4129,7 @@ const ARMOR_DURABILITY_FACTOR: Record<string, number> = { leather: 5, iron: 15, 
 export function maxDurability(id: number): number {
   const t = TOOLS[id];
   if (t) return TOOL_DURABILITY[t.material] ?? 0;
+  if (id === ITEM_ELYTRA) return ELYTRA_DURABILITY;
   const a = ARMOR[id];
   if (a) return ARMOR_DURABILITY_BASE[a.slot] * (ARMOR_DURABILITY_FACTOR[a.material] ?? 10);
   if (id === ITEM_BOW) return 384;
@@ -4064,7 +4140,7 @@ export function maxDurability(id: number): number {
 }
 
 // ---------------- Enchantments ----------------
-export type EnchantTarget = 'sword' | 'axe' | 'pickaxe' | 'hoe' | 'helmet' | 'chestplate' | 'leggings' | 'boots' | 'bow' | 'shears' | 'rod';
+export type EnchantTarget = 'sword' | 'axe' | 'pickaxe' | 'hoe' | 'helmet' | 'chestplate' | 'leggings' | 'boots' | 'bow' | 'shears' | 'rod' | 'elytra';
 export type EnchantDef = {
   key: string; name: string; max: number; weight: number;
   /** The lowest enchanting power that can give level `l`. */
@@ -4077,7 +4153,9 @@ export type EnchantDef = {
   treasure?: boolean;
 };
 const ARMOR_TARGETS: EnchantTarget[] = ['helmet', 'chestplate', 'leggings', 'boots'];
-const DURABLE_TARGETS: EnchantTarget[] = ['sword', 'axe', 'pickaxe', 'hoe', 'bow', 'rod', ...ARMOR_TARGETS];
+const DURABLE_TARGETS: EnchantTarget[] = ['sword', 'axe', 'pickaxe', 'hoe', 'bow', 'rod', ...ARMOR_TARGETS, 'elytra'];
+/** Mending only mends what you wear: armor and the elytra (never swords, tools or bows). */
+const WORN_TARGETS: EnchantTarget[] = [...ARMOR_TARGETS, 'elytra'];
 export const ENCHANTMENTS: EnchantDef[] = [
   { key: 'sharpness', name: 'Sharpness', max: 5, weight: 10, minPower: (l) => 1 + 11 * (l - 1), table: ['sword'], anvil: ['axe'], group: 'damage' },
   { key: 'smite', name: 'Smite', max: 5, weight: 5, minPower: (l) => 5 + 8 * (l - 1), table: ['sword'], anvil: ['axe'], group: 'damage' },
@@ -4099,7 +4177,7 @@ export const ENCHANTMENTS: EnchantDef[] = [
   { key: 'luck_of_the_sea', name: 'Luck of the Sea', max: 3, weight: 2, minPower: (l) => 15 + 9 * (l - 1), table: ['rod'] },
   { key: 'lure', name: 'Lure', max: 3, weight: 2, minPower: (l) => 15 + 9 * (l - 1), table: ['rod'] },
   { key: 'unbreaking', name: 'Unbreaking', max: 3, weight: 5, minPower: (l) => 5 + 8 * (l - 1), table: DURABLE_TARGETS, anvil: ['shears'] },
-  { key: 'mending', name: 'Mending', max: 1, weight: 2, minPower: () => 25, table: DURABLE_TARGETS, anvil: ['shears'], treasure: true, group: 'infmend' },
+  { key: 'mending', name: 'Mending', max: 1, weight: 2, minPower: () => 25, table: WORN_TARGETS, treasure: true, group: 'infmend' },
 ];
 export function enchantsConflict(a: string, b: string): boolean {
   if (a === b) return false;
@@ -4109,6 +4187,7 @@ export function enchantsConflict(a: string, b: string): boolean {
 export function enchantTarget(id: number): EnchantTarget | null {
   const t = TOOLS[id];
   if (t) return t.kind;
+  if (id === ITEM_ELYTRA) return 'elytra';
   const a = ARMOR[id];
   if (a) return (['helmet', 'chestplate', 'leggings', 'boots'] as const)[a.slot];
   if (id === ITEM_BOW) return 'bow';
@@ -4133,6 +4212,7 @@ export function enchantLabel(key: string, level: number): string {
 export function enchantability(id: number): number {
   const t = TOOLS[id];
   if (t) return ({ wood: 15, stone: 5, iron: 14, gold: 22, diamond: 10, emerald: 12, infernium: 15 } as Record<string, number>)[t.material] ?? 1;
+  if (id === ITEM_ELYTRA) return 12;
   const a = ARMOR[id];
   if (a) return ({ leather: 15, iron: 9, gold: 25, diamond: 10, emerald: 12 } as Record<string, number>)[a.material] ?? 1;
   if (id === ITEM_BOW || id === ITEM_BOOK || id === ITEM_FISHING_ROD) return 1;
@@ -4405,6 +4485,9 @@ Object.assign(ITEM_INFO, {
   [BLOCK_ORANGE_TULIP]: { name: 'Orange Tulip', color: '#f9801d', lore: ['Makes orange dye.'] },
   [BLOCK_PINK_TULIP]: { name: 'Pink Tulip', color: '#f6a8c8', lore: ['Makes pink dye.'] },
   [BLOCK_OXEYE_DAISY]: { name: 'Oxeye Daisy', color: '#f4f4f4', lore: ['Makes white dye.'] },
+  [BLOCK_ENDER_CHEST]: { name: 'Ender Chest', color: '#1c3a3a', lore: ['Your own private chest.', 'Every Ender Chest opens the same storage,', 'so what you put in is there from any of them.'] },
+  [ITEM_ELYTRA]: { name: 'Elytra', color: '#9aa4b8', lore: ['Wear it in your chestplate slot (right-click).', 'Jump in the air, then jump again to glide.', 'Fireworks give you a boost. Mending repairs it.'] },
+  [ITEM_FIREWORK]: { name: 'Firework Rocket', color: '#e8472f', lore: ['Right-click to launch one.', 'While gliding with an elytra it boosts you forward.'] },
   [BLOCK_COBWEB]: { name: 'Cobweb', color: '#e8e8e8', lore: ['Slows down anything that walks into it.', 'A sword cuts it fast (and drops string).', 'Shears keep it whole.'] },
   [BLOCK_CINDER_LOG]: { name: 'Cinderwood Log', color: '#4a1418', lore: ['Grows only in the Nether. It never burns.'] },
   [BLOCK_CINDER_PLANKS]: { name: 'Cinderwood Planks', color: '#7a2a24', lore: ['Works like any planks.'] },
@@ -4762,6 +4845,29 @@ export const RECIPES: Recipe[] = [
       ITEM_PLANKS, ITEM_PLANKS, ITEM_PLANKS,
     ], width: 3, height: 3,
     output: { id: BLOCK_CHEST, count: 1 }, needsTable: true,
+  },
+  {
+    id: 'ender_chest', name: 'Ender Chest',
+    pattern: [
+      BLOCK_OBSIDIAN, BLOCK_OBSIDIAN, BLOCK_OBSIDIAN,
+      BLOCK_OBSIDIAN, ITEM_ENDER_PEARL, BLOCK_OBSIDIAN,
+      BLOCK_OBSIDIAN, BLOCK_OBSIDIAN, BLOCK_OBSIDIAN,
+    ], width: 3, height: 3,
+    output: { id: BLOCK_ENDER_CHEST, count: 1 }, needsTable: true,
+  },
+  {
+    id: 'firework', name: 'Firework Rocket',
+    pattern: [ITEM_PAPER, ITEM_GUNPOWDER], width: 1, height: 2,
+    output: { id: ITEM_FIREWORK, count: 3 }, needsTable: false,
+  },
+  {
+    id: 'elytra', name: 'Elytra',
+    pattern: [
+      ITEM_FEATHER, ITEM_STRING, ITEM_FEATHER,
+      ITEM_FEATHER, ITEM_ENDER_PEARL, ITEM_FEATHER,
+      ITEM_LEATHER, null, ITEM_LEATHER,
+    ], width: 3, height: 3,
+    output: { id: ITEM_ELYTRA, count: 1 }, needsTable: true,
   },
   {
     // No furnace yet, so buckets use iron ore directly
@@ -5458,7 +5564,7 @@ const NEW_FACE_KEYS: string[] = [
   'rsBlock', 'pistonFront', 'pistonStickyFront', 'pistonBack', 'pistonSide', 'pistonInner', 'pistonHeadSide', 'pistonRod',
   'mDiamond', 'mGold', 'mCoal', 'mEmerald', 'mLapis', 'mInfernium', 'brewBase', 'brewRod',
   'spawner', ...TERRA_DYED.map((t) => `tc_${t.key}`),
-  'cobweb', 'cinderLog', 'cinderLogTop', 'cinderPlanks', 'cinderLeaves', 'allium', 'orangeTulip', 'pinkTulip', 'oxeyeDaisy',
+  'enderChestTop', 'enderChestSide', 'cobweb', 'cinderLog', 'cinderLogTop', 'cinderPlanks', 'cinderLeaves', 'allium', 'orangeTulip', 'pinkTulip', 'oxeyeDaisy',
 ];
 const MINERAL_TEX: Record<number, string> = {}; // filled right below (the block ids are defined above)
 MINERAL_TEX[BLOCK_DIAMOND_BLOCK] = 'mDiamond'; MINERAL_TEX[BLOCK_GOLD_BLOCK] = 'mGold'; MINERAL_TEX[BLOCK_COAL_BLOCK] = 'mCoal';
@@ -5505,6 +5611,7 @@ function matIndexFor(block: number, f: number): number {
     if (block === BLOCK_BREWING_STAND) return NF('brewBase');
     if (block === BLOCK_SPAWNER) return NF('spawner');
     if (isDyedTerracotta(block)) return NF(`tc_${TERRA_DYED[block - TERRA_DYED_FIRST].key}`);
+    if (block === BLOCK_ENDER_CHEST) return top || bottom ? NF('enderChestTop') : NF('enderChestSide');
     if (block === BLOCK_CINDER_LOG) return top || bottom ? NF('cinderLogTop') : NF('cinderLog');
     if (block === BLOCK_CINDER_PLANKS) return NF('cinderPlanks');
     if (block === BLOCK_CINDER_LEAVES) return NF('cinderLeaves');
@@ -5599,7 +5706,7 @@ export type ArenaTeamSpot = {
   egg?: [number, number, number]; // EggWars
   goal?: { x0: number; x1: number; z0: number; z1: number }; // Bridge Duels: the hole you jump into (x0 <= x < x1)
   shop?: [number, number, number];
-  gens: Array<{ x: number; y: number; z: number; item: number; every: number; cap: number }>;
+  gens: Array<{ x: number; y: number; z: number; item: number; every: number; cap: number; altItem?: number; altChance?: number; altCap?: number }>;
 };
 export type ArenaLayout = { boxes: ArenaBox[]; teams: ArenaTeamSpot[]; gens: ArenaTeamSpot['gens']; buildMin: number; buildMax: number; voidY: number; winScore: number };
 /** EggWars comes in several map styles; one is picked at random each time you start. The teams always sit in the same places. */
@@ -5636,6 +5743,9 @@ export function arenaLayout(kind: ArenaKind, variant = 0): ArenaLayout {
         const h = oreHash(x, Y - 4, z);
         if (h < 14) boxes.push([x, Y - 4, z, x, Y - 4, z, ores[h % 2]]);
       }
+    }
+    if (r >= 5) { // big islands taper down in steps
+      for (let k = 1; k <= r - 3; k++) boxes.push([cx - r + 2 + k, Y - 4 - k, cz - r + 2 + k, cx + r - 2 - k, Y - 4 - k, cz + r - 2 - k, theme.deep]);
     }
     boxes.push([cx - r + 2, Y - 4, cz - r + 2, cx + r - 2, Y - 4, cz + r - 2, theme.deep]);
     boxes.push([cx - r + 1, Y - 3, cz - r + 1, cx + r - 1, Y - 3, cz + r - 1, theme.deep]);
@@ -5723,65 +5833,87 @@ export function arenaLayout(kind: ArenaKind, variant = 0): ArenaLayout {
     arenaCache.set(cacheKey, { boxes, teams, gens, buildMin: Y - 6, buildMax: Y + 7, voidY: Y - 14, winScore: 5 });
     return arenaCache.get(cacheKey)!;
   }
-  // EggWars: four team islands around a middle island with diamonds
-  const centers: Array<[number, number]> = [[0, -34], [34, 0], [0, 34], [-34, 0]];
+  // EggWars: four big team islands around a middle island with an emerald generator, and four small diamond islands in between
+  const C = 40, R = 6; // how far the team islands are from the middle, and their radius (13 x 13)
+  const centers: Array<[number, number]> = [[0, -C], [C, 0], [0, C], [-C, 0]];
   centers.forEach(([cx, cz], t) => {
     const dx = Math.sign(-cx), dz = Math.sign(-cz); // toward the middle
     const px = dz, pz = -dx; // sideways
-    island(cx, cz, 4, BLOCK_GRASS, TEAM_COLORS[t].wool);
-    const ex = cx - dx * 3, ez = cz - dz * 3; // the egg, at the back
+    // a = steps toward the middle, s = steps to the side (so "behind you" is a < 2)
+    const at = (a: number, s: number): [number, number] => [cx + dx * a + px * s, cz + dz * a + pz * s];
+    const put = (a: number, s: number, y: number, b: number, h = 0) => { const [x, z] = at(a, s); boxes.push([x, y, z, x, y + h, z, b]); };
+    const wool = TEAM_COLORS[t].wool;
+    island(cx, cz, R, BLOCK_GRASS, wool);
+    // the egg, at the back, on an obsidian block
+    const [ex, ez] = at(-4, 0);
     boxes.push([ex, Y, ez, ex, Y, ez, BLOCK_OBSIDIAN]);
     boxes.push([ex, Y + 1, ez, ex, Y + 1, ez, BLOCK_EGG + t]);
-    const ix = cx - px * 3 + dx, iz = cz - pz * 3 + dz, gx = cx - px * 3 - dx, gz = cz - pz * 3 - dz;
-    boxes.push([ix, Y, iz, ix, Y, iz, BLOCK_IRON_BLOCK]);
-    boxes.push([gx, Y, gz, gx, Y, gz, BLOCK_GOLD_ORE]);
+    // the ONE generator, behind where you spawn: iron, and now and then gold
+    const [gx, gz] = at(-1, 0);
+    boxes.push([gx, Y, gz, gx, Y, gz, BLOCK_IRON_BLOCK]);
+    put(-1, -1, Y, BLOCK_GOLD_ORE); put(-1, 1, Y, BLOCK_GOLD_ORE);
+    // a team chest on one side and an ender chest on the other
+    put(0, -5, Y + 1, BLOCK_CHEST);
+    put(0, 5, Y + 1, BLOCK_ENDER_CHEST);
+    const [sx, sz] = at(1, 3);
+    const [spx, spz] = at(2, 0);
     teams.push({
-      spawn: [cx + dx * 2 + 0.5, Y + 1, cz + dz * 2 + 0.5], yaw: Math.atan2(-dx, -dz), egg: [ex, Y + 1, ez], shop: [cx + px * 3 + 0.5, Y + 1, cz + pz * 3 + 0.5],
-      gens: [{ x: ix + 0.5, y: Y + 1.2, z: iz + 0.5, item: ITEM_IRON_INGOT, every: 1.5, cap: 48 }, { x: gx + 0.5, y: Y + 1.2, z: gz + 0.5, item: ITEM_GOLD_INGOT, every: 6, cap: 16 }],
+      spawn: [spx + 0.5, Y + 1, spz + 0.5], yaw: Math.atan2(-dx, -dz), egg: [ex, Y + 1, ez], shop: [sx + 0.5, Y + 1, sz + 0.5],
+      gens: [{ x: gx + 0.5, y: Y + 1.2, z: gz + 0.5, item: ITEM_IRON_INGOT, every: 1.5, cap: 48, altItem: ITEM_GOLD_INGOT, altChance: 0.18, altCap: 16 }],
     });
-  });
-  // Cover on every team island: two pillars at the front corners (nothing stands on the spawn, egg, shop or generators)
-  centers.forEach(([cx, cz], t) => {
-    const dx = Math.sign(-cx), dz = Math.sign(-cz), px = dz, pz = -dx;
-    const wool = TEAM_COLORS[t].wool;
-    // glowstone set into the four corners of the wool rim
-    for (const [a, b] of [[-4, -4], [4, -4], [-4, 4], [4, 4]]) boxes.push([cx + a, Y, cz + b, cx + a, Y, cz + b, BLOCK_GLOWSTONE]);
-    // a path of the map's path block from the spawn to the front edge
-    for (let i = 1; i <= 3; i++) boxes.push([cx + dx * i, Y, cz + dz * i, cx + dx * i, Y, cz + dz * i, theme.path]);
-    // a balcony behind the island with the team's flag on a pole
-    const bx = cx - dx * 6, bz = cz - dz * 6;
-    boxes.push([bx - Math.abs(px) * 2, Y - 1, bz - Math.abs(pz) * 2, bx + Math.abs(px) * 2, Y - 1, bz + Math.abs(pz) * 2, theme.under]);
-    boxes.push([bx - Math.abs(px) * 2, Y, bz - Math.abs(pz) * 2, bx + Math.abs(px) * 2, Y, bz + Math.abs(pz) * 2, theme.path]);
-    boxes.push([cx - dx * 5, Y - 1, cz - dz * 5, cx - dx * 5, Y, cz - dz * 5, theme.path]);
-    const fx = bx - dx, fz = bz - dz; // the pole, at the very back
-    boxes.push([fx, Y + 1, fz, fx, Y + 5, fz, BLOCK_FENCE]);
-    boxes.push([fx + px, Y + 4, fz + pz, fx + px * 2, Y + 5, fz + pz * 2, wool]);
-    for (const sd of [-2, 2]) {
-      boxes.push([bx + px * sd, Y + 1, bz + pz * sd, bx + px * sd, Y + 1, bz + pz * sd, BLOCK_FENCE]);
-      boxes.push([bx + px * sd, Y + 2, bz + pz * sd, bx + px * sd, Y + 2, bz + pz * sd, BLOCK_GLOWSTONE]);
+    // ---- walls: all the way round, with a gate at the front and a tower at every corner ----
+    const wl = (a0: number, s0: number, a1: number, s1: number, b: number, h = 2) => {
+      const [x0, z0] = at(a0, s0), [x1, z1] = at(a1, s1);
+      boxes.push([Math.min(x0, x1), Y + 1, Math.min(z0, z1), Math.max(x0, x1), Y + h, Math.max(z0, z1), b]);
+    };
+    wl(-R, -R, -R, R, theme.mid);   // back (the tall one, round the egg)
+    wl(-R, -R, -1, -R, theme.mid);  // left, round the back half only (the front stays open so you and the bots can get out)
+    wl(-R, R, -1, R, theme.mid);    // right
+    for (const s of [-R, R]) wl(R, s, R, s, theme.mid, 2); // (the corner towers close the front)
+    // crenellations along the top of the back wall
+    for (let s = -R; s <= R; s += 2) put(-R, s, Y + 3, theme.mid);
+    for (const [a, s] of [[-R, -R], [R, -R], [-R, R], [R, R]]) { // corner towers with a lamp on top
+      put(a, s, Y + 1, theme.post, 3);
+      put(a, s, Y + 5, BLOCK_GLOWSTONE);
     }
-    for (const sd of [-1, 1]) {
-      const x = cx + dx * 3 + px * sd * 3, z = cz + dz * 3 + pz * sd * 3;
-      boxes.push([x, Y + 1, z, x, Y + 3, z, theme.post]);
-      boxes.push([x, Y + 4, z, x, Y + 4, z, theme.cap]);
+    for (const s of [-3, 3]) { // gate posts
+      put(R, s, Y + 3, theme.post, 1);
+      put(R, s, Y + 5, BLOCK_GLOWSTONE);
     }
-    // a short bridge from the front of the island (the gap to the middle you have to finish yourself)
+    boxes.push(...(() => { const [x0, z0] = at(R, -2), [x1, z1] = at(R, 2); return [[Math.min(x0, x1), Y + 4, Math.min(z0, z1), Math.max(x0, x1), Y + 4, Math.max(z0, z1), wool] as ArenaBox]; })()); // the team's banner over the gate
+    // ---- detail inside ----
+    for (let i = 1; i <= R; i++) put(i, 0, Y, theme.path); // a path from the spawn to the gate
+    for (const s of [-1, 1]) put(2, s * 2, Y, theme.path);
+    for (const s of [-1, 1]) { // a tree-like post in each back corner (nothing stands in the way between the spawn and the gate)
+      put(-3, s * 5, Y + 1, theme.post, 2);
+      put(-3, s * 5, Y + 4, theme.cap);
+    }
+    for (const s of [-2, 2]) { // lamp posts beside the egg
+      put(-4, s, Y + 1, BLOCK_FENCE, 1);
+      put(-4, s, Y + 3, BLOCK_GLOWSTONE);
+    }
+    put(-5, 3, Y + 1, BLOCK_FENCE, 4); // the team flag on a pole
+    put(-5, 2, Y + 4, wool); put(-5, 1, Y + 4, wool); put(-5, 2, Y + 5, wool); put(-5, 1, Y + 5, wool);
+    if (v === 0 || v === 4) { // a few flowers
+      put(2, -3, Y + 1, BLOCK_POPPY); put(3, -4, Y + 1, BLOCK_DANDELION); put(-2, 4, Y + 1, BLOCK_POPPY); put(-3, -3, Y + 1, BLOCK_DANDELION);
+    } else if (v === 2) { put(3, -4, Y + 1, BLOCK_CACTUS, 1); put(-2, 4, Y + 1, BLOCK_DEAD_BUSH); put(-3, -3, Y + 1, BLOCK_DEAD_BUSH); }
+    else if (v === 3) { put(3, -4, Y, BLOCK_SOUL_SAND); put(-2, 4, Y, BLOCK_SOUL_SAND); }
+    // a short bridge out of the gate (the gap to the middle you have to finish yourself)
     const len = v === 4 ? 4 : 8;
-    for (let i = 5; i < 5 + len; i++) {
-      const x = cx + dx * i, z = cz + dz * i;
+    for (let i = R + 1; i < R + 1 + len; i++) {
+      const [x, z] = at(i, 0);
       boxes.push([x - Math.abs(pz), Y, z - Math.abs(px), x + Math.abs(pz), Y, z + Math.abs(px), theme.path]);
     }
   });
-  const middle = v === 3 ? 6 : v === 2 ? 6 : 5;
+  const middle = v === 3 || v === 2 ? 9 : 8;
   island(0, 0, middle, BLOCK_GRASS, null);
-  // The middle: diamond generators, a tower, and a style of its own
-  const diamondSpots: Array<[number, number]> = v === 0 ? [[2, 2], [-2, -2]] : [[3, 0], [-3, 0], [0, 3], [0, -3]];
-  for (const [x, z] of diamondSpots) {
-    boxes.push([x, Y, z, x, Y, z, BLOCK_DIAMOND_ORE]);
-    gens.push({ x: x + 0.5, y: Y + 1.2, z: z + 0.5, item: ITEM_DIAMOND, every: v === 0 ? 12 : 20, cap: 8 });
+  // The middle: ONE emerald generator (4 emeralds at most), in a little shrine, and a style of its own
+  boxes.push([0, Y, 0, 0, Y, 0, BLOCK_EMERALD_BLOCK]);
+  gens.push({ x: 0.5, y: Y + 1.2, z: 0.5, item: ITEM_EMERALD, every: 25, cap: 4 });
+  for (const [x, z] of [[-2, -2], [2, -2], [-2, 2], [2, 2]]) {
+    boxes.push([x, Y + 1, z, x, Y + 3, z, BLOCK_GLASS]);
+    boxes.push([x, Y + 4, z, x, Y + 4, z, BLOCK_GLOWSTONE]);
   }
-  boxes.push([0, Y + 1, 0, 0, Y + 3, 0, BLOCK_GLASS]); // a little glass pillar in the very middle
-  boxes.push([0, Y + 4, 0, 0, Y + 4, 0, BLOCK_GLOWSTONE]);
   // a ring of path around the middle and lamp posts where the team bridges arrive
   for (const [ax, az] of [[0, -1], [1, 0], [0, 1], [-1, 0]]) {
     const ex = ax * middle, ez = az * middle;
@@ -5792,37 +5924,52 @@ export function arenaLayout(kind: ArenaKind, variant = 0): ArenaLayout {
       boxes.push([lx, Y + 3, lz, lx, Y + 3, lz, BLOCK_GLOWSTONE]);
     }
   }
+  // The diamond islands: one in each corner between the teams, with a diamond generator (8 diamonds at most) and a stepping stone from the middle
+  for (const [qx, qz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+    const sx = qx * 25, sz = qz * 25;
+    island(sx, sz, 4, BLOCK_GRASS, null);
+    boxes.push([sx, Y, sz, sx, Y, sz, BLOCK_DIAMOND_BLOCK]);
+    gens.push({ x: sx + 0.5, y: Y + 1.2, z: sz + 0.5, item: ITEM_DIAMOND, every: 20, cap: 8 });
+    for (const [a, b] of [[-3, -3], [3, -3], [-3, 3], [3, 3]]) { // a lamp in every corner
+      boxes.push([sx + a, Y + 1, sz + b, sx + a, Y + 2, sz + b, BLOCK_FENCE]);
+      boxes.push([sx + a, Y + 3, sz + b, sx + a, Y + 3, sz + b, BLOCK_GLOWSTONE]);
+    }
+    for (const [a, b] of [[-2, 0], [2, 0], [0, -2], [0, 2]]) boxes.push([sx + a, Y + 1, sz + b, sx + a, Y + 1, sz + b, theme.mid]); // a low wall round the generator
+    // the stepping stones from the middle island toward this one
+    for (let i = 0; i < 6; i++) {
+      const x = qx * (middle + 1 + i), z = qz * (middle + 1 + i);
+      boxes.push([x, Y, z, x + (i % 2 ? qx : 0), Y, z, theme.path]);
+    }
+  }
   if (v === 1) { // Frost: an ice arch over the middle and snowy cover
-    for (const [x, z] of [[-1, 0], [1, 0]]) boxes.push([x * 2, Y + 1, z * 2, x * 2, Y + 4, z * 2, BLOCK_PACKED_ICE]);
-    boxes.push([-2, Y + 5, 0, 2, Y + 5, 0, BLOCK_BLUE_ICE]);
+    for (const [x, z] of [[-1, 0], [1, 0]]) boxes.push([x * 5, Y + 1, z * 5, x * 5, Y + 5, z * 5, BLOCK_PACKED_ICE]);
+    boxes.push([-5, Y + 6, 0, 5, Y + 6, 0, BLOCK_BLUE_ICE]);
   } else if (v === 2) { // Desert: a little temple with terracotta stripes
-    for (const [x, z] of [[-4, -4], [4, -4], [-4, 4], [4, 4]]) {
+    for (const [x, z] of [[-5, -5], [5, -5], [-5, 5], [5, 5]]) {
       boxes.push([x, Y + 1, z, x, Y + 4, z, BLOCK_SANDSTONE]);
       boxes.push([x, Y + 2, z, x, Y + 2, z, BLOCK_TERRACOTTA_ORANGE]);
       boxes.push([x, Y + 5, z, x, Y + 5, z, TERRA_DYED_FIRST + 1]);
     }
     boxes.push([-1, Y, -1, 1, Y, 1, BLOCK_CHISELED_SANDSTONE]);
-    boxes.push([0, Y, 0, 0, Y, 0, TERRA_DYED_FIRST + 1]);
-    boxes.push([-6, Y + 1, 0, -6, Y + 1, 0, BLOCK_CACTUS]); boxes.push([6, Y + 1, 0, 6, Y + 1, 0, BLOCK_CACTUS]);
+    boxes.push([-7, Y + 1, 0, -7, Y + 1, 0, BLOCK_CACTUS]); boxes.push([7, Y + 1, 0, 7, Y + 1, 0, BLOCK_CACTUS]);
   } else if (v === 3) { // Nether: a nether-brick keep with glowstone lamps
-    for (const [x, z] of [[-5, -5], [5, -5], [-5, 5], [5, 5]]) {
+    for (const [x, z] of [[-6, -6], [6, -6], [-6, 6], [6, 6]]) {
       boxes.push([x, Y + 1, z, x, Y + 3, z, BLOCK_NETHER_BRICK]);
       boxes.push([x, Y + 4, z, x, Y + 4, z, BLOCK_GLOWSTONE]);
     }
-    boxes.push([-5, Y + 1, -2, -5, Y + 2, 2, BLOCK_NETHER_BRICK]);
-    boxes.push([5, Y + 1, -2, 5, Y + 2, 2, BLOCK_NETHER_BRICK]);
+    boxes.push([-6, Y + 1, -2, -6, Y + 2, 2, BLOCK_NETHER_BRICK]);
+    boxes.push([6, Y + 1, -2, 6, Y + 2, 2, BLOCK_NETHER_BRICK]);
     boxes.push([-4, Y, -4, -4, Y, -4, BLOCK_SOUL_SAND]); boxes.push([4, Y, 4, 4, Y, 4, BLOCK_SOUL_SAND]);
-  } else if (v === 4) { // Skylands: small islands in between with extra diamonds, and stepping stones to them
-    for (const [sx, sz] of [[-20, -20], [20, -20], [-20, 20], [20, 20]] as Array<[number, number]>) {
-      island(sx, sz, 3, BLOCK_GRASS, null);
-      boxes.push([sx, Y + 1, sz, sx, Y + 2, sz, BLOCK_WOOD]);
-      boxes.push([sx - 1, Y + 3, sz - 1, sx + 1, Y + 3, sz + 1, BLOCK_LEAVES]);
-      boxes.push([sx, Y, sz + 1, sx, Y, sz + 1, BLOCK_DIAMOND_ORE]);
-      gens.push({ x: sx + 0.5, y: Y + 1.2, z: sz + 1.5, item: ITEM_EMERALD, every: 30, cap: 4 });
+  } else if (v === 4) { // Skylands: little floating islands with trees all around
+    for (const [sx, sz] of [[-14, -33], [14, 33], [-33, 14], [33, -14], [-14, 33], [14, -33]] as Array<[number, number]>) {
+      island(sx, sz, 2, BLOCK_GRASS, null);
+      boxes.push([sx, Y + 1, sz, sx, Y + 3, sz, BLOCK_WOOD]);
+      boxes.push([sx - 1, Y + 4, sz - 1, sx + 1, Y + 4, sz + 1, BLOCK_LEAVES]);
     }
-  } else { // Meadow: a stone ring and a few flowers
-    boxes.push([-4, Y + 1, -4, -4, Y + 2, -4, BLOCK_STONE]); boxes.push([4, Y + 1, 4, 4, Y + 2, 4, BLOCK_STONE]);
-    boxes.push([-4, Y + 1, 4, -4, Y + 1, 4, BLOCK_DANDELION]); boxes.push([4, Y + 1, -4, 4, Y + 1, -4, BLOCK_POPPY]);
+  } else { // Meadow: stone pillars and a few flowers
+    boxes.push([-6, Y + 1, -6, -6, Y + 3, -6, BLOCK_STONE]); boxes.push([6, Y + 1, 6, 6, Y + 3, 6, BLOCK_STONE]);
+    boxes.push([-6, Y + 1, 6, -6, Y + 1, 6, BLOCK_DANDELION]); boxes.push([6, Y + 1, -6, 6, Y + 1, -6, BLOCK_POPPY]);
+    for (const [x, z] of [[-4, 5], [5, 3], [-5, -3], [3, -5]]) boxes.push([x, Y + 1, z, x, Y + 1, z, BLOCK_POPPY]);
   }
   arenaCache.set(cacheKey, { boxes, teams, gens, buildMin: Y - 8, buildMax: Y + 12, voidY: Y - 16, winScore: 0 });
   return arenaCache.get(cacheKey)!;
@@ -7901,6 +8048,12 @@ export type GameHandle = {
   onSelectedSlotChange: (cb: (i: number) => void) => void;
   setSlots: (slots: Slots) => void;
   getChest: (key: string) => Slots;
+  /** Elytra state (for tests and the HUD). */
+  isGliding: () => boolean;
+  glideSpeed: () => number;
+  /** Test hook: launch into a glide / fire a rocket as if right-clicked. */
+  debugStartGlide: () => void;
+  useFirework: () => void;
   /** A furnace's 3 slots (input, fuel, output) plus cooking and fuel progress (0..1). */
   getFurnace: (key: string) => { slots: Slots; cook: number; burn: number };
   setFurnace: (key: string, slots: Slots) => void;
@@ -9157,7 +9310,7 @@ export function createVoxelGame(
     [BLOCK_EMERALD_ORE]: 2.8,
     [BLOCK_OBSIDIAN]: 10,
     [BLOCK_TALL_GRASS]: 0,
-    [BLOCK_CHEST]: 1.0,
+    [BLOCK_CHEST]: 1.0, [BLOCK_ENDER_CHEST]: 3.5,
     [ITEM_PLANKS]: 0.75,
     [BLOCK_NETHERRACK]: 0.4,
     [BLOCK_SOUL_SAND]: 0.5,
@@ -9386,7 +9539,7 @@ export function createVoxelGame(
 
   function getChest(key: string): Slots {
     let c = chests.get(key);
-    if (!c) { c = emptySlots(CHEST_SIZE); fillLoot(key, c); chests.set(key, c); }
+    if (!c) { c = emptySlots(CHEST_SIZE); if (key !== 'ender') fillLoot(key, c); chests.set(key, c); }
     return c.map((st) => (st ? { ...st } : null));
   }
 
@@ -9442,6 +9595,27 @@ export function createVoxelGame(
   let blockLerp = 0;
   let crouchNow = false;
   let inWeb = false;
+  // ---- Elytra: jump in the air with one on to glide (look where you want to go; fireworks boost you) ----
+  let gliding = false;
+  const glideV = new THREE.Vector3(); // velocity in blocks per tick (20 ticks a second), like Minecraft
+  let glideAcc = 0, glideWear = 0, fireworkBoost = 0, jumpPrev = false;
+  function elytraReady(): boolean { const e = armor[1]; return !!e && e.id === ITEM_ELYTRA && (e.damage ?? 0) < ELYTRA_DURABILITY - 1; }
+  function stopGlide() { gliding = false; fireworkBoost = 0; glideAcc = 0; }
+  /** Right-click with a firework rocket: gliding, it shoves you along; on the ground it just goes off. */
+  function useFirework() {
+    if (heldItem !== ITEM_FIREWORK) return;
+    if (mode !== 'creative') consumeHeld(1);
+    const p = camera.position.clone();
+    if (gliding) { fireworkBoost = 1.1; }
+    else {
+      const d = new THREE.Vector3(); camera.getWorldDirection(d);
+      p.addScaledVector(d, 2.5); p.y += 2.5;
+    }
+    const cols = ['#ff4d3a', '#ffd23a', '#7bff7a', '#6ab8ff', '#ff7bf0', '#ffffff'];
+    spawnParticles(p, cols, gliding ? 14 : 36, gliding ? 3 : 7, 0.3, 0.9);
+    playSfx('pop', null);
+    engineEvent('firework', { gliding });
+  }
   /** In water and moving: the body leans forward and the arms stroke (you in F5, and other players see it) */
   let swimming = false;
   let swimLerp = 0;
@@ -9855,7 +10029,7 @@ export function createVoxelGame(
     if (block === BLOCK_GRASS) return 'grass';
     if (block === BLOCK_STONE || block === BLOCK_BEDROCK || block === BLOCK_OBSIDIAN || isConcrete(block) || block === BLOCK_SPAWNER || (block >= BLOCK_COAL_ORE && block <= BLOCK_EMERALD_ORE)
       || isTerracotta(block) || (block >= BLOCK_LAPIS_ORE && block <= BLOCK_ENCHANTING_TABLE) || isLamp(block) || (block >= 1094 && block <= 1097)
-      || block === BLOCK_GRANITE || block === BLOCK_DIORITE || block === BLOCK_ANDESITE || block === BLOCK_FURNACE || block === BLOCK_DIAMOND_ORE || block === BLOCK_CACTUS) return 'stone';
+      || block === BLOCK_GRANITE || block === BLOCK_DIORITE || block === BLOCK_ANDESITE || block === BLOCK_FURNACE || block === BLOCK_ENDER_CHEST || block === BLOCK_DIAMOND_ORE || block === BLOCK_CACTUS) return 'stone';
     return isSolid(block) ? 'stone' : 'grass';
   }
   /** Water: a stroke when you swim, a slosh when you wade, a plunge when you jump in. */
@@ -9870,6 +10044,10 @@ export function createVoxelGame(
 
   function playMobSound(kind: MobKind, pos: THREE.Vector3, hurt: boolean) {
     switch (kind) {
+      case 'wolf':
+        if (hurt) { tone(pos, 'sawtooth', 520, 260, 0.35, 0.22, 0, 10); tone(pos, 'sine', 900, 600, 0.2, 0.14, 0.05); } // a yelp
+        else { tone(pos, 'sawtooth', 190, 130, 0.22, 0.2, 0, 18); tone(pos, 'square', 160, 110, 0.18, 0.1, 0.03, 18); } // a growl
+        break;
       case 'pig':
         if (hurt) tone(pos, 'square', 420, 300, 0.2, 0.25, 0, 25);
         else { tone(pos, 'square', 320, 240, 0.12, 0.22, 0, 30); tone(pos, 'square', 300, 220, 0.12, 0.18, 0.15, 30); }
@@ -10176,6 +10354,7 @@ export function createVoxelGame(
     notifyInventory();
   }
   function die(reason: string) {
+    stopGlide();
     if (sleeping) wakeUp(false);
     if (riding) leaveBoat();
     isMining = false;
@@ -10832,7 +11011,7 @@ export function createVoxelGame(
     kind: ArenaKind; size: MinigameSize; phase: 'waiting' | 'countdown' | 'playing' | 'over'; timer: number; difficulty: BotDifficulty;
     online?: boolean; goalSentAt?: number; auto?: { starts: number; min: number };
     teams: MgTeam[]; you: { team: number; out: boolean; kills: number; deaths: number; respawn: number };
-    placed: Set<string>; gens: Array<{ x: number; y: number; z: number; item: number; every: number; t: number; cap: number }>;
+    placed: Set<string>; gens: Array<{ x: number; y: number; z: number; item: number; every: number; t: number; cap: number; altItem?: number; altChance?: number; altCap?: number }>;
     result: { win: boolean; place: number; text: string } | null;
     message: string | null; messageUntil: number; elapsed: number; knockouts: number;
   };
@@ -10849,21 +11028,23 @@ export function createVoxelGame(
   let mgEmitTimer = 0;
   let arenaHintTime = 0;
   const SHOP_TRADES = (wool: number): Trade[] => {
-    const I = ITEM_IRON_INGOT, G = ITEM_GOLD_INGOT, D = ITEM_DIAMOND;
+    const I = ITEM_IRON_INGOT, G = ITEM_GOLD_INGOT, D = ITEM_DIAMOND, E = ITEM_EMERALD;
     const t = (cat: string, give: [number, number], get: [number, number], quick = false): Trade => ({ cat, quick, give: [give], get });
     return [
       t('Blocks', [I, 4], [wool, 16], true),
       t('Blocks', [G, 4], [ITEM_PLANKS, 16], true),
       t('Blocks', [I, 12], [BLOCK_TERRACOTTA, 16]),
       t('Blocks', [I, 12], [BLOCK_GLASS, 4]),
-      t('Blocks', [D, 4], [BLOCK_OBSIDIAN, 4]),
+      t('Blocks', [E, 2], [BLOCK_OBSIDIAN, 4]),
       t('Weapons', [I, 10], [ITEM_STONE_SWORD, 1], true),
       t('Weapons', [G, 7], [ITEM_IRON_SWORD, 1], true),
       t('Weapons', [D, 4], [ITEM_DIAMOND_SWORD, 1]),
+      t('Weapons', [E, 3], [ITEM_DIAMOND_SWORD, 1]),
       // armor is just a chestplate: buying one puts it on (replacing what you wear) with no item to carry
       t('Armor', [I, 6], [armorId('leather', 1), 1], true),
       t('Armor', [G, 8], [armorId('iron', 1), 1], true),
       t('Armor', [D, 6], [armorId('diamond', 1), 1]),
+      t('Armor', [E, 6], [armorId('diamond', 1), 1]),
       t('Tools', [I, 10], [ITEM_STONE_PICKAXE, 1], true),
       t('Tools', [G, 8], [ITEM_IRON_PICKAXE, 1]),
       t('Tools', [D, 6], [ITEM_DIAMOND_PICKAXE, 1]),
@@ -10873,7 +11054,8 @@ export function createVoxelGame(
       t('Ranged', [G, 6], [ITEM_BOW, 1], true),
       t('Ranged', [G, 2], [ITEM_ARROW, 8], true),
       t('Utility', [I, 6], [ITEM_STEAK, 4], true),
-      t('Utility', [D, 3], [ITEM_ENDER_PEARL, 1], true),
+      t('Utility', [E, 2], [ITEM_ENDER_PEARL, 1], true),
+      t('Utility', [G, 4], [ITEM_FIREWORK, 3]),
       t('Utility', [G, 6], [ITEM_BRIDGE_EGG, 1], true),
       t('Utility', [G, 8], [BLOCK_TNT, 1], true),
       t('Utility', [I, 10], [ITEM_FLINT_AND_STEEL, 1]),
@@ -10977,6 +11159,7 @@ export function createVoxelGame(
     const list: Array<[number, number, number, number]> = [];
     for (const k of mg.placed) { const [x, y, z] = k.split(',').map(Number); list.push([x, y, z, BLOCK_AIR]); }
     mg.placed.clear();
+    chests.clear(); // team chests and the ender chest start empty again
     for (const t of arena.teams) if (t.egg) list.push([t.egg[0], t.egg[1], t.egg[2], BLOCK_EGG + arena.teams.indexOf(t)]);
     setBlocksQuiet(list);
     mg.placed.clear();
@@ -11384,9 +11567,11 @@ export function createVoxelGame(
       g.t -= dt;
       if (g.t > 0) continue;
       g.t = g.every;
+      const alt = g.altItem !== undefined && Math.random() < (g.altChance ?? 0); // now and then a gold ingot comes out instead of iron
+      const item = alt ? g.altItem! : g.item, cap = alt ? (g.altCap ?? g.cap) : g.cap;
       let near = 0;
-      for (const d of droppedItems) if (d.id === g.item && Math.abs(d.pos.x - g.x) < 1.5 && Math.abs(d.pos.z - g.z) < 1.5) near += d.count;
-      if (near < g.cap) spawnDroppedItem(g.item, 1, new THREE.Vector3(g.x, g.y, g.z), new THREE.Vector3(0, 1, 0), 0);
+      for (const d of droppedItems) if (d.id === item && Math.abs(d.pos.x - g.x) < 1.5 && Math.abs(d.pos.z - g.z) < 1.5) near += d.count;
+      if (near < cap) spawnDroppedItem(item, 1, new THREE.Vector3(g.x, g.y, g.z), new THREE.Vector3(0, 1, 0), 0);
     }
     // Bots come back after dying (while their egg stands, or always in Bridge Duels)
     for (const t of mg.teams) t.bots.forEach((b, k) => {
@@ -11453,7 +11638,7 @@ export function createVoxelGame(
     return out;
   }
   const UPGRADE_COST = [10, 22]; // what a bot "spends" at its shopkeeper for iron, then diamond gear
-  const coinValue = (id: number) => (id === ITEM_GOLD_INGOT ? 3 : id === ITEM_DIAMOND ? 8 : 1);
+  const coinValue = (id: number) => (id === ITEM_GOLD_INGOT ? 3 : id === ITEM_DIAMOND ? 8 : id === ITEM_EMERALD ? 6 : 1);
   function decideBot(m: Mob) {
     if (!mg || !m.bot || !arena) return;
     const b = m.bot, D = BOT_DIFF[mg.difficulty];
@@ -11897,8 +12082,8 @@ export function createVoxelGame(
     } else {
       if (ground !== BLOCK_GRASS) return; // animals only spawn on grass
       const kinds: MobKind[] = ['pig', 'cow', 'chicken', 'sheep'];
-      const kind = kinds[Math.floor(Math.random() * kinds.length)];
-      const herd = 1 + Math.floor(Math.random() * 3);
+      const kind: MobKind = Math.random() < 0.1 ? 'wolf' : kinds[Math.floor(Math.random() * kinds.length)];
+      const herd = kind === 'wolf' ? 2 + Math.floor(Math.random() * 2) : 1 + Math.floor(Math.random() * 3);
       for (let i = 0; i < herd; i++) {
         const hx = x + Math.floor(Math.random() * 3) - 1, hz = z + Math.floor(Math.random() * 3) - 1;
         const hy = world.getSurfaceHeight(hx, hz);
@@ -11966,10 +12151,12 @@ export function createVoxelGame(
     if (dir.lengthSq() > 0) dir.normalize();
     m.knock.set(dir.x * knock, 0, dir.z * knock);
     if (!quiet) { m.velY = 5; m.onGround = false; }
-    if (!infoOf(m).hostile && m.kind !== 'iron_golem') m.panicTime = 4;
+    if (!infoOf(m).hostile && m.kind !== 'iron_golem' && m.kind !== 'wolf') m.panicTime = 4;
     m.angry = true;
     if (byPlayer) {
       if (m.kind === 'iron_golem') m.grudge = 25;
+      // Hit a wolf and it (and every wolf near it) comes for you
+      if (m.kind === 'wolf') for (const o of mobs) if (o.kind === 'wolf' && o.deathTime < 0 && o.pos.distanceTo(m.pos) < 20) o.grudge = 45;
       // Golems protect villagers: hurt one and every golem nearby comes for you
       if (m.kind === 'villager') for (const g of mobs) if (g.kind === 'iron_golem' && g.pos.distanceTo(m.pos) < 32) g.grudge = 25;
       // Piglins stick together
@@ -12043,7 +12230,7 @@ export function createVoxelGame(
     let any = false;
     for (let i = 0; i < 4; i++) {
       const st = armor[i];
-      if (!st) continue;
+      if (!st || st.id === ITEM_ELYTRA) continue; // blows don't wear an elytra out
       any = true;
       if (wearStack(st, n, true)) { armor[i] = null; itemBroke(st); }
     }
@@ -12104,9 +12291,9 @@ export function createVoxelGame(
     // Too many at once: the oldest ones go straight to you
     while (xpOrbs.length > 80) { const o = xpOrbs.shift()!; scene.remove(o.mesh); addXp(o.value); }
   }
-  /** Mending: an orb repairs a worn item with Mending (2 durability per point); what is left over is yours. */
+  /** Mending: an orb repairs worn armor / an elytra with Mending (2 durability per point); what is left over is yours. */
   function collectXp(value: number) {
-    const worn: ItemStack[] = [slots[selectedSlot], offhand, ...armor].filter((st): st is ItemStack => !!st && enchLevel(st, 'mending') > 0 && (st.damage ?? 0) > 0);
+    const worn: ItemStack[] = armor.filter((st): st is ItemStack => !!st && enchLevel(st, 'mending') > 0 && (st.damage ?? 0) > 0);
     let rest = value;
     if (worn.length) {
       const st = worn[Math.floor(Math.random() * worn.length)];
@@ -12823,6 +13010,22 @@ export function createVoxelGame(
         } else {
           homeSteer(info.speed * 0.6);
         }
+      } else if (m.kind === 'wolf') {
+        // Peaceful until you hit one; then it runs you down and bites
+        if (m.grudge > 0 && canBeAttacked() && rules.difficulty !== 'peaceful' && dh < 30) {
+          m.targetYaw = yawToward(dx, dz);
+          m.moving = true;
+          if (dh > 1.5) { wantX = (dx / dh) * info.speed * 1.3; wantZ = (dz / dh) * info.speed * 1.3; }
+          if (dh < 2 && m.attackCooldown <= 0 && m.onGround && Math.abs(dy) < 1.8 && !wallBetween(m.pos.x, m.pos.y + 0.5, m.pos.z, feet.x, feet.y + 1.0, feet.z)) {
+            m.attackCooldown = 1;
+            m.attackAnim = 0.35;
+            hurtPlayer(4, m.pos, 5, 'Wolf');
+            playMobSound('wolf', m.pos, false);
+          }
+        } else {
+          if (m.grudge > 0 && !canBeAttacked()) m.grudge = 0;
+          wander(info.speed * 0.8);
+        }
       } else if (m.kind === 'villager' && m.tradeTime > 0) {
         m.tradeTime -= dt; // stands still and looks at you while you trade
         m.targetYaw = yawToward(feet.x - m.pos.x, feet.z - m.pos.z);
@@ -13189,7 +13392,14 @@ export function createVoxelGame(
     for (let i = mobs.length - 1; i >= 0; i--) {
       const m = mobs[i];
       const far = m.pos.distanceTo(camera.position);
-      const chunkLoaded = loadedChunks.has(world.key(Math.floor(m.pos.x / CHUNK_SIZE), Math.floor(m.pos.z / CHUNK_SIZE)));
+      let chunkLoaded = loadedChunks.has(world.key(Math.floor(m.pos.x / CHUNK_SIZE), Math.floor(m.pos.z / CHUNK_SIZE)));
+      if (!chunkLoaded && m.kind === 'bot' && arena) { // minigame bots keep playing on far islands: the ground there is made (not drawn) when they need it
+        const bcx = Math.floor(m.pos.x / CHUNK_SIZE), bcz = Math.floor(m.pos.z / CHUNK_SIZE);
+        let bc = world.getChunk(bcx, bcz);
+        if (!bc) { bc = new Chunk(bcx, bcz); world.chunks.set(world.key(bcx, bcz), bc); }
+        if (!bc.generated) world.generateChunk(bc);
+        chunkLoaded = true;
+      }
       const persistent = m.kind === 'hollow_tyrant' || m.kind === 'bot' || !!m.persistent; // a boss, a minigame player or a shopkeeper never just vanishes
       if (!persistent && (!chunkLoaded || far > (infoOf(m).hostile ? 64 : 96))) { removeMob(i); continue; }
       if (!chunkLoaded && m.kind !== 'hollow_tyrant') continue; // wait (frozen) until the ground under it is loaded again
@@ -14307,7 +14517,7 @@ export function createVoxelGame(
   // ---- Pistons ----
   /** Things a piston can't shove: anything with its own saved data, bedrock-like blocks, doors and beds, other pistons' arms. */
   function pistonImmovable(b: number, x: number, y: number, z: number): boolean {
-    if (b === BLOCK_BEDROCK || b === BLOCK_OBSIDIAN || b === BLOCK_CHEST || b === BLOCK_FURNACE || b === BLOCK_BREWING_STAND || b === BLOCK_CAMPFIRE || b === BLOCK_NETHER_PORTAL) return true;
+    if (b === BLOCK_BEDROCK || b === BLOCK_OBSIDIAN || b === BLOCK_CHEST || b === BLOCK_ENDER_CHEST || b === BLOCK_FURNACE || b === BLOCK_BREWING_STAND || b === BLOCK_CAMPFIRE || b === BLOCK_NETHER_PORTAL) return true;
     if (isCommandBlock(b) || isPistonHead(b) || isDoor(b) || isBed(b) || isEgg(b) || (isPiston(b) && pistonExtended(b))) return true;
     return worldType === 'oneblock' && dimension === 'overworld' && x === ONEBLOCK_POS[0] && y === ONEBLOCK_POS[1] && z === ONEBLOCK_POS[2];
   }
@@ -14660,7 +14870,7 @@ export function createVoxelGame(
     const fx = isHead ? x - ddx : x, fz = isHead ? z - ddz : z, hx = fx + ddx, hz = fz + ddz;
     const top = y + 0.5625; // the mattress is 9/16 of a block tall
     sleeping = { bx: x, by: y, bz: z, fx, fz, hx, hz, top, eye: new THREE.Vector3(hx + 0.5, top + 0.3, hz + 0.5), lieYaw: Math.atan2(ddx, ddz), t: 0 };
-    isFlying = false; velocityY = 0; isMining = false; swordBlocking = false; bowDrawing = false; eatingItem = null; eatTimer = 0; eatHold = false; scriptZoom = 1;
+    isFlying = false; stopGlide(); velocityY = 0; isMining = false; swordBlocking = false; bowDrawing = false; eatingItem = null; eatTimer = 0; eatHold = false; scriptZoom = 1;
     camera.position.copy(sleeping.eye);
     yaw = sleeping.lieYaw; pitch = 0.45; // looking up at the ceiling along the bed
     if (document.pointerLockElement) document.exitPointerLock(); // so you can click Leave Bed and Chat
@@ -14819,8 +15029,8 @@ export function createVoxelGame(
       : kind === 'portal'
       ? [[ITEM_GOLD_INGOT, 0.7, 2, 6], [BLOCK_OBSIDIAN, 0.5, 1, 4], [ITEM_IRON_INGOT, 0.4, 1, 3], [ITEM_FLINT_AND_STEEL, 0.4, 1, 1], [BLOCK_NETHERRACK, 0.5, 4, 10], [BLOCK_GOLD_BLOCK, 0.12, 1, 1], [ITEM_BLAZE_POWDER, 0.2, 1, 2]]
       : kind === 'treasure'
-      ? [[ITEM_IRON_INGOT, 0.8, 3, 8], [ITEM_GOLD_INGOT, 0.6, 1, 5], [ITEM_EMERALD, 0.5, 1, 4], [ITEM_DIAMOND, 0.3, 1, 2], [ITEM_COOKED_COD, 0.6, 2, 5], [ITEM_COOKED_SALMON, 0.4, 2, 5], [ITEM_COAL, 0.5, 2, 5], [BLOCK_TNT, 0.3, 1, 2]]
-      : [[ITEM_GOLD_INGOT, 0.5, 1, 3], [ITEM_IRON_INGOT, 0.5, 1, 5], [ITEM_DIAMOND, 0.2, 1, 3], [ITEM_FLINT_AND_STEEL, 0.2, 1, 1], [BLOCK_OBSIDIAN, 0.25, 2, 4], [ITEM_BLAZE_ROD, 0.3, 1, 2]];
+      ? [[ITEM_IRON_INGOT, 0.8, 3, 8], [ITEM_GOLD_INGOT, 0.6, 1, 5], [ITEM_EMERALD, 0.5, 1, 4], [ITEM_DIAMOND, 0.3, 1, 2], [ITEM_COOKED_COD, 0.6, 2, 5], [ITEM_COOKED_SALMON, 0.4, 2, 5], [ITEM_COAL, 0.5, 2, 5], [BLOCK_TNT, 0.3, 1, 2], [ITEM_ELYTRA, 0.12, 1, 1], [ITEM_FIREWORK, 0.5, 2, 6]]
+      : [[ITEM_GOLD_INGOT, 0.5, 1, 3], [ITEM_IRON_INGOT, 0.5, 1, 5], [ITEM_DIAMOND, 0.2, 1, 3], [ITEM_FLINT_AND_STEEL, 0.2, 1, 1], [BLOCK_OBSIDIAN, 0.25, 2, 4], [ITEM_BLAZE_ROD, 0.3, 1, 2], [ITEM_ELYTRA, 0.08, 1, 1], [ITEM_FIREWORK, 0.4, 2, 5]];
     for (const [id, chance, lo, hi] of table) {
       if (rnd() > chance) continue;
       let slot = Math.floor(rnd() * c.length);
@@ -17445,7 +17655,7 @@ export function createVoxelGame(
       if (heldItem !== null && TOOLS[heldItem]?.kind === 'sword' && mode !== 'spectator') {
         const h = raycastBlock();
         const b = h ? world.getWorldBlock(h.x, h.y, h.z) : BLOCK_AIR;
-        const usable = b === BLOCK_CHEST || b === BLOCK_CRAFTING_TABLE || b === BLOCK_FURNACE || isDoor(b) || isOpenable(b) || b === BLOCK_ENCHANTING_TABLE || isAnvil(b) || isLever(b) || isButton(b) || isRepeater(b) || isItemFrame(b) || isComparator(b) || isCommandBlock(b);
+        const usable = b === BLOCK_CHEST || b === BLOCK_ENDER_CHEST || b === BLOCK_CRAFTING_TABLE || b === BLOCK_FURNACE || isDoor(b) || isOpenable(b) || b === BLOCK_ENCHANTING_TABLE || isAnvil(b) || isLever(b) || isButton(b) || isRepeater(b) || isItemFrame(b) || isComparator(b) || isCommandBlock(b);
         if (!usable) { swordBlocking = true; return; } // hold right-click to block
       }
       placeBlock();
@@ -17458,6 +17668,7 @@ export function createVoxelGame(
   // consuming one item from the inventory (except in creative).
   function placeBlock() {
     if (mode === 'spectator') return; // spectators can't touch the world
+    if (heldItem === ITEM_FIREWORK) { useFirework(); return; }
     // Right-clicking armor puts it on (swapping with what you were wearing)
     if (heldItem !== null && ARMOR[heldItem] && slots[selectedSlot]) {
       const slot = ARMOR[heldItem].slot;
@@ -17508,7 +17719,7 @@ export function createVoxelGame(
     if (hit && isBed(target)) { useBed(hit.x, hit.y, hit.z); return; }
     // Levers, buttons and repeaters; item frames take an item or turn it
     if (hit && mode !== 'adventure' && useRedstoneOrFrame(hit.x, hit.y, hit.z, target)) { punchPhase = PUNCH_DURATION; return; }
-    const interactive = target === BLOCK_CRAFTING_TABLE || target === BLOCK_CHEST || target === BLOCK_FURNACE || target === BLOCK_BREWING_STAND || target === BLOCK_ENCHANTING_TABLE || isAnvil(target);
+    const interactive = target === BLOCK_CRAFTING_TABLE || target === BLOCK_CHEST || target === BLOCK_ENDER_CHEST || target === BLOCK_FURNACE || target === BLOCK_BREWING_STAND || target === BLOCK_ENCHANTING_TABLE || isAnvil(target);
     if (!interactive && heldItem === ITEM_FISHING_ROD) { castRod(); return; }
     if (!interactive && heldItem === ITEM_GLASS_BOTTLE) { useGlassBottle(); return; }
     if (!interactive && heldItem !== null && isPotionItem(heldItem)) { drinkPotion(); return; }
@@ -17519,12 +17730,12 @@ export function createVoxelGame(
     if (interactive) {
       inventoryOpen = true;
       atCraftingTable = target === BLOCK_CRAFTING_TABLE;
-      openChestKey = target === BLOCK_CHEST ? `${hit.x},${hit.y},${hit.z}` : null;
+      openChestKey = target === BLOCK_CHEST ? `${hit.x},${hit.y},${hit.z}` : target === BLOCK_ENDER_CHEST ? 'ender' : null;
       openFurnaceKey = target === BLOCK_FURNACE ? `${hit.x},${hit.y},${hit.z}` : target === BLOCK_BREWING_STAND ? `B|${hit.x},${hit.y},${hit.z}` : null;
       openStation = target === BLOCK_ENCHANTING_TABLE ? { kind: 'enchanting', shelves: countBookshelves(hit.x, hit.y, hit.z) } : isAnvil(target) ? { kind: 'anvil', shelves: 0 } : null;
       inventoryOpenCallback?.(true, atCraftingTable, openChestKey, openFurnaceKey, openStation);
       if (document.pointerLockElement) document.exitPointerLock();
-      if (target === BLOCK_CHEST) playBlockSound(BLOCK_CHEST, new THREE.Vector3(hit.x + 0.5, hit.y + 0.5, hit.z + 0.5), 'place');
+      if (target === BLOCK_CHEST || target === BLOCK_ENDER_CHEST) playBlockSound(BLOCK_CHEST, new THREE.Vector3(hit.x + 0.5, hit.y + 0.5, hit.z + 0.5), 'place');
       return;
     }
 
@@ -17877,6 +18088,7 @@ export function createVoxelGame(
       if (noclip || (canMoveTo(sx, camera.position.z) && (!edgeGuard || standsOnSomething(sx, camera.position.z)))) camera.position.x = sx; else slideVel.x = 0;
       if (noclip || (canMoveTo(camera.position.x, sz) && (!edgeGuard || standsOnSomething(camera.position.x, sz)))) camera.position.z = sz; else slideVel.z = 0;
     }
+    if (gliding) { moveVec.set(0, 0, 0); slideVel.set(0, 0, 0); playerKnock.set(0, 0, 0); }
     if (moveVec.lengthSq() > 0 && !riding) {
       moveVec.normalize().multiplyScalar(speed * delta);
       const newX = camera.position.x + moveVec.x;
@@ -17893,6 +18105,7 @@ export function createVoxelGame(
       playerKnock.multiplyScalar(Math.max(0, 1 - 6 * delta));
     }
 
+    if (gliding && (!elytraReady() || inFluidNow || dead || riding || noclip || isFlying || inWeb)) { velocityY = glideV.y * 20; stopGlide(); }
     if (riding) {
       // Sitting in a boat
       camera.position.set(riding.pos.x, riding.pos.y + 1.2, riding.pos.z);
@@ -17915,6 +18128,56 @@ export function createVoxelGame(
       // apply damage for the whole flight's height.
       wasGrounded = true;
       fallPeakY = camera.position.y;
+    } else if (gliding) {
+      // Gliding on an elytra. Physics ticks at 20 Hz with Minecraft's numbers; position moves every frame.
+      const gl = new THREE.Vector3(); camera.getWorldDirection(gl);
+      glideAcc += delta;
+      for (let t = 0; glideAcc >= 0.05 && t < 6; t++) {
+        glideAcc -= 0.05;
+        const lh = Math.hypot(gl.x, gl.z), hv0 = Math.hypot(glideV.x, glideV.z);
+        const cosP2 = 1 - gl.y * gl.y;
+        glideV.y += -0.08 + cosP2 * 0.06;
+        if (glideV.y < 0 && lh > 0) { const k = glideV.y * -0.1 * cosP2; glideV.y += k; glideV.x += gl.x / lh * k; glideV.z += gl.z / lh * k; }
+        if (gl.y > 0 && lh > 0) { const k = hv0 * gl.y * 0.04; glideV.y += k * 3.2; glideV.x -= gl.x / lh * k; glideV.z -= gl.z / lh * k; }
+        if (lh > 0) { glideV.x += (gl.x / lh * hv0 - glideV.x) * 0.1; glideV.z += (gl.z / lh * hv0 - glideV.z) * 0.1; }
+        if (fireworkBoost > 0) { glideV.x += gl.x * 0.1 + (gl.x * 1.5 - glideV.x) * 0.5; glideV.y += gl.y * 0.1 + (gl.y * 1.5 - glideV.y) * 0.5; glideV.z += gl.z * 0.1 + (gl.z * 1.5 - glideV.z) * 0.5; }
+        glideV.x *= 0.99; glideV.y *= 0.98; glideV.z *= 0.99;
+      }
+      if (fireworkBoost > 0) { fireworkBoost -= delta; if (Math.random() < 0.6) spawnParticles(camera.position.clone().addScaledVector(gl, -0.8).add(new THREE.Vector3(0, -0.8, 0)), ['#ffd23a', '#ff7a3a', '#ffffff'], 1, 0.6, 0.2, 0.5); }
+      const gdx = glideV.x * 20 * delta, gdy = glideV.y * 20 * delta, gdz = glideV.z * 20 * delta;
+      const hBefore = Math.hypot(glideV.x, glideV.z);
+      if (canMoveTo(camera.position.x + gdx, camera.position.z)) camera.position.x += gdx; else glideV.x = 0;
+      if (canMoveTo(camera.position.x, camera.position.z + gdz)) camera.position.z += gdz; else glideV.z = 0;
+      const crash = (hBefore - Math.hypot(glideV.x, glideV.z)) * 10 - 3;
+      if (crash > 0 && canBeAttacked()) hurtPlayer(Math.floor(crash), null, 0, 'Flew into a wall');
+      let landed = false;
+      if (gdy > 0) {
+        if (bodyBlockedAt(camera.position.x, camera.position.y + gdy, camera.position.z)) glideV.y = 0; else camera.position.y += gdy;
+      } else {
+        const curFeet = camera.position.y - PLAYER_EYE, nextFeet = curFeet + gdy;
+        let top: number | null = null;
+        for (let r = Math.floor(curFeet - 0.001); r >= Math.floor(nextFeet); r--) {
+          const tp = groundTopAt(camera.position.x, r, camera.position.z, curFeet);
+          if (tp !== null && tp >= nextFeet - 0.001) { top = tp; break; }
+        }
+        if (top !== null) { camera.position.y = top + PLAYER_EYE; landed = true; } else camera.position.y += gdy;
+      }
+      if (mode !== 'creative') {
+        glideWear += delta;
+        if (glideWear >= 1) {
+          glideWear -= 1;
+          const e = armor[1];
+          if (e && wearStack(e, 1, true)) { armor[1] = null; itemBroke(e); stopGlide(); velocityY = glideV.y * 20; }
+          notifyInventory();
+        }
+      }
+      wasGrounded = false; fallPeakY = camera.position.y;
+      if (landed) {
+        const vs = -glideV.y * 20; // a hard dive hurts, a gentle landing doesn't
+        stopGlide(); velocityY = 0; wasGrounded = true;
+        if (vs > 12 && canBeAttacked()) hurtPlayer(Math.floor((vs - 12) / 2), null, 0, 'Fall damage');
+        if (vs > 4) playSfx('land', null);
+      }
     } else {
     // Gravity & jumping with real per-block collision. This checks the
     // actual block directly beneath the player's feet instead of the
@@ -17922,6 +18185,15 @@ export function createVoxelGame(
     // approach caused a teleport-up glitch: moving even slightly toward a
     // taller neighboring column mid-fall would suddenly report a much
     // higher "floor" and snap the player up into it.
+    if (!inFluidNow && !wasGrounded && down('jump') && !jumpPrev && !inventoryOpen && mode !== 'spectator' && elytraReady() && !inWeb && !arenaFrozen()) {
+      // Jump again in the air with an elytra on: spread the wings
+      const gl = new THREE.Vector3(); camera.getWorldDirection(gl);
+      const lh = Math.hypot(gl.x, gl.z) || 1;
+      gliding = true; glideAcc = 0; glideWear = 0; fireworkBoost = 0;
+      glideV.set(gl.x / lh * 0.22, Math.min(0, velocityY / 20), gl.z / lh * 0.22);
+      fallPeakY = camera.position.y;
+      playSfx('click', null);
+    }
     if (inFluidNow) {
       // Swimming: gentle sinking, hold Space to swim up, and water breaks your fall
       velocityY += GRAVITY * 0.2 * delta;
@@ -18001,6 +18273,7 @@ export function createVoxelGame(
     }
     }
 
+    jumpPrev = down('jump');
     // --- Hunger & health (survival/adventure only; creative & spectator are immortal) ---
     if ((mode === 'survival' || mode === 'adventure') && !dead) {
     // Sprinting burns hunger 3x faster
@@ -18173,7 +18446,7 @@ export function createVoxelGame(
         const nm = makeItemMesh(stage ? BOW_PULL_BASE + stage : ITEM_BOW, true);
         if (nm) {
           heldMesh.geometry.dispose();
-          (Array.isArray(heldMesh.material) ? heldMesh.material : [heldMesh.material]).forEach((mm) => mm.dispose());
+          (Array.isArray(heldMesh.material) ? heldMesh.material : [heldMesh.material]).forEach((mm: THREE.Material) => mm.dispose());
           heldMesh.geometry = nm.geometry; heldMesh.material = nm.material;
         }
         heldBowStage = stage;
@@ -18924,6 +19197,10 @@ export function createVoxelGame(
     onBlockEvent: (cb: (type: 'break' | 'place', x: number, y: number, z: number, block: number) => void) => { blockEventCallback = cb; },
     setSlots,
     getChest,
+    isGliding: () => gliding,
+    glideSpeed: () => Math.hypot(glideV.x, glideV.y, glideV.z) * 20,
+    debugStartGlide: () => { if (elytraReady()) { const gl = new THREE.Vector3(); camera.getWorldDirection(gl); const lh = Math.hypot(gl.x, gl.z) || 1; gliding = true; glideAcc = 0; glideV.set(gl.x / lh * 0.22, 0, gl.z / lh * 0.22); fallPeakY = camera.position.y; } },
+    useFirework,
     getFurnace,
     setFurnace,
     setChest,

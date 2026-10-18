@@ -2,11 +2,28 @@
 // a small update to the current one is a point release (Indev 26.1, 26.2...), a big one is the next number.
 //
 // The News page in the sidebar shows this list, and a dot appears on it until the newest one has been read.
-export const GAME_VERSION = 27;
+export const GAME_VERSION = 28;
 
 export type NewsEntry = { version: number; date: string; title: string; changes: string[] };
 
 export const NEWS: NewsEntry[] = [
+  {
+    version: 28,
+    date: 'October 18, 2026',
+    title: 'Elytra, Ender Chests, a bigger EggWars, wolves and player profiles',
+    changes: [
+      'Elytra: wear it in your chestplate slot (right-click it), jump into the air and jump again to spread your wings. Look where you want to go: dive to speed up, pull up to climb. It wears out as you fly, and crashing into a wall hurts. Find one in rare chests, or craft it (4 feathers, string, an ender pearl and 2 leather). Getting one earns the advancement The Sky\'s the Limit.',
+      'Fireworks: craft them from paper and gunpowder. Right-click one while gliding for a big boost forward, or on the ground to set one off.',
+      'Mending now only repairs the armor and elytra you wear (it no longer fixes swords, tools or bows). Experience orbs top up whatever you are wearing that is damaged.',
+      'Ender Chests: a personal chest, the same from every Ender Chest you open. Craft one from 8 obsidian and an ender pearl. EggWars teams get one on one side of their island and a normal team chest on the other.',
+      'Right-click any armor to put it on (swapping with what you wear), and the same for the elytra.',
+      'EggWars is bigger and more detailed: 13x13 team islands with walls and corner towers, a gate banner, lamps, a flag and flowers or trees to match each map. Each team has ONE generator, behind where you spawn: iron, and every so often a gold ingot. The middle island has a single emerald generator (holds 4 emeralds at most), and four diamond islands sit between the teams, each with a diamond generator that holds 8 diamonds at most. The shop takes emeralds for the good stuff.',
+      'Wolves roam the grasslands in packs. They leave you alone until you hit one, then the whole pack comes after you.',
+      'The OG rank is gone (the tag, and its Elite perks).',
+      'Player profiles: click a name on the leaderboards, in your friends list, or your own picture to see their level, plays, friends, worlds and join date, and add them as a friend.',
+      'The letter circle in the sidebar is gone. The picture next to your name on Home is now your own character, and its head follows your mouse, like the one in the inventory.',
+    ],
+  },
   {
     version: 27,
     date: 'October 17, 2026',

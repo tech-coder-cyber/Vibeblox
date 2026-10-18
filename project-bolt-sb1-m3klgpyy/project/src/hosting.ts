@@ -39,7 +39,7 @@ export type MatchView = {
 };
 type MatchMember = { team: number; out: boolean; kills: number; deaths: number };
 const LOBBY_MS = 30_000, FULL_LOBBY_MS = 5000, COUNTDOWN_MS = 5000, ROUND_COUNTDOWN_MS = 3000, OVER_MS = 10_000;
-type Badge = { owner?: boolean; rank?: string; tier?: string; og?: boolean; staff?: string | null };
+type Badge = { owner?: boolean; rank?: string; tier?: string; staff?: string | null };
 type Look = { skin: string; cape: string; custom?: string };
 
 /** One player's link to the room (the host's own loopback, or a peer's data channel). */
@@ -63,7 +63,7 @@ export type RoomServices = {
   /** Banned from all of VibeBlox (admin panel)? */
   isBanned?(name: string): Promise<boolean>;
   /** Paid rank and creator tier, for the tags in front of names. */
-  standing?(name: string): Promise<{ rank: string; tier: string; og?: boolean; staff?: string | null }>;
+  standing?(name: string): Promise<{ rank: string; tier: string; staff?: string | null }>;
   /** Is this token an admin's? (/panel actions) */
   isAdmin?(token: string): Promise<boolean>;
 };
@@ -337,7 +337,7 @@ export class HostRoom {
     const st = await this.opts.services.standing(p.name).catch(() => null);
     if (!st || p.conn.closed) return;
     const owner = p.name.toLowerCase() === OWNER;
-    p.badge = { owner, rank: st.rank, tier: owner ? 'star' : st.tier, og: st.og === true, staff: st.staff === 'helper' || st.staff === 'mod' ? st.staff : null };
+    p.badge = { owner, rank: st.rank, tier: owner ? 'star' : st.tier, staff: st.staff === 'helper' || st.staff === 'mod' ? st.staff : null };
     this.broadcast({ t: 'badge', id: p.id, ...p.badge });
   }
 

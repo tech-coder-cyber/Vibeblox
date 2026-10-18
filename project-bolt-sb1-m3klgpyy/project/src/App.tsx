@@ -53,6 +53,8 @@ import Tutorial, { tutorialDone } from './Tutorial';
 import { LOYALTY_RANKS, isYearMilestone, loyaltyLabel, pendingMilestones, nextMilestone, type LoyaltyRank } from './loyalty';
 import { fetchLoyalty, claimLoyalty, type LoyaltyInfo } from './social';
 import { WORLD_TAGS, MAX_WORLD_TAGS, cleanTags, toggleTag, tagInfo } from './worldTags';
+import { fetchProfile, type PlayerProfile, type Account } from './social';
+import { openProfile, setProfileOpener } from './profileBus';
 import { setWorldLike, saveProgressToAccount, loadProgressFromAccount, fetchLevelLeaderboard, reportCheat, cleanWorldImage, type LevelRow, addFriend, unfriendByName, loadFriends, sendDM, startPolling, isGuestName, reportActivity, fetchPlayingCounts, fetchLeaderboard, fetchStanding, recordPlay, setServerPresence, isOwnerName, listHostedWorlds, publishHostedWorld, unpublishHostedWorld, verifyToken, isFriendOf, isBannedName, isAdminToken, banEverywhere, unbanEverywhere, type DM, type Activity, type Friend, type LeaderRow, type Standing, type HostedWorld } from './social';
 
 // Multiplayer is optional: Vite only includes src/multiplayer.ts if the file
@@ -266,6 +268,7 @@ import {
   Newspaper,
   Gift,
   Snowflake,
+  X,
 } from 'lucide-react';
 
 type View = 'home' | 'shop' | 'settings' | 'create-world' | 'servers' | 'planets' | 'social' | 'news' | 'leaderboard';
@@ -444,7 +447,6 @@ function Sidebar({ username, view, onNavClick, socialBadge = 0, compact = false 
   useLanguage();
   const { guest } = useContext(StandingContext);
   const locked = (v: View | undefined) => !!guest && !!v && GUEST_LOCKED.includes(v);
-  const initial = username ? username.charAt(0).toUpperCase() : 'P';
   const [seen, setSeen] = useState(readNewsSeen);
   useEffect(() => { if (view === 'news') { try { localStorage.setItem(NEWS_SEEN_KEY, String(GAME_VERSION)); } catch { /* private window */ } setSeen(GAME_VERSION); } }, [view]);
   const newsUnread = seen < GAME_VERSION;
@@ -506,7 +508,6 @@ function Sidebar({ username, view, onNavClick, socialBadge = 0, compact = false 
           DISCORD
         </a>
       )}
-      <div className="w-10 h-10 rounded-full bg-[#00e676] flex items-center justify-center text-[#0a0e14] font-bold">{initial}</div>
       <button
         data-testid="nav-news"
         onClick={() => onNavClick('news')}
@@ -2571,7 +2572,7 @@ function LeaderboardView({ username }: { username: string }) {
             return (
               <div key={r.username} data-testid="lb-level-row" className={`flex items-center gap-3 px-4 py-2.5 border-b border-[#1a2230] last:border-0 ${you ? 'bg-[#00e676]/10' : ''}`}>
                 <span className={`w-7 text-center font-[var(--font-display)] ${i === 0 ? 'text-[#ffd23a]' : i === 1 ? 'text-[#cfd8e3]' : i === 2 ? 'text-[#e8a87c]' : 'text-[#5a6b80]'}`}>{i + 1}</span>
-                <span className="text-white text-sm font-semibold truncate flex-1">{r.username}</span>
+                <button onClick={() => openProfile(r.username)} data-testid="lb-name" className="text-white text-sm font-semibold truncate flex-1 text-left hover:underline">{r.username}</button>
                 <LevelBadge level={r.level} you={you} />
                 <span className="text-[#5a6b80] text-xs tabular-nums w-20 text-right">{r.xp.toLocaleString()} XP</span>
               </div>
@@ -2586,7 +2587,7 @@ function LeaderboardView({ username }: { username: string }) {
         {rows?.map((r, i) => (
           <div key={r.username} data-testid="lb-row" className={`flex items-center gap-3 px-4 py-2.5 border-b border-[#1a2230] last:border-0 ${r.username.toLowerCase() === username.toLowerCase() ? 'bg-[#00e676]/10' : ''}`}>
             <span className={`w-7 text-center font-[var(--font-display)] ${i === 0 ? 'text-[#ffd23a]' : i === 1 ? 'text-[#cfd8e3]' : i === 2 ? 'text-[#e8a87c]' : 'text-[#5a6b80]'}`}>{i + 1}</span>
-            <span className="text-white text-sm font-semibold truncate flex-1">{r.username}</span>
+            <button onClick={() => openProfile(r.username)} data-testid="lb-name" className="text-white text-sm font-semibold truncate flex-1 text-left hover:underline">{r.username}</button>
             {r.level != null && <LevelBadge level={r.level} you={r.username.toLowerCase() === username.toLowerCase()} />}
             <TierBadge tier={creatorTier(r.plays)} small />
             <span className="text-[#8ea0b8] text-sm tabular-nums">{t('lb.plays', { n: r.plays.toLocaleString() })}</span>
@@ -2607,7 +2608,7 @@ function MobileProfileBar({ username, onPlayNow }: { username: string; onPlayNow
   return (
     <>
     <div className="mb-3 flex items-center gap-3 rounded-2xl bg-[#121822] border border-[#243044] p-3" data-testid="mobile-profile">
-      <div className="w-11 h-11 shrink-0 rounded-xl bg-gradient-to-br from-[#3b5998] to-[#00e676] flex items-center justify-center text-white font-[var(--font-display)]">{(username || 'P').charAt(0).toUpperCase()}</div>
+      <button onClick={() => openProfile(username || 'PlayerOne')} aria-label="Your profile" className="shrink-0"><HeadAvatar className="w-12 h-12" width={96} height={96} fallback={(username || 'P').charAt(0).toUpperCase()} /></button>
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-2">
           <span className="text-white text-sm font-bold truncate">{username || 'PlayerOne'}</span>
@@ -2644,7 +2645,7 @@ function LeaderboardCard({ onOpenLeaderboard, collapsible = false }: { onOpenLea
             {top?.map((r, i) => (
               <li key={r.username} className="flex items-center gap-2 text-xs">
                 <span className={`w-4 text-center font-bold ${i === 0 ? 'text-[#ffd23a]' : 'text-[#5a6b80]'}`}>{i + 1}</span>
-                <span className="text-white truncate flex-1">{r.username}</span>
+                <button onClick={() => openProfile(r.username)} data-testid="lb-name" className="text-white truncate flex-1 text-left hover:underline">{r.username}</button>
                 <span className="text-[#8ea0b8] tabular-nums">{r.plays.toLocaleString()}</span>
               </li>
             ))}
@@ -2652,6 +2653,128 @@ function LeaderboardCard({ onOpenLeaderboard, collapsible = false }: { onOpenLea
           <button onClick={() => { nextBoard = 'creators'; onOpenLeaderboard(); }} data-testid="lb-see-all" className="mt-3 w-full py-1.5 rounded-lg bg-[#1a2230] text-[#8ea0b8] text-xs font-bold hover:text-white hover:bg-[#243044] transition-colors">{t('lb.seeAll')}</button>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Your character instead of a letter: a little 3D player in your skin, and its head follows your mouse
+ * (the same preview as the inventory). `full` shows the whole body, otherwise head and shoulders.
+ */
+function HeadAvatar({ full = false, own = true, className = 'w-14 h-14', width = 112, height = 112, fallback = '?' }: { full?: boolean; own?: boolean; className?: string; width?: number; height?: number; fallback?: string }) {
+  const ref = useRef<HTMLCanvasElement | null>(null);
+  const pv = useRef<ReturnType<typeof createPlayerPreview> | null>(null);
+  const [failed, setFailed] = useState(false);
+  const prog = useProgress();
+  useEffect(() => {
+    if (!ref.current) return;
+    try { pv.current = createPlayerPreview(ref.current, { bust: !full }); if (own) pv.current.setAppearance(currentLook()); } catch { pv.current = null; setFailed(true); return; }
+    let raf = 0; let last: MouseEvent | null = null;
+    const apply = () => {
+      raf = 0;
+      const c = ref.current;
+      if (!c || !pv.current || !last) return;
+      const r = c.getBoundingClientRect();
+      const nx = (last.clientX - (r.left + r.width / 2)) / 220, ny = (last.clientY - (r.top + r.height * (full ? 0.25 : 0.4))) / 220;
+      pv.current.setLook(nx, ny);
+      c.dataset.look = `${Math.max(-1, Math.min(1, nx)).toFixed(2)},${Math.max(-1, Math.min(1, ny)).toFixed(2)}`;
+    };
+    const onMove = (e: MouseEvent) => { last = e; if (!raf) raf = requestAnimationFrame(apply); };
+    window.addEventListener('mousemove', onMove);
+    return () => { window.removeEventListener('mousemove', onMove); if (raf) cancelAnimationFrame(raf); pv.current?.dispose(); pv.current = null; };
+  }, [full, own]);
+  useEffect(() => { if (own) pv.current?.setAppearance(currentLook()); }, [prog, own]);
+  if (failed) return <div className={`${className} rounded-2xl bg-gradient-to-br from-[#3b5998] to-[#00e676] flex items-center justify-center text-white font-[var(--font-display)]`}>{fallback}</div>;
+  return <canvas ref={ref} width={width} height={height} data-testid="head-avatar" className={`${className} rounded-2xl bg-gradient-to-br from-[#1d2a3d] to-[#16301f] ring-2 ring-[#243044]`} />;
+}
+
+const RANK_CHIP: Record<string, string> = { vanguard: 'bg-[#4dd0e1]/15 text-[#4dd0e1]', elite: 'bg-[#ffd23a]/15 text-[#ffd23a]', champion: 'bg-[#ff6ec7]/15 text-[#ff8be6]' };
+/** A player's profile card: opens from the leaderboards, your friends and your own picture. */
+function ProfileModal({ name, me, onClose }: { name: string; me: Account | null; onClose: () => void }) {
+  useLanguage();
+  const [prof, setProf] = useState<PlayerProfile | null | 'loading'>('loading');
+  const [note, setNote] = useState('');
+  const prog = useProgress();
+  const guestName = isGuestName(name);
+  const isMe = !!me && me.username.toLowerCase() === name.toLowerCase();
+  const owner = isOwnerName(name);
+  useEffect(() => {
+    setNote('');
+    if (guestName) { setProf(null); return; }
+    let alive = true;
+    setProf('loading');
+    void fetchProfile(name).then((p) => { if (alive) setProf(p); });
+    return () => { alive = false; };
+  }, [name, guestName]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [onClose]);
+  const p = prof === 'loading' ? null : prof;
+  const level = isMe ? prog.level : p?.level ?? 1;
+  const xp = isMe ? prog.xp : p?.xp ?? 0;
+  const curXp = xpForLevel(level), nextXp = xpForLevel(level + 1);
+  const pct = Math.max(0, Math.min(100, ((xp - curXp) / Math.max(1, nextXp - curXp)) * 100));
+  const rank = p?.rank && p.rank !== 'none' ? p.rank : null;
+  const tier = creatorTier(p?.plays ?? 0);
+  const canFriend = !!me && !isGuestName(me.username) && !isMe && !guestName && !!p;
+  async function friend() {
+    if (!me) return;
+    const r = await addFriend(me, name);
+    setNote(r.ok ? r.message : r.error);
+  }
+  return (
+    <div className="fixed inset-0 z-[70] bg-black/65 flex items-center justify-center p-4" onClick={onClose} data-testid="profile-modal">
+      <div className="w-[min(94vw,440px)] rounded-3xl bg-[#0d131b] border border-[#243044] shadow-2xl p-5 vb-fade-in" onClick={(e) => e.stopPropagation()}>
+        <div className="flex gap-4">
+          <HeadAvatar full own={isMe} className="w-[120px] h-[168px] shrink-0" width={240} height={336} fallback={name.charAt(0).toUpperCase()} />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-start justify-between gap-2">
+              <h2 className="font-[var(--font-display)] text-white text-lg truncate" data-testid="profile-name">{name}</h2>
+              <button onClick={onClose} data-testid="profile-close" aria-label="Close" className="shrink-0 w-7 h-7 rounded-lg bg-[#1a2230] text-[#8ea0b8] hover:text-white flex items-center justify-center"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="flex flex-wrap gap-1.5 mt-1.5" data-testid="profile-tags">
+              {isMe && <span className="px-2 py-0.5 rounded-full bg-[#00e676]/15 text-[#00e676] text-[10px] font-bold">YOU</span>}
+              {owner && <span className="px-2 py-0.5 rounded-full bg-[#ffd23a]/15 text-[#ffd23a] text-[10px] font-bold">OWNER</span>}
+              {p?.staff && <span className="px-2 py-0.5 rounded-full bg-[#4dd0e1]/15 text-[#4dd0e1] text-[10px] font-bold">{p.staff.toUpperCase()}</span>}
+              {rank && <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${RANK_CHIP[rank] ?? 'bg-[#243044] text-white'}`}>{RANK_NAMES[rank as RankId] ?? rank}</span>}
+              {p && <TierBadge tier={tier} small />}
+              {guestName && <span className="px-2 py-0.5 rounded-full bg-[#243044] text-[#8ea0b8] text-[10px] font-bold">GUEST</span>}
+            </div>
+            {guestName ? (
+              <p className="text-[#8ea0b8] text-xs mt-3" data-testid="profile-guest-note">Guests don't have a profile. Sign in to keep your level, climb the leaderboards and make friends.</p>
+            ) : prof === 'loading' ? (
+              <p className="text-[#5a6b80] text-sm mt-4">…</p>
+            ) : !p && !isMe ? (
+              <p className="text-[#8ea0b8] text-xs mt-3" data-testid="profile-missing">No profile found for this player.</p>
+            ) : (
+              <>
+                <div className="mt-3">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[#b39dff] text-xs font-bold" data-testid="profile-level">Level {level}</span>
+                    <span className="text-[#5a6b80] text-[11px]">{Math.max(0, xp - curXp).toLocaleString()} / {(nextXp - curXp).toLocaleString()} XP</span>
+                  </div>
+                  <div className="h-2 bg-[#0a0e14] rounded-full overflow-hidden"><div className="h-full bg-gradient-to-r from-[#00e676] to-[#00b248]" style={{ width: `${pct}%` }} /></div>
+                </div>
+                {p && (
+                  <dl className="grid grid-cols-2 gap-2 mt-3 text-xs" data-testid="profile-stats">
+                    {([['Plays', p.plays.toLocaleString()], ['Friends', String(p.friends)], ['Worlds', String(p.worlds)], ['Joined', p.joined ? new Date(p.joined).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '-']] as const).map(([k, v]) => (
+                      <div key={k} className="rounded-xl bg-[#121822] border border-[#243044] px-2.5 py-1.5"><dt className="text-[#5a6b80] text-[10px]">{k}</dt><dd className="text-white font-bold tabular-nums">{v}</dd></div>
+                    ))}
+                  </dl>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+        {(canFriend || note) && (
+          <div className="mt-4 flex items-center gap-3">
+            {canFriend && <button onClick={() => void friend()} data-testid="profile-add-friend" className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#00e676] to-[#00b248] text-[#0a0e14] text-xs font-bold active:scale-95">Add friend</button>}
+            {note && <span className="text-[#8ea0b8] text-xs" data-testid="profile-note">{note}</span>}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -2668,11 +2791,11 @@ function ProfilePanel({ username, onOpenLeaderboard }: { username: string; onOpe
     <aside className="w-[280px] shrink-0 bg-[#0d131b] border-l border-[#243044] flex flex-col p-5 gap-5 overflow-y-auto">
       <div className="bg-[#121822] rounded-2xl border border-[#243044] p-4">
         <div className="flex items-center gap-3 mb-4">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#3b5998] to-[#00e676] ring-2 ring-[#243044] flex items-center justify-center text-white font-[var(--font-display)] text-xl">
-            {initial}
-          </div>
+          <button onClick={() => openProfile(displayName)} data-testid="panel-avatar" title="View your profile" className="shrink-0 rounded-2xl hover:scale-105 active:scale-95 transition-transform">
+            <HeadAvatar className="w-16 h-16" width={128} height={128} fallback={initial} />
+          </button>
           <div className="min-w-0">
-            <p className="font-[var(--font-display)] text-white text-sm truncate max-w-[160px]">{displayName}</p>
+            <button onClick={() => openProfile(displayName)} data-testid="panel-name" className="block text-left font-[var(--font-display)] text-white text-sm truncate max-w-[160px] hover:underline">{displayName}</button>
             <p className="text-[#5a6b80] text-xs">{signedIn ? 'Online' : 'Guest'}</p>
             {rising && <div className="mt-1"><TierBadge tier={tier} small /></div>}
           </div>
@@ -3860,7 +3983,7 @@ function InventoryOverlay({
     ));
 
   const previewRecipe = recipePreview !== null ? RECIPES.find((r) => r.output.id === recipePreview) ?? null : null;
-  const title = station?.kind === 'enchanting' ? 'Enchanting Table' : station?.kind === 'anvil' ? 'Anvil' : furnaceKey ? (furnaceKey.startsWith('B|') ? 'Brewing Stand' : 'Furnace') : chestKey ? 'Chest' : atCraftingTable ? 'Crafting Table' : 'Inventory';
+  const title = station?.kind === 'enchanting' ? 'Enchanting Table' : station?.kind === 'anvil' ? 'Anvil' : furnaceKey ? (furnaceKey.startsWith('B|') ? 'Brewing Stand' : 'Furnace') : chestKey ? (chestKey === 'ender' ? 'Ender Chest' : 'Chest') : atCraftingTable ? 'Crafting Table' : 'Inventory';
 
   // ---- Enchanting table ----
   const lapisHere = stationSlots[1]?.id === ITEM_LAPIS ? stationSlots[1].count : 0;
@@ -5763,6 +5886,8 @@ export default function App() {
   viewRef.current = view;
   // ---- accounts, friends, private messages, admin ----
   const { account, admin, checked: accountChecked, signOut: doSignOut, rename: doRename } = useAccount();
+  const [profileName, setProfileName] = useState<string | null>(null);
+  useEffect(() => { setProfileOpener(setProfileName); return () => setProfileOpener(null); }, []);
   const accountRef = useRef(account);
   accountRef.current = account;
   const adminRef = useRef(admin);
@@ -5795,16 +5920,14 @@ export default function App() {
     return () => { live = false; save(); window.clearInterval(t); offLevel(); document.removeEventListener('visibilitychange', onHide); };
   }, [account?.username]); // eslint-disable-line react-hooks/exhaustive-deps
   const myRank: RankId = effectiveRank(account, isOwnerAccount);
-  const myOg = !!account && !isGuestName(account.username) && account.og === true;
   const myStaff: StaffId | null = account && !isGuestName(account.username) && isStaffId(account.staff) ? account.staff : null;
-  /** The rank whose perks you get: OG players and staff (HELPER, MOD) get Elite's perks. The tag still shows the real rank. */
-  const myPerk: RankId = perkRank(myRank, { og: myOg, staff: myStaff });
+  /** The rank whose perks you get: Staff (HELPER, MOD) get Elite's perks. The tag still shows the real rank. */
+  const myPerk: RankId = perkRank(myRank, { staff: myStaff });
   const myTier: CreatorTier = isOwnerAccount ? 'star' : creatorTier(standing?.plays ?? 0);
   /** Admins and staff can kick, ban, mute and use commands in every world. */
   const canModerate = !!admin || !!myStaff;
   const canModerateRef = useRef(canModerate);
   canModerateRef.current = canModerate;
-  const myOgRef = useRef(myOg); myOgRef.current = myOg;
   const myStaffRef = useRef<StaffId | null>(myStaff); myStaffRef.current = myStaff;
   const rising = myTier !== 'none';
   const budgetRef = useRef(scriptBudgetMs(myPerk, myTier));
@@ -5829,7 +5952,7 @@ export default function App() {
     if (fr) parts.push(`${fr}\\reset\\`);
     const me = name.toLowerCase() === (usernameRef.current || '').toLowerCase();
     const a = accountRef.current;
-    const badge: NetBadge | undefined = me ? (a && !isGuestName(a.username) ? { owner: isOwnerRef.current, rank: myRankRef.current, tier: myTierRef.current, og: myOgRef.current, staff: myStaffRef.current } : undefined) : badgesRef.current[name.toLowerCase()];
+    const badge: NetBadge | undefined = me ? (a && !isGuestName(a.username) ? { owner: isOwnerRef.current, rank: myRankRef.current, tier: myTierRef.current, staff: myStaffRef.current } : undefined) : badgesRef.current[name.toLowerCase()];
     parts.push(...badgeTags(badge));
     return parts.length ? parts.join(' ') + ' ' : '';
   }
@@ -6867,7 +6990,7 @@ export default function App() {
   useEffect(() => installUiSounds(), []);
   useEffect(() => subscribeQol(() => gameHandleRef.current?.setBlockOutline(getQol().outline)), []);
   // keep it right when you log in, your rank changes, or a fake rank is given
-  useEffect(() => { if (gameMode === 'playing') refreshNameTags(); }, [gameMode, account?.username, myRank, myTier, isOwnerAccount, fakeRanks, myOg, myStaff]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (gameMode === 'playing') refreshNameTags(); }, [gameMode, account?.username, myRank, myTier, isOwnerAccount, fakeRanks, myStaff]); // eslint-disable-line react-hooks/exhaustive-deps
   // block sounds: the switches and volume in Settings > Audio
   const applyBlockSounds = () => { const q = getQol(); gameHandleRef.current?.setBlockSoundPrefs({ breaking: q.blockBreak, placing: q.blockPlace, footsteps: q.footsteps, volume: q.blockVolume }); };
   useEffect(() => subscribeQol(applyBlockSounds), []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -7452,7 +7575,7 @@ export default function App() {
       isFriend: (uid: string) => isFriendOf(me.userId, uid),
       isBanned: isBannedName,
       isAdmin: isAdminToken,
-      standing: async (name: string) => { const st = await fetchStanding(name); return { rank: st?.rank ?? 'none', tier: creatorTier(st?.plays ?? 0), og: st?.og === true, staff: st?.staff ?? null }; },
+      standing: async (name: string) => { const st = await fetchStanding(name); return { rank: st?.rank ?? 'none', tier: creatorTier(st?.plays ?? 0), staff: st?.staff ?? null }; },
     };
   }
   /** Anti-cheat for a world you host: alerts go to you (chat + Manage Server) and to the admins' report list. */
@@ -9014,7 +9137,7 @@ export default function App() {
   }
 
   function handleSaveWorld(config: WorldConfig) {
-    if (savedWorlds.length >= planetLimit) { setHint(`You've reached your limit of ${planetLimit} planets (${myOg && myPerk !== myRank ? 'OG' : myStaff ? myStaff.toUpperCase() : RANK_NAMES[myPerk]}). Delete one to make a new one.`); return; }
+    if (savedWorlds.length >= planetLimit) { setHint(`You've reached your limit of ${planetLimit} planets (${myStaff && myPerk !== myRank ? myStaff.toUpperCase() : RANK_NAMES[myPerk]}). Delete one to make a new one.`); return; }
     if (!startGuard()) return;
     const made: WorldConfig = { ...config, creator: currentUsername || 'Guest', createdAt: Date.now(), lastPlayed: Date.now(), playSeconds: 0 };
     setSavedWorlds((prev) => [...prev, made]);
@@ -9236,6 +9359,7 @@ export default function App() {
         />
         {!compactLayout && <ProfilePanel username={currentUsername} onOpenLeaderboard={() => handleNavClick('leaderboard')} />}
         {showModal && <LoginOverlay onGuest={handleGuest} onClose={username ? () => setShowModal(false) : undefined} />}
+        {profileName && <ProfileModal name={profileName} me={account} onClose={() => setProfileName(null)} />}
       </div>
 
       <div

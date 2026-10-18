@@ -6,6 +6,7 @@ import {
 } from './social';
 import { t } from './i18n';
 import { creatorTier, CREATOR_PLAYS, CREATOR_NAMES } from './ranks';
+import { openProfile } from './profileBus';
 
 type Props = {
   account: Account | null;
@@ -255,7 +256,7 @@ export default function SocialView({ account, checking, isAdmin, onOpenPanel, un
                     onClick={() => setSelected(f)}
                     className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-colors ${selected?.id === f.id ? 'bg-[#00e676]/15' : 'hover:bg-[#1a2230]'}`}
                   >
-                    <div className="w-9 h-9 rounded-full bg-[#1a2230] flex items-center justify-center text-white font-bold shrink-0">{f.username.charAt(0).toUpperCase()}</div>
+                    <span role="button" tabIndex={0} title="View profile" onClick={(e) => { e.stopPropagation(); openProfile(f.username); }} onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); openProfile(f.username); } }} data-testid={`profile-${f.username}`} className="w-9 h-9 rounded-full bg-[#1a2230] flex items-center justify-center text-white font-bold shrink-0 cursor-pointer hover:ring-2 hover:ring-[#00e676]/60">{f.username.charAt(0).toUpperCase()}</span>
                     <div className="min-w-0 flex-1">
                       <div className="text-white text-sm font-semibold truncate">{f.username}</div>
                       <div className="text-[11px] text-[#5a6b80] flex items-center gap-1.5 min-w-0"><Dot online={f.online} />{f.server ? <span className="text-[#00e676] truncate" data-testid="friend-playing">{f.worldName ? `Playing ${f.worldName}` : 'Playing online'}</span> : f.online ? 'Online' : 'Offline'}</div>
@@ -284,7 +285,7 @@ export default function SocialView({ account, checking, isAdmin, onOpenPanel, un
                 {state.incoming.map((f) => (
                   <div key={f.id} className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-[#121822]">
                     <div className="w-9 h-9 rounded-full bg-[#1a2230] flex items-center justify-center text-white font-bold shrink-0">{f.username.charAt(0).toUpperCase()}</div>
-                    <div className="text-white text-sm font-semibold truncate flex-1">{f.username}</div>
+                    <button type="button" onClick={() => openProfile(f.username)} data-testid={`profile-${f.username}`} className="text-left text-white text-sm font-semibold truncate flex-1 hover:underline">{f.username}</button>
                     <button onClick={() => handleAccept(f)} title="Accept" className="w-8 h-8 rounded-lg bg-[#00e676]/15 text-[#00e676] flex items-center justify-center hover:bg-[#00e676]/30"><Check className="w-4 h-4" /></button>
                     <button onClick={() => handleRemove(f, 'decline')} title="Decline" className="w-8 h-8 rounded-lg bg-[#ff5252]/15 text-[#ff5252] flex items-center justify-center hover:bg-[#ff5252]/30"><X className="w-4 h-4" /></button>
                   </div>
@@ -293,7 +294,7 @@ export default function SocialView({ account, checking, isAdmin, onOpenPanel, un
                 {state.outgoing.map((f) => (
                   <div key={f.id} className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-[#121822]">
                     <div className="w-9 h-9 rounded-full bg-[#1a2230] flex items-center justify-center text-white font-bold shrink-0">{f.username.charAt(0).toUpperCase()}</div>
-                    <div className="text-[#8ea0b8] text-sm truncate flex-1">{f.username}</div>
+                    <button type="button" onClick={() => openProfile(f.username)} className="text-left text-[#8ea0b8] text-sm truncate flex-1 hover:underline">{f.username}</button>
                     <button onClick={() => handleRemove(f, 'cancel')} title="Cancel request" className="px-2.5 h-8 rounded-lg text-[#8ea0b8] text-xs hover:text-white hover:bg-[#1a2230]">Cancel</button>
                   </div>
                 ))}

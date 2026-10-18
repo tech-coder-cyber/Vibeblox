@@ -96,8 +96,8 @@ export const getBackground = () => snap;
 export function subscribeBackground(f: () => void): () => void { listeners.add(f); return () => { listeners.delete(f); }; }
 export function useBackground() { return useSyncExternalStore(subscribeBackground, getBackground, getBackground); }
 
-/** CSS for a menu panel that sits on the background picture (or nothing, when there is none). */
+/** CSS for a menu panel that sits on the background picture (or nothing, when there is none). The picture always fits the visible panel: it fills it edge to edge on a phone or a computer and stays put while the page scrolls. */
 export function backgroundStyle(b: { url: string | null; dim: number }): { [k: string]: string } | undefined {
   if (!b.url) return undefined;
-  return { backgroundImage: `linear-gradient(rgba(10,14,20,${b.dim}), rgba(10,14,20,${b.dim})), url("${b.url}")`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'local' };
+  return { backgroundImage: `linear-gradient(rgba(10,14,20,${b.dim}), rgba(10,14,20,${b.dim})), url("${b.url}")`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat', backgroundAttachment: 'scroll' } // (cover = fills the screen, phone or computer; 'scroll' = sized to the visible panel, not to the whole scrolling page, so it no longer zooms in on long pages);
 }

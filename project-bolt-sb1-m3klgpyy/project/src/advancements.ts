@@ -9,7 +9,7 @@ import {
   ITEM_WOOD_PICKAXE, ITEM_WOOD_SWORD, ITEM_STONE_PICKAXE, ITEM_IRON_PICKAXE,
   ITEM_IRON_INGOT, ITEM_DIAMOND, ITEM_EMERALD, ITEM_LAVA_BUCKET, ITEM_BLAZE_ROD, ITEM_BREAD,
   ITEM_ENDER_PEARL, ITEM_INFERNIUM_INGOT, ITEM_BED, ITEM_SPYGLASS,
-  ITEM_ENCHANTED_BOOK, ARMOR, isLog, type ItemStack,
+  ITEM_ENCHANTED_BOOK, ARMOR, isLog, ITEM_ELYTRA, type ItemStack,
   ITEM_BOW, ITEM_ARROW, ITEM_STRING, ITEM_REDSTONE, ITEM_LAPIS, ITEM_FISHING_ROD, ITEM_SHEARS, ITEM_WATER_BUCKET, ITEM_QUARTZ,
   ITEM_GHAST_TEAR, ITEM_BOOK, ITEM_BOAT, ITEM_GOLD_INGOT, ITEM_DIAMOND_SWORD, ITEM_FLINT_AND_STEEL, ITEM_BONE, ITEM_STEAK,
   BLOCK_BOOKSHELF, BLOCK_ENCHANTING_TABLE, BLOCK_ANVIL, BLOCK_PISTON, BLOCK_REDSTONE_LAMP, BLOCK_COMPARATOR, BLOCK_REPEATER,
@@ -112,6 +112,7 @@ export const ADVANCEMENTS: Advancement[] = [
   { id: 'web_cleaner', title: 'Web Cleaner', description: 'Defeat a spider', icon: ITEM_STRING, tab: 'adventure', event: (n, d) => n === 'entityDeath' && d.byPlayer === true && d.type === 'spider' },
   { id: 'zombie_slayer', title: 'Zombie Slayer', description: 'Defeat a zombie', icon: ITEM_WOOD_SWORD, tab: 'adventure', event: (n, d) => n === 'entityDeath' && d.byPlayer === true && d.type === 'zombie' },
   { id: 'iron_giant', reward: { xp: 40, items: [[IRON, 6]] }, title: 'Iron Giant', description: 'Take down an iron golem', icon: ITEM_IRON_INGOT, tab: 'adventure', event: (n, d) => n === 'entityDeath' && d.byPlayer === true && d.type === 'iron_golem' },
+  { id: 'skys_the_limit', title: "The Sky's the Limit", description: 'Get an Elytra and spread your wings', icon: ITEM_ELYTRA, tab: 'adventure', goal: true, reward: { xp: 60 }, item: (id) => id === ITEM_ELYTRA },
   { id: 'wither_away', reward: { xp: 250, items: [[EMERALD, 8], [DIAMOND, 4]] }, title: 'Tyrant Slayer', description: 'Defeat the Hollow Tyrant', icon: ITEM_INFERNIUM_INGOT, tab: 'adventure', challenge: true, event: (n, d) => n === 'entityDeath' && d.byPlayer === true && d.type === 'hollow_tyrant' },
 
   // ---- More Nether ----
