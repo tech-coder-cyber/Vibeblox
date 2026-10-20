@@ -144,7 +144,7 @@ export class AntiCheat {
    * A melee hit on another player. Positions are feet positions; yaw is where the attacker faces (radians, the
    * game's convention: forward is (-sin yaw, -cos yaw)).
    */
-  onHit(id: number, name: string, from: { x: number; y: number; z: number; yaw: number }, to: { x: number; y: number; z: number }) {
+  onHit(id: number, name: string, from: { x: number; y: number; z: number; yaw: number }, to: { x: number; y: number; z: number }, maxReach = 4.6) {
     const tr = this.track(id, name);
     const t = this.now();
     // reach: eye to the nearest point of the target's body
@@ -153,7 +153,7 @@ export class AntiCheat {
     const dx = to.x - from.x, dz = to.z - from.z;
     const flat = Math.max(0, Math.hypot(dx, dz) - 0.3);
     const dist = Math.hypot(flat, cy - eyeY);
-    if (dist > 4.6) this.flag(id, tr, 'reach', `hit from ${dist.toFixed(1)} blocks`, dist > 6 ? 3 : 2);
+    if (dist > maxReach) this.flag(id, tr, 'reach', `hit from ${dist.toFixed(1)} blocks`, dist > maxReach + 1.4 ? 3 : 2);
     // kill aura: the target is behind them, or hits sweep round in different directions at once
     const dir = Math.atan2(dx, dz); // angle to the target
     const facing = Math.atan2(-Math.sin(from.yaw), -Math.cos(from.yaw));

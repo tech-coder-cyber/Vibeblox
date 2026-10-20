@@ -134,5 +134,16 @@ html.vb-gray .vb-themed .hover\:bg-\[\#1a2230\]:hover { background-color: #3a3d4
 }
 /* Menus scroll with a finger (and don't drag the whole page with them) */
 .vb-scroll, .overflow-y-auto { -webkit-overflow-scrolling: touch; touch-action: pan-y; }
+/* Pop-ups taller than the screen (EggWars, Bridge Duels, settings...): on a phone or a short window the pop-up used to be
+   centred and clipped at the top and bottom, so you could not scroll to the rest. Now the pop-up layer scrolls, and the
+   pop-up itself is still centred when it fits. */
+@media (max-width: 900px), (max-height: 700px) {
+  .fixed.inset-0.items-center { align-items: flex-start; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; touch-action: pan-y; overscroll-behavior: contain; }
+  .fixed.inset-0.items-center > * { margin-top: auto; margin-bottom: auto; flex-shrink: 0; }
+}
+/* Phone buttons a little smaller on short screens so they leave room to see */
+@media (max-height: 430px) {
+  .vb-touch-top > button { width: 2.25rem; height: 2.25rem; font-size: 9px; }
+}
 @keyframes vb-rotate-phone { 0%, 30% { transform: rotate(0deg); } 60%, 100% { transform: rotate(-90deg); } }
 .vb-rotate-phone { animation: vb-rotate-phone 1.8s ease-in-out infinite alternate; }

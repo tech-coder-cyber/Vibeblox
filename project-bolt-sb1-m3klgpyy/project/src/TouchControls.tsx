@@ -171,7 +171,7 @@ export default function TouchControls({ getHandle, onMenu, onChat, paused, creat
         onPointerDown={lookDown} onPointerMove={lookMove} onPointerUp={lookUp} onPointerCancel={lookUp} />
 
       {/* Top: menu and chat */}
-      <div className="absolute top-3 right-3 flex gap-2">
+      <div className="absolute top-3 right-3 flex gap-2 vb-touch-top">
         <button className={`${btn} w-11 h-11 text-[10px]`} onClick={tapKey('inventory')} data-testid="touch-inventory" aria-label="Inventory">BAG</button>
         <button className={`${btn} w-11 h-11 text-[10px]`} onClick={tapKey('drop')} data-testid="touch-drop" aria-label="Drop">DROP</button>
         {onPlayers && <button className={`${btn} w-11 h-11 text-[10px] ${playersOn ? 'bg-white/40' : ''}`} onClick={onPlayers} data-testid="touch-players" aria-label="Players">{playersOn ? 'HIDE' : 'LIST'}</button>}
