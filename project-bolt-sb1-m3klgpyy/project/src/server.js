@@ -339,7 +339,7 @@ const num = (v) => typeof v === 'number' && Number.isFinite(v);
 const int = (v) => Number.isInteger(v);
 const validBlock = (x, y, z, b) =>
   int(x) && int(y) && int(z) && int(b) && y >= 0 && y < 64 &&
-  Math.abs(x) < 30_000_000 && Math.abs(z) < 30_000_000 && ((b >= 0 && b < 100) || (b >= 1000 && b < 1400) || (b >= 2000 && b < 2300)); // 1000-1399: newer blocks (redstone, wool...); 2000+: stairs, slabs, turned heads, low trapdoors
+  Math.abs(x) < 30_000_000 && Math.abs(z) < 30_000_000 && ((b >= 0 && b < 100) || (b >= 1000 && b < 1400) || (b >= 2000 && b < 2400)); // 1000-1399: newer blocks (redstone, wool...); 2000+: stairs, slabs, turned heads, low trapdoors
 
 function finishJoin(p) {
   if ([...players.values()].filter((o) => o.joined).length >= maxPlayers()) return p.conn.close(4001, 'Server is full');
@@ -560,7 +560,7 @@ function handle(p, msg) {
       p.x = msg.x; p.y = msg.y; p.z = msg.z; p.yaw = msg.yaw; p.pitch = msg.pitch;
       p.mode = typeof msg.mode === 'string' ? msg.mode.slice(0, 12) : 'survival';
       p.held = Number.isInteger(msg.held) && msg.held >= 0 && msg.held < 4000 ? msg.held : 0; // item id in hand (1400+: newer items)
-      p.act = Number.isInteger(msg.act) ? msg.act & 255 : 0; // (128: gliding) swinging / aiming / drawing a bow / blocking / sleeping / sneaking / swimming
+      p.act = Number.isInteger(msg.act) ? msg.act & 511 : 0; // (128: gliding, 256: burning) swinging / aiming / drawing a bow / blocking / sleeping / sneaking / swimming
       p.moved = true;
       return;
     }
