@@ -17,7 +17,7 @@ export const ROOM_PROTOCOL = 17;
 export type Privacy = 'private' | 'friends' | 'accounts' | 'public';
 export const PRIVACY_LABELS: Record<Privacy, string> = { private: 'Private', friends: 'Friends only', accounts: 'Signed-in players', public: 'Public' };
 type NetBlock = [number, number, number, number];
-type Settings = { difficulty: 'peaceful' | 'easy' | 'normal' | 'hard'; keepInventory: boolean; scripts: boolean; mods: boolean; commands: boolean; pvp?: boolean; /** who may run scripts */ scriptPerm?: 'off' | 'all' | 'admin' | 'owner' };
+type Settings = { difficulty: 'peaceful' | 'easy' | 'normal' | 'hard'; keepInventory: boolean; scripts: boolean; mods: boolean; commands: boolean; pvp?: boolean; /** the sky stays at midday */ alwaysDay?: boolean; /** false = the weather stays as it is */ weatherCycle?: boolean; /** who may run scripts */ scriptPerm?: 'off' | 'all' | 'admin' | 'owner' };
 /** Roles the world's owner hands out (lowercase name -> role). The owner is always 'owner'. */
 export type RoleMap = Record<string, 'admin' | 'coowner'>;
 type Role = 'owner' | 'coowner' | 'admin' | null;
@@ -151,7 +151,7 @@ const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinit
 const int = (v: unknown): v is number => Number.isInteger(v);
 const validBlock = (x: unknown, y: unknown, z: unknown, b: unknown) =>
   int(x) && int(y) && int(z) && int(b) && y >= 0 && y < 64 &&
-  Math.abs(x) < 30_000_000 && Math.abs(z) < 30_000_000 && ((b >= 0 && b < 100) || (b >= 1000 && b < 1400) || (b >= 2000 && b < 2400)); // 2000+: stairs, slabs, turned heads, low trapdoors, dyed beds
+  Math.abs(x) < 30_000_000 && Math.abs(z) < 30_000_000 && ((b >= 0 && b < 100) || (b >= 1000 && b < 1400) || (b >= 2000 && b < 2560)); // 2000+: stairs, slabs, turned heads, low trapdoors, dyed beds
 
 /** The world everyone shares, run inside the host's browser. */
 export class HostRoom {
@@ -160,6 +160,7 @@ export class HostRoom {
   private nextId = 1;
   private hostId: number | null = null;
   private changes = new Map<string, number>();
+  private signs = new Map<string, string[]>();
   private timeBase: { at: number; value: number };
   private weather: 'clear' | 'rain' | 'snow' | 'thunder';
   private weatherAt: number;
@@ -223,7 +224,7 @@ export class HostRoom {
   get names(): string[] { return [...this.players.values()].filter((p) => p.joined).map((p) => p.name); }
 
   private weatherGap(kind: string) { return (kind === 'clear' ? 420 + Math.random() * 600 : 180 + Math.random() * 240) * 1000; }
-  currentTime(): number { return (this.timeBase.value + (Date.now() - this.timeBase.at) / 1000 / DAY_LENGTH) % 1; }
+  currentTime(): number { return this.settings.alwaysDay ? 0.25 : (this.timeBase.value + (Date.now() - this.timeBase.at) / 1000 / DAY_LENGTH) % 1; }
 
   private broadcast(obj: unknown, exceptId?: number) {
     for (const p of this.players.values()) if (p.joined && p.id !== exceptId) p.conn.send(obj);
@@ -321,7 +322,7 @@ export class HostRoom {
     for (const [k, b] of this.changes) { const [x, y, z] = k.split(',').map(Number); changes.push([x, y, z, b]); }
     p.conn.send({
       t: 'welcome', id: p.id, name: p.name, seed: this.opts.seed, worldType: this.opts.worldType, mode: this.opts.mode, time: this.currentTime(),
-      changes, players: others, hostId: this.hostId, settings: this.settings, weather: this.weather, experimental: !!this.opts.experimental,
+      changes, signs: [...this.signs].map(([k, lines]) => [...k.split(',').map(Number), lines]), players: others, hostId: this.hostId, settings: this.settings, weather: this.weather, experimental: !!this.opts.experimental,
       maxPlayers: this.opts.maxPlayers, ranks: this.ranks, roles: this.roleList(),
       drops: [...this.dropInfo.values()].slice(-150).map(({ t: _t, ...d }) => ({ ...d, vx: 0, vy: 0, vz: 0 })), // items lying around already
       ...(this.opts.game ? { game: this.opts.game } : {}),
@@ -380,7 +381,7 @@ export class HostRoom {
     return to === 'none' ? `${shown} has no role now` : `${shown} is now ${to === 'coowner' ? 'a co-owner' : 'an admin'}`;
   }
 
-  private isNight() { const t = this.currentTime(); return t > 0.53 && t < 0.97; }
+  private isNight() { if (this.settings.alwaysDay) return false; const t = this.currentTime(); return t > 0.53 && t < 0.97; }
 
   private setWeather(kind: 'clear' | 'rain' | 'snow' | 'thunder') {
     this.weather = kind;
@@ -411,7 +412,10 @@ export class HostRoom {
       if (!p.conn.local && now - p.conn.lastSeen > 45_000) p.conn.close(4003, 'Timed out');
     }
     for (const [n, t] of this.drops) if (now - t > 305_000) { this.drops.delete(n); this.dropInfo.delete(n); }
-    if (now >= this.weatherAt) this.setWeather(this.weather === 'clear' ? (Math.random() < 0.25 ? 'thunder' : 'rain') : 'clear');
+    if (now >= this.weatherAt && this.settings.weatherCycle !== false) {
+      const r = Math.random();
+      this.setWeather(this.weather === 'clear' ? (r < 0.2 ? 'thunder' : r < 0.4 ? 'snow' : 'rain') : 'clear');
+    }
     this.matchTick(now);
   }
 
@@ -594,7 +598,7 @@ export class HostRoom {
         const s = (msg.settings ?? {}) as Partial<Settings>;
         const next = { ...this.settings };
         if (DIFFICULTIES.includes(String(s.difficulty))) next.difficulty = s.difficulty as Settings['difficulty'];
-        for (const k of ['keepInventory', 'scripts', 'mods', 'commands', 'pvp'] as const) if (typeof s[k] === 'boolean') next[k] = s[k] as boolean;
+        for (const k of ['keepInventory', 'scripts', 'mods', 'commands', 'pvp', 'alwaysDay', 'weatherCycle'] as const) if (typeof s[k] === 'boolean') next[k] = s[k] as boolean;
         if (SCRIPT_PERMS.includes(String(s.scriptPerm))) next.scriptPerm = s.scriptPerm;
         this.settings = next;
         this.broadcast({ t: 'settings', settings: next });
@@ -701,12 +705,23 @@ export class HostRoom {
         if (flags.length && !p.conn.local && !this.exemptFromAntiCheat(p)) this.anticheat.onScript(p.id, p.name, flags);
         return;
       }
+      case 'sign': { // a sign's text changed: everybody sees it, and players who join later get it
+        if (!int(msg.x) || !int(msg.y) || !int(msg.z) || !Array.isArray(msg.lines)) return;
+        if (!p.conn.local && ++p.blocks > 600) return;
+        const lines = (msg.lines as unknown[]).slice(0, 4).map((l) => (typeof l === 'string' ? filterProfanity(l.slice(0, 15)) : ''));
+        const k = `${msg.x},${msg.y},${msg.z}`;
+        if (lines.every((l) => !l)) this.signs.delete(k); else this.signs.set(k, lines);
+        this.broadcast({ t: 'sign', x: msg.x, y: msg.y, z: msg.z, lines }, p.id);
+        return;
+      }
       case 'chat': {
         const text = typeof msg.text === 'string' ? filterProfanity(msg.text.trim().slice(0, 256)) : '';
         if (!text) return;
         if (!p.conn.local && this.mutes.has(p.name.toLowerCase())) { p.conn.send({ t: 'system', text: 'You are muted.' }); return; }
-        if (!p.conn.local && !this.exemptFromAntiCheat(p) && !this.anticheat.onChat(p.id, p.name)) { p.conn.send({ t: 'system', text: 'Slow down! You are sending messages too fast.' }); return; }
+        if (!p.conn.local && !this.exemptFromAntiCheat(p) && !this.anticheat.onChat(p.id, p.name, text)) { p.conn.send({ t: 'system', text: 'Slow down! You are sending messages too fast.' }); return; }
         this.broadcast({ t: 'chat', id: p.id, name: p.name, text });
+        // @name pings that player (a sound + a toast even while they play): the name has to follow an @
+        { const low = text.toLowerCase(); for (const o of this.players.values()) { if (!o.joined || o.id === p.id) continue; const n = '@' + o.name.toLowerCase(); let i = low.indexOf(n); while (i >= 0 && /[a-z0-9_]/.test(low[i + n.length] ?? ' ')) i = low.indexOf(n, i + 1); if (i >= 0) o.conn.send({ t: 'mention', from: p.name, text }); } }
         return;
       }
       case 'hit': {
@@ -720,7 +735,7 @@ export class HostRoom {
         } else if (!this.settings.pvp) return;
         // A spear reaches further than the rest (the host looks at what the attacker really holds, not at what the message says)
         const holdsSpear = p.held >= SPEAR_FIRST && p.held < SPEAR_FIRST + 7, holdsMace = p.held === MACE_ID;
-        if (!p.conn.local && !this.exemptFromAntiCheat(p) && msg.bow !== true) this.anticheat.onHit(p.id, p.name, { x: p.x, y: p.y, z: p.z, yaw: p.yaw }, { x: target.x, y: target.y, z: target.z }, holdsSpear ? 6.4 : 4.6);
+        if (!p.conn.local && !this.exemptFromAntiCheat(p) && msg.bow !== true) this.anticheat.onHit(p.id, p.name, { x: p.x, y: p.y, z: p.z, yaw: p.yaw }, { x: target.x, y: target.y, z: target.z }, holdsSpear ? 6.4 : 4.6, target.id);
         const dmg = Math.max(0, Math.min(msg.bow === true ? 14 : holdsMace ? 90 : 30, msg.dmg)); // (a mace smash has no upper limit in the game; 90 is plenty)
         const kx = num(msg.kx) ? Math.max(-1, Math.min(1, msg.kx)) : 0, kz = num(msg.kz) ? Math.max(-1, Math.min(1, msg.kz)) : 0;
         const breach = num(msg.breach) && holdsMace ? Math.max(0, Math.min(0.6, msg.breach)) : 0; // Breach only comes from a mace

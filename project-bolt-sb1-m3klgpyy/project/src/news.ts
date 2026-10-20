@@ -2,11 +2,35 @@
 // a small update to the current one is a point release (Indev 26.1, 26.2...), a big one is the next number.
 //
 // The News page in the sidebar shows this list, and a dot appears on it until the newest one has been read.
-export const GAME_VERSION = 32;
+export const GAME_VERSION = 33;
 
 export type NewsEntry = { version: number; date: string; title: string; changes: string[] };
 
 export const NEWS: NewsEntry[] = [
+  {
+    version: 33,
+    date: 'October 20, 2026',
+    title: 'Snow, signs, wood types, eggs, shovels, custom themes and @pings',
+    changes: [
+      'Themes: pick your own colours (like the crosshair) in Settings > Video > Theme. Vanguard and up can; Elite has every Vanguard perk and Champion has every Elite perk.',
+      'Zoom: hold V to zoom in and scroll to change how far. You can rebind it in Keybinds.',
+      'Wood types: Oak, Spruce, Birch, Dark Oak and Acacia now have their own logs, planks, leaves, doors, trapdoors, fences, fence gates and signs. "Wood" is now "Oak Log".',
+      'Signs: craft them from planks and a stick, place them on the ground or a wall, and right-click to write 4 lines. Everyone on the server sees them.',
+      'Real snow: snow falls as thin snow layers, grass turns into snowy grass and trees get snowy leaves while it snows, and it melts after. Snowy biomes now get rain as well as snow.',
+      'Shovels (wood to emerald): right-click grass or dirt to make a dirt path, and break snow with one to get snowballs (only a shovel gives them). Breaking snowy grass peels the snow and leaves normal grass.',
+      'New blocks: Coarse Dirt (dirt + gravel), Dirt Path, Snow Layer, Snowy Grass, Snowy Leaves.',
+      'Eggs: throw them (right-click). One in eight hatches a baby chicken. Hens lay eggs now and then. Snowballs can be thrown too.',
+      'Manage Server: Always Day keeps the sky bright, and Weather Cycle off keeps the weather exactly as it is.',
+      'Hit a villager and its trades cost more: the old price is crossed out with a red X.',
+      'Smarter mobs: iron golems patrol the village, and mobs and bots walk round walls instead of pushing at them.',
+      'Better anti-cheat: it now catches high jumps, teleporting, hitting many players at once, aim assist and repeated chat messages, and old warnings fade away so lag never gets anyone kicked.',
+      '@ping: type @username in chat and that player hears a ping and sees a message, even while they are playing.',
+      'Guests: the right panel keeps your name and skin but hides levels, lootboxes, leaderboard and coins, and has a Sign up / Log in button.',
+      'Scripts: new APIs (signs, findBlock, getHighestBlock, sphere, line, entities.nearest, util.*, Always Day and Weather Cycle) and the throw and eggHatch events.',
+      'Guns mod: Pistol, Revolver, SMG, Pump Shotgun and M4. Farmer\'s Delight: eight new meals and wooden and emerald knives.',
+      'Music: Lo-fi and Ambient soundtracks, four new Overworld tracks, and melodies that come back like a real tune.',
+    ],
+  },
   {
     version: 32,
     date: 'October 19, 2026',

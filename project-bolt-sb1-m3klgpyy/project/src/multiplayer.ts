@@ -14,7 +14,7 @@ export type NetWeather = 'clear' | 'rain' | 'snow' | 'thunder';
 export type NetBadge = { owner?: boolean; rank?: string; tier?: string; staff?: string | null; og?: boolean; special?: string | null };
 export type NetPlayerInfo = { id: number; name: string; x: number; y: number; z: number; yaw: number; pitch: number; mode: string; look?: NetLook; badge?: NetBadge };
 
-export type ServerSettings = { difficulty: 'peaceful' | 'easy' | 'normal' | 'hard'; keepInventory: boolean; scripts: boolean; mods: boolean; commands: boolean; pvp?: boolean; /** who may run scripts: 'off' | 'all' | 'admin' | 'owner' */ scriptPerm?: 'off' | 'all' | 'admin' | 'owner' };
+export type ServerSettings = { difficulty: 'peaceful' | 'easy' | 'normal' | 'hard'; keepInventory: boolean; scripts: boolean; mods: boolean; commands: boolean; pvp?: boolean; /** the sky stays at midday */ alwaysDay?: boolean; /** false = the weather stays as it is */ weatherCycle?: boolean; /** who may run scripts: 'off' | 'all' | 'admin' | 'owner' */ scriptPerm?: 'off' | 'all' | 'admin' | 'owner' };
 /** Roles in a world (lowercase name -> 'owner' | 'coowner' | 'admin') */
 export type NetRoles = Record<string, string>;
 /** A world being handed to you when its host leaves (see HostRoom.handOff in hosting.ts) */
@@ -41,6 +41,7 @@ export type Welcome = {
   mode: string;
   time: number;
   changes: NetBlock[];
+  signs?: Array<[number, number, number, string[]]>;
   players: NetPlayerInfo[];
   weather?: NetWeather;
   /** How many players this server takes right now (18, or 24 when its host is a Rising Creator). */
@@ -79,6 +80,8 @@ export type MultiplayerEvents = {
   onTime?: (time: number) => void;
   onWeather?: (kind: NetWeather) => void;
   /** Someone whispered to you / your whisper was delivered / nobody here has that name. */
+  onMention?: (from: string, text: string) => void;
+  onSign?: (x: number, y: number, z: number, lines: string[]) => void;
   onWhisper?: (from: string, text: string) => void;
   onWhispered?: (to: string, text: string) => void;
   onWhisperFail?: (to: string) => void;
@@ -216,6 +219,8 @@ export class MultiplayerClient {
       case 'badge': e.onBadge?.(m.id as number, { owner: !!m.owner, rank: String(m.rank ?? 'none'), tier: String(m.tier ?? 'none'), staff: m.staff === 'helper' || m.staff === 'mod' ? m.staff : null, og: m.og === true, special: m.special === 'youtube' ? 'youtube' : null }); break;
       case 'system': e.onSystem?.(m.text as string); break;
       case 'time': e.onTime?.(m.time as number); break;
+      case 'mention': e.onMention?.(String(m.from), String(m.text)); break;
+      case 'sign': if (Array.isArray(m.lines)) e.onSign?.(Number(m.x), Number(m.y), Number(m.z), (m.lines as unknown[]).map(String)); break;
       case 'whisper': e.onWhisper?.(String(m.from), String(m.text)); break;
       case 'whispered': e.onWhispered?.(String(m.to), String(m.text)); break;
       case 'whisperFail': e.onWhisperFail?.(String(m.to)); break;
@@ -254,6 +259,8 @@ export class MultiplayerClient {
 
   /** Tell the world's host that this page runs an outside script (see integrity.ts). Only flags it knows are sent. */
   sendIntegrity(flags: string[]) { this.send({ t: 'integrity', flags: flags.slice(0, 6).map((f) => String(f).slice(0, 30)) }); }
+
+  sendSign(x: number, y: number, z: number, lines: string[]) { this.send({ t: 'sign', x, y, z, lines }); }
 
   sendBlocks(list: NetBlock[]) {
     for (let i = 0; i < list.length; i += 256) this.send({ t: 'blocks', list: list.slice(i, i + 256) });

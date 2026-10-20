@@ -4,7 +4,7 @@
 //
 // The classical pieces are old public-domain works (Bach, Pachelbel, Satie, Beethoven), written out in simplified form.
 
-export type SoundtrackStyle = 'overworld' | 'phonk' | 'arcade' | 'classical';
+export type SoundtrackStyle = 'overworld' | 'phonk' | 'arcade' | 'classical' | 'lofi' | 'ambient';
 /** (kept for the settings screen) */
 export type AnySoundtrack = SoundtrackStyle;
 export const SOUNDTRACKS: Array<{ value: SoundtrackStyle; label: string }> = [
@@ -12,6 +12,8 @@ export const SOUNDTRACKS: Array<{ value: SoundtrackStyle; label: string }> = [
   { value: 'classical', label: 'Classical' },
   { value: 'phonk', label: 'Phonk' },
   { value: 'arcade', label: 'Arcade' },
+  { value: 'lofi', label: 'Lo-fi' },
+  { value: 'ambient', label: 'Ambient' },
 ];
 
 export type Voice = 'piano' | 'pad' | 'pluck' | 'bass' | 'square' | 'tri' | 'kick' | 'snare' | 'hat' | 'cow';
@@ -158,6 +160,8 @@ function odeToJoy(): Track {
 const MAJOR = [0, 2, 4, 5, 7, 9, 11];
 const PENTA = [0, 2, 4, 7, 9];
 const DORIAN = [0, 2, 3, 5, 7, 9, 10];
+const LYDIAN = [0, 2, 4, 6, 7, 9, 11];
+const MINOR = [0, 2, 3, 5, 7, 8, 10];
 function overworld(i: number): Track {
   const defs = [
     { name: 'Meadow', root: 60, scale: PENTA, prog: [0, 3, 4, 0, 5, 3, 4, 0], bpm: 78, seed: 11, groove: 0 },
@@ -166,6 +170,10 @@ function overworld(i: number): Track {
     { name: 'Stargazer', root: 65, scale: PENTA, prog: [0, 5, 3, 4, 0, 5, 4, 0], bpm: 76, seed: 41, groove: 2 },
     { name: 'Sunrise Trail', root: 64, scale: MAJOR, prog: [0, 3, 4, 5, 0, 3, 4, 4], bpm: 98, seed: 53, groove: 1 },
     { name: 'Crystal Caves', root: 59, scale: DORIAN, prog: [0, 5, 3, 6, 0, 5, 4, 6], bpm: 84, seed: 67, groove: 2 },
+    { name: 'Old Oak', root: 60, scale: LYDIAN, prog: [0, 4, 3, 4, 0, 5, 3, 4], bpm: 80, seed: 71, groove: 0 },
+    { name: 'Rainfall', root: 57, scale: MINOR, prog: [0, 5, 3, 4, 0, 5, 6, 4], bpm: 70, seed: 83, groove: 2 },
+    { name: 'Snowfall', root: 67, scale: PENTA, prog: [0, 3, 0, 4, 0, 5, 3, 0], bpm: 66, seed: 89, groove: 0 },
+    { name: 'Harvest Moon', root: 62, scale: MAJOR, prog: [0, 3, 5, 4, 0, 3, 4, 0], bpm: 92, seed: 97, groove: 1 },
   ];
   const d = defs[i % defs.length];
   const r = rng(d.seed);
@@ -174,6 +182,8 @@ function overworld(i: number): Track {
   const triad = (deg: number) => [0, 2, 4].map((k) => { const x = deg + k; return d.root - 12 + MAJOR[x % 7] + 12 * Math.floor(x / 7); });
   const chords = 16;
   let lastDeg = 2;
+  const mk = () => Array.from({ length: 8 }, (_, k): number | null => (k % 2 === 1 && r() < 0.5) || r() < 0.2 ? null : Math.floor(r() * 5) - 2);
+  const motifA = mk(), motifB = mk();
   for (let c = 0; c < chords; c++) {
     const deg = d.prog[c % d.prog.length];
     const t0 = 0.5 + c * 4 * beat;
@@ -201,12 +211,14 @@ function overworld(i: number): Track {
     }
     if (c >= 4) for (const k of [1, 3]) events.push({ t: t0 + k * beat, dur: 0.15, midi: 38, v: 'snare', vel: 0.2 });
     if (c >= 4 && c % 8 === 7) for (let k = 0; k < 4; k++) events.push({ t: t0 + 3 * beat + k * eighth / 2, dur: 0.1, midi: 38, v: 'snare', vel: 0.12 + k * 0.04 });
-    // a few soft notes of a melody that wanders up and down
+    // a melody built from a short tune that comes back (a "question" for two chords, an "answer" for two), so it sounds like it means something
+    const phrase = (c % 4 < 2 ? motifA : motifB);
     for (let b = 0; b < 8; b++) {
-      if (r() < 0.38) continue;
-      lastDeg = Math.max(0, Math.min(d.scale.length * 2 - 1, lastDeg + Math.floor(r() * 5) - 2));
+      const step = phrase[b];
+      if (step === null) continue;
+      lastDeg = Math.max(0, Math.min(d.scale.length * 2 - 1, lastDeg + step + (c >= 8 && c % 4 === 3 && b === 7 ? 1 : 0)));
       const midi = d.root + d.scale[lastDeg % d.scale.length] + 12 * Math.floor(lastDeg / d.scale.length);
-      events.push({ t: t0 + b * 0.5 * beat, dur: beat * (1 + Math.floor(r() * 2)), midi, v: 'piano', vel: 0.3 + r() * 0.12 });
+      events.push({ t: t0 + b * 0.5 * beat, dur: beat * (step === 0 ? 1.5 : 1), midi, v: 'piano', vel: 0.3 + (b % 4 === 0 ? 0.08 : 0) + r() * 0.05 });
     }
   }
   return { name: d.name, length: 0.5 + chords * 4 * beat + 4, events: sorted(events) };
@@ -279,11 +291,80 @@ function arcade(i: number): Track {
   return { name: d.name, length: 0.3 + bars * 4 * beat + 1, events: sorted(events) };
 }
 
+// ---------------- lo-fi: lazy swing, jazzy chords ----------------
+function lofi(i: number): Track {
+  const defs = [
+    { name: 'Rainy Window', root: 57, bpm: 74, seed: 101, prog: [0, 3, 4, 0, 5, 3, 4, 0] },
+    { name: 'Late Night Study', root: 62, bpm: 80, seed: 103, prog: [0, 5, 3, 4, 0, 5, 4, 0] },
+    { name: 'Warm Tea', root: 60, bpm: 70, seed: 107, prog: [0, 3, 0, 4, 5, 3, 4, 0] },
+    { name: 'Paper Lanterns', root: 64, bpm: 84, seed: 109, prog: [0, 4, 5, 3, 0, 4, 3, 0] },
+  ];
+  const d = defs[i % defs.length];
+  const r = rng(d.seed);
+  const beat = 60 / d.bpm;
+  const sw = beat * 0.17; // the off-beat eighth lands late
+  const events: Ev[] = [];
+  const chords = 24;
+  for (let c = 0; c < chords; c++) {
+    const deg = d.prog[c % d.prog.length];
+    const t0 = 0.4 + c * 4 * beat;
+    const rootMidi = d.root - 12 + MAJOR[deg % 7];
+    const minor = [1, 2, 5].includes(deg % 7);
+    const tones = [0, minor ? 3 : 4, 7, minor ? 10 : 11, 14]; // seventh chords with a ninth on top
+    tones.forEach((tn, k) => events.push({ t: t0 + k * 0.03, dur: 2.2 * beat, midi: rootMidi + tn + (k > 2 ? 0 : 12), v: 'piano', vel: 0.17 }));
+    if (c % 2 === 1) tones.forEach((tn, k) => events.push({ t: t0 + 2.5 * beat + sw + k * 0.03, dur: 1.4 * beat, midi: rootMidi + tn + (k > 2 ? 0 : 12), v: 'piano', vel: 0.12 }));
+    events.push({ t: t0, dur: 1.8 * beat, midi: rootMidi - 12, v: 'bass', vel: 0.3 });
+    events.push({ t: t0 + 2.5 * beat + sw, dur: 1.2 * beat, midi: rootMidi - 12 + 7, v: 'bass', vel: 0.2 });
+    // drums, soft: kick, a lazy snare on two and four, swung hats
+    if (c >= 1) {
+      events.push({ t: t0, dur: 0.25, midi: 36, v: 'kick', vel: 0.32 });
+      events.push({ t: t0 + 2.5 * beat + sw, dur: 0.25, midi: 36, v: 'kick', vel: 0.24 });
+      for (const k of [1, 3]) events.push({ t: t0 + k * beat + 0.02, dur: 0.15, midi: 38, v: 'snare', vel: 0.15 });
+      for (let k = 0; k < 8; k++) events.push({ t: t0 + k * beat / 2 + (k % 2 ? sw : 0), dur: 0.05, midi: 42, v: 'hat', vel: k % 2 ? 0.05 : 0.09 });
+    }
+    // a sleepy pentatonic tune
+    if (c >= 2) for (let k = 0; k < 4; k++) {
+      if (r() < 0.45) continue;
+      const midi = d.root + PENTA[Math.floor(r() * 5)] + 12;
+      events.push({ t: t0 + k * beat + (r() < 0.5 ? sw : 0), dur: beat * 1.3, midi, v: 'pluck', vel: 0.16 });
+    }
+  }
+  return { name: d.name, length: 0.4 + chords * 4 * beat + 3, events: sorted(events) };
+}
+
+// ---------------- ambient: slow pads and bell-like notes, no drums ----------------
+function ambient(i: number): Track {
+  const defs = [
+    { name: 'Deep Forest', root: 53, scale: PENTA, bpm: 52, seed: 211 },
+    { name: 'Still Water', root: 55, scale: LYDIAN, bpm: 48, seed: 223 },
+    { name: 'Northern Lights', root: 50, scale: DORIAN, bpm: 56, seed: 227 },
+  ];
+  const d = defs[i % defs.length];
+  const r = rng(d.seed);
+  const beat = 60 / d.bpm;
+  const events: Ev[] = [];
+  const chords = 10;
+  const degs = [0, 3, 5, 2, 0, 4, 3, 5, 2, 0];
+  for (let c = 0; c < chords; c++) {
+    const t0 = 0.5 + c * 8 * beat;
+    const rt = d.root + MAJOR[degs[c] % 7];
+    [0, 7, 12, 16].forEach((tn, k) => events.push({ t: t0 + k * 0.5, dur: 9 * beat, midi: rt + tn, v: 'pad', vel: 0.1 }));
+    events.push({ t: t0, dur: 7 * beat, midi: rt - 12, v: 'bass', vel: 0.16 });
+    for (let k = 0; k < 6; k++) {
+      if (r() < 0.35) continue;
+      events.push({ t: t0 + k * 1.3 * beat + r() * beat * 0.4, dur: beat * 2.5, midi: d.root + 24 + d.scale[Math.floor(r() * d.scale.length)], v: 'pluck', vel: 0.1 + r() * 0.06 });
+    }
+  }
+  return { name: d.name, length: 0.5 + chords * 8 * beat + 5, events: sorted(events) };
+}
+
 const BUILDERS: Record<SoundtrackStyle, Array<() => Track>> = {
-  overworld: [0, 1, 2, 3, 4, 5].map((i) => () => overworld(i)),
+  overworld: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((i) => () => overworld(i)),
   classical: [bachPrelude, canon, gymnopedie, furElise, odeToJoy],
   phonk: [0, 1, 2].map((i) => () => phonk(i)),
   arcade: [0, 1, 2].map((i) => () => arcade(i)),
+  lofi: [0, 1, 2, 3].map((i) => () => lofi(i)),
+  ambient: [0, 1, 2].map((i) => () => ambient(i)),
 };
 export const trackCount = (style: SoundtrackStyle) => BUILDERS[style].length;
 export function buildTrack(style: SoundtrackStyle, index: number): Track {
@@ -485,7 +566,7 @@ export class MusicPlayer {
       const when = Math.max(ctx.currentTime, this.trackStart + e.t);
       try { playNote(ctx, this.bus, this.noise, e, when); } catch { /* a bad note must never stop the music */ }
     }
-    if (ctx.currentTime > this.trackStart + tr.length) this.nextTrack(this.style === 'classical' || this.style === 'overworld' ? 2.5 : 0.8);
+    if (ctx.currentTime > this.trackStart + tr.length) this.nextTrack(this.style === 'classical' || this.style === 'overworld' || this.style === 'ambient' || this.style === 'lofi' ? 2.5 : 0.8);
   }
 
   pause() { if (this.ctx && this.playing) { void this.ctx.suspend(); this.playing = false; } }

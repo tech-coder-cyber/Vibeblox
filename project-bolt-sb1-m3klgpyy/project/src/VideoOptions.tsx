@@ -1,7 +1,7 @@
 // The extra video settings: clouds, stars, fast render, frame cap, bobbing and dynamic FOV.
 import { useState, useSyncExternalStore } from 'react';
 import { getVideo, updateVideo, subscribeVideo, CLOUD_HEIGHT_RANGE, FPS_RANGE, type CloudMode } from './videoPrefs';
-import { useTheme, setTheme, THEMES, type Theme } from './layout';
+import { useTheme, setTheme, THEMES, useCustomTheme, setCustomTheme, resetCustomTheme, useCustomThemeAllowed, customPalette, THEME_BG_SWATCHES, THEME_ACCENT_SWATCHES, type Theme } from './layout';
 
 const card = 'bg-[#121822] rounded-2xl border border-[#243044] p-6';
 
@@ -35,21 +35,54 @@ export default function VideoOptions() {
     { id: 'none', label: 'None', desc: 'No clouds' },
   ];
   const theme = useTheme();
+  const custom = useCustomTheme(), customOk = useCustomThemeAllowed(), pal = customPalette(custom);
   return (
     <>
       <section className={card} data-testid="video-theme">
         <div className="mb-3">
           <label className="text-white text-sm font-medium">Theme</label>
-          <p className="text-[#5a6b80] text-xs mt-0.5">Dark, Super Dark (black), Gray or Light menus (the game itself doesn't change). It's remembered.</p>
+          <p className="text-[#5a6b80] text-xs mt-0.5">Dark, Super Dark (black), Gray, Light or your own Custom colours (Vanguard and up). The game itself doesn't change. It's remembered.</p>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
           {THEMES.map((t: Theme) => (
             <button key={t} onClick={() => setTheme(t)} data-testid={`theme-${t}`} aria-pressed={theme === t}
               className={`py-2.5 rounded-xl border text-sm font-medium transition-all ${theme === t ? 'bg-[#00e676]/15 border-[#00e676] text-[#00e676]' : 'bg-[#0a0e14] border-[#243044] text-[#8ea0b8] hover:text-white'}`}>
               {t === 'dark' ? '🌙 Dark' : t === 'superdark' ? '⚫ Super Dark' : t === 'gray' ? '🩶 Gray' : '☀️ Light'}
             </button>
           ))}
+          <button onClick={() => setTheme('custom')} data-testid="theme-custom" aria-pressed={theme === 'custom'} title={customOk ? 'Pick your own colours' : 'Vanguard, Elite and Champion can pick their own colours'}
+            className={`py-2.5 rounded-xl border text-sm font-medium transition-all ${theme === 'custom' ? 'bg-[#00e676]/15 border-[#00e676] text-[#00e676]' : 'bg-[#0a0e14] border-[#243044] text-[#8ea0b8] hover:text-white'}`}>
+            {customOk ? '🎨 Custom' : '🔒 Custom'}
+          </button>
         </div>
+        {theme === 'custom' && (
+          <div className="mt-4 rounded-xl border border-[#243044] bg-[#0a0e14] p-4" data-testid="theme-custom-editor">
+            {!customOk ? (
+              <p className="text-sm text-[#ffd23a]" data-testid="theme-custom-locked">Custom colours come with the Vanguard rank (Elite and Champion have them too). Until then the menus stay Dark.</p>
+            ) : (
+              <>
+                {([['bg', 'Background', THEME_BG_SWATCHES], ['accent', 'Accent (buttons and highlights)', THEME_ACCENT_SWATCHES]] as const).map(([key, label, swatches]) => (
+                  <div key={key} className="mb-3 last:mb-0">
+                    <div className="text-white text-sm font-medium mb-1.5">{label}</div>
+                    <div className="flex flex-wrap items-center gap-1.5" data-testid={`theme-${key}-row`}>
+                      {swatches.map((col) => (
+                        <button key={col} onClick={() => setCustomTheme({ [key]: col })} aria-label={col} data-testid={`theme-${key}-${col.slice(1)}`}
+                          className={`w-6 h-6 rounded-md border-2 ${custom[key] === col ? 'border-[#00e676]' : 'border-[#364860]'}`} style={{ background: col }} />
+                      ))}
+                      <input type="color" value={custom[key]} onChange={(e) => setCustomTheme({ [key]: e.target.value })} data-testid={`theme-${key}-pick`} className="w-7 h-7 rounded bg-transparent" aria-label={`Pick the ${label.toLowerCase()} colour`} />
+                      <span className="text-[11px] text-[#5a6b80] font-mono">{custom[key]}</span>
+                    </div>
+                  </div>
+                ))}
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <span className="px-3 py-1.5 rounded-lg text-xs font-bold" style={{ background: pal.accent, color: pal.onAccent }}>Button</span>
+                  <span className="px-3 py-1.5 rounded-lg text-xs border" style={{ background: pal.bg['121822'], borderColor: pal.border['243044'], color: pal.light ? '#141b26' : '#d6e2f0' }}>Panel</span>
+                  <button onClick={() => resetCustomTheme()} data-testid="theme-custom-reset" className="ml-auto text-xs text-[#8ea0b8] hover:text-white underline">Reset colours</button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </section>
       <section className={card} data-testid="video-clouds">
         <div className="mb-3">

@@ -11,7 +11,7 @@ import {
 import { ModBuilder } from '@/ModBuilder';
 import { parseModCode } from '@/modBuilderLogic';
 import { filterProfanity } from '@/profanity';
-import { readRank, worldLimit, WORLD_LIMITS, RANK_NAMES, effectiveRank, playerCap, scriptBudgetMs, canUploadSkin, SCRIPT_BUDGET_MS, creatorTier, CREATOR_PLAYS, CREATOR_NAMES, PLAYER_CAP, adsAllowedFor, badgeTags, perkRank, canGoUndercover, isStaffId, isSpecialId, type SpecialId, type StaffId, type RankId, type CreatorTier } from '@/ranks';
+import { readRank, worldLimit, WORLD_LIMITS, RANK_NAMES, effectiveRank, playerCap, scriptBudgetMs, canUploadSkin, SCRIPT_BUDGET_MS, creatorTier, CREATOR_PLAYS, CREATOR_NAMES, PLAYER_CAP, adsAllowedFor, badgeTags, perkRank, canGoUndercover, canCustomTheme, isStaffId, isSpecialId, type SpecialId, type StaffId, type RankId, type CreatorTier } from '@/ranks';
 import { GAME_VERSION, NEWS } from '@/news';
 import { t, useLanguage, setLanguage, LANGUAGES, type LangCode } from '@/i18n';
 import { useKeybinds, rebind, resetBinds, keyLabel, KEY_ACTIONS, setCapturingKey, isCapturingKey, getBinds } from '@/keybinds';
@@ -39,7 +39,7 @@ import { MusicPlayer, SOUNDTRACKS, subscribeNowPlaying, getNowPlaying, type Soun
 import { playlist, isFileStyle } from './playlist';
 import { NowPlayingToast, LookingAtLabel, AttackIndicator, QolSettings, BlockSoundSettings, BackgroundSettings, PlaylistNote, saveScreenshot } from './QolBits';
 import { installUiSounds, setUiSoundVolume, getQol, subscribeQol } from './qol';
-import { useCompactLayout } from './layout';
+import { useCompactLayout, setCustomThemeAllowed } from './layout';
 import SideNav from './SideNav';
 import { AccountTab, AccountSummaryContext } from './AccountPanel';
 import { subscribeVideo, getVideo } from './videoPrefs';
@@ -140,8 +140,8 @@ function listImage(img?: string): Promise<string | undefined> {
 type NetBlock = [number, number, number, number];
 type NetBadge = { owner?: boolean; rank?: string; tier?: string; staff?: string | null; og?: boolean; special?: string | null; undercover?: boolean };
 type NetPlayerInfo = { id: number; name: string; x: number; y: number; z: number; yaw: number; pitch: number; mode: string; look?: PlayerLook; badge?: NetBadge };
-type ServerSettings = { difficulty: Difficulty; keepInventory: boolean; scripts: boolean; mods: boolean; commands: boolean; pvp?: boolean; scriptPerm?: ScriptPerm };
-const DEFAULT_SERVER: ServerSettings = { difficulty: 'normal', keepInventory: false, scripts: true, mods: true, commands: true, pvp: true };
+type ServerSettings = { difficulty: Difficulty; keepInventory: boolean; scripts: boolean; mods: boolean; commands: boolean; pvp?: boolean; scriptPerm?: ScriptPerm; alwaysDay?: boolean; weatherCycle?: boolean };
+const DEFAULT_SERVER: ServerSettings = { difficulty: 'normal', keepInventory: false, scripts: true, mods: true, commands: true, pvp: true, alwaysDay: false, weatherCycle: true };
 type Welcome = { game?: NetGame; id: number; name: string; seed: number; worldType: 'default' | 'superflat' | 'eggwars' | 'bridge'; mode: string; time: number; changes: NetBlock[]; players: NetPlayerInfo[]; hostId?: number | null; settings?: ServerSettings; weather?: WeatherKind; experimental?: boolean; maxPlayers?: number; ranks?: unknown; roles?: Record<string, string>; drops?: NetDrop[] };
 import type { NetDrop } from './multiplayer';
 import { ShadersPanel, CrosshairPanel, CrosshairView } from './ShadersPanel';
@@ -159,6 +159,8 @@ type MpEvents = {
   onLeave?: (id: number, name: string) => void;
   onLook?: (id: number, look: PlayerLook) => void;
   onChat?: (name: string, text: string) => void;
+  onMention?: (from: string, text: string) => void;
+  onSign?: (x: number, y: number, z: number, lines: string[]) => void;
   onTitle?: (text: string, sub: string) => void;
   onDrop?: (d: NetDrop) => void;
   onDropGone?: (n: string) => void;
@@ -201,6 +203,7 @@ type MpClient = {
   connectSocket(sock: unknown, name: string, token?: string | null, cantConnect?: string, waitMs?: number): void;
   sendMove(x: number, y: number, z: number, yaw: number, pitch: number, mode: string, held?: number, act?: number): void;
   sendBlocks(list: NetBlock[]): void;
+  sendSign(x: number, y: number, z: number, lines: string[]): void;
   sendChat(text: string): void;
   sendLook(look: PlayerLook): void;
   sendSettings(s: Partial<ServerSettings>): void;
@@ -384,7 +387,7 @@ const rankTiers: RankTier[] = [
     price: '$5',
     priceValue: 5,
     icon: Shield,
-    perks: [`${WORLD_LIMITS.vanguard} planets (instead of ${WORLD_LIMITS.none})`, 'Custom Chat Tag', `${SCRIPT_BUDGET_MS.vanguard}ms CPU script budget`],
+    perks: [`${WORLD_LIMITS.vanguard} planets (instead of ${WORLD_LIMITS.none})`, 'Custom Chat Tag', 'Custom menu theme colours', `${SCRIPT_BUDGET_MS.vanguard}ms CPU script budget`],
     borderClass: 'vb-border-copper border-2',
     accentText: 'text-[#e8a87c]',
     iconBg: 'from-[#b87333] to-[#8b5a2b]',
@@ -394,7 +397,7 @@ const rankTiers: RankTier[] = [
     price: '$15',
     priceValue: 15,
     icon: Zap,
-    perks: [`${WORLD_LIMITS.elite} planets`, 'Reflective linear gradient text colors', `${SCRIPT_BUDGET_MS.elite}ms CPU script budget`, '+100 daily AI terminal calls'],
+    perks: ['Everything in Vanguard', `${WORLD_LIMITS.elite} planets`, 'Reflective linear gradient text colors', `${SCRIPT_BUDGET_MS.elite}ms CPU script budget`, '+100 daily AI terminal calls'],
     borderClass: 'vb-border-neon-cyan border-2',
     accentText: 'text-[#00e5ff]',
     iconBg: 'from-[#00e5ff] to-[#00b8d4]',
@@ -405,7 +408,7 @@ const rankTiers: RankTier[] = [
     price: '$30',
     priceValue: 30,
     icon: Crown,
-    perks: [`${WORLD_LIMITS.champion} planets`, 'Animated molten magma chat tags', 'Cosmic floating chat tags', `${SCRIPT_BUDGET_MS.champion}ms CPU script budget`, 'Upload your own custom skin and cape', 'Unlimited AI terminal access'],
+    perks: ['Everything in Elite (and Vanguard)', `${WORLD_LIMITS.champion} planets`, 'Animated molten magma chat tags', 'Cosmic floating chat tags', `${SCRIPT_BUDGET_MS.champion}ms CPU script budget`, 'Upload your own custom skin and cape', 'Unlimited AI terminal access'],
     borderClass: 'vb-border-plasma',
     accentText: 'text-[#ffd700]',
     iconBg: 'from-[#ffd700] to-[#ff8c00]',
@@ -972,6 +975,8 @@ type WorldConfig = {
   id?: string;
   difficulty?: Difficulty;
   keepInventory?: boolean;
+  alwaysDay?: boolean;
+  weatherCycle?: boolean;
   creator?: string;      // who made the planet
   createdAt?: number;    // when (ms since 1970)
   lastPlayed?: number;
@@ -2836,7 +2841,7 @@ function ProfileModal({ name, me, onClose }: { name: string; me: Account | null;
   );
 }
 
-function ProfilePanel({ username, onOpenLeaderboard }: { username: string; onOpenLeaderboard: () => void }) {
+function ProfilePanel({ username, onOpenLeaderboard, onSignIn }: { username: string; onOpenLeaderboard: () => void; onSignIn?: () => void }) {
   useLanguage();
   const p = useProgress();
   const { rising, tier, signedIn, guest, nameTags, undercover } = useContext(StandingContext);
@@ -2861,7 +2866,13 @@ function ProfilePanel({ username, onOpenLeaderboard }: { username: string; onOpe
             {rising && <div className="mt-1"><TierBadge tier={tier} small /></div>}
           </div>
         </div>
-        <div className={guest ? 'opacity-40 select-none' : ''} aria-disabled={guest || undefined} data-testid="level-block">
+        {guest && (
+          <div className="mt-1" data-testid="guest-signup">
+            <p className="text-[#8ea0b8] text-[11px] mb-2">Sign up to save your worlds, level up and make friends.</p>
+            <button onClick={onSignIn} data-testid="panel-signup" className="w-full py-2 rounded-xl bg-gradient-to-r from-[#00e676] to-[#00b248] text-[#0a0e14] text-xs font-bold active:scale-95 transition-transform">Sign up / Log in</button>
+          </div>
+        )}
+        {!guest && <div data-testid="level-block">
           <div className="flex items-center justify-between mb-1.5">
             <span className="text-[#8ea0b8] text-xs font-medium" data-testid="panel-level">{t('profile.level', { n: p.level })}</span>
             <span className="text-[#5a6b80] text-xs">{(p.xp - curXp).toLocaleString()} / {(nextXp - curXp).toLocaleString()} XP</span>
@@ -2869,11 +2880,10 @@ function ProfilePanel({ username, onOpenLeaderboard }: { username: string; onOpe
           <div className="h-2 bg-[#0a0e14] rounded-full overflow-hidden">
             <div className="h-full bg-gradient-to-r from-[#00e676] to-[#00b248] rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
           </div>
-          {guest && <p className="mt-1.5 text-[#8ea0b8] text-[11px]" data-testid="level-guest-note">Sign in to level up</p>}
-        </div>
+        </div>}
       </div>
 
-      <div className={`bg-[#121822] rounded-2xl border border-[#243044] p-4 ${guest ? 'opacity-40 select-none' : ''}`} aria-disabled={guest || undefined} data-testid="currency-card">
+      {!guest && <div className="bg-[#121822] rounded-2xl border border-[#243044] p-4" data-testid="currency-card">
         <div className="flex items-center gap-2 mb-3">
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#ffd700] to-[#ff8c00] flex items-center justify-center">
             <Coins className="w-4 h-4 text-[#0a0e14]" />
@@ -2884,11 +2894,11 @@ function ProfilePanel({ username, onOpenLeaderboard }: { username: string; onOpe
           <span className="text-[#8ea0b8] text-xs">{t('profile.coins')}</span>
           <span data-testid="panel-coins" className="font-[var(--font-display)] text-[#ffd700] text-lg tabular-nums">{p.coins.toLocaleString()}</span>
         </div>
-      </div>
+      </div>}
 
-      <DailyCard />
+      {!guest && <DailyCard />}
 
-      <LeaderboardCard onOpenLeaderboard={onOpenLeaderboard} />
+      {!guest && <LeaderboardCard onOpenLeaderboard={onOpenLeaderboard} />}
     </aside>
   );
 }
@@ -3243,8 +3253,8 @@ function ManageServerView({ settings, hardcore, online, isHost, players, myId, h
   const canRules = lvl >= 2, canCheat = lvl >= 1;
   const roleOfName = (n: string) => (roles[n.toLowerCase()] as ServerRole | undefined) ?? null;
   const [tab, setTab] = useState<'world' | 'rules' | 'players' | 'roles' | 'schematics' | 'anticheat'>(() => (lvl >= 2 ? 'world' : 'players'));
-  const toggle = (key: 'keepInventory' | 'scripts' | 'mods' | 'commands' | 'pvp', label: string, hint: string) => {
-    const on = key === 'pvp' ? settings.pvp !== false : settings[key];
+  const toggle = (key: 'keepInventory' | 'scripts' | 'mods' | 'commands' | 'pvp' | 'alwaysDay' | 'weatherCycle', label: string, hint: string) => {
+    const on = key === 'pvp' || key === 'weatherCycle' ? settings[key] !== false : !!settings[key];
     return (
       <button disabled={!canRules} onClick={() => onChange({ [key]: !on })} data-testid={`toggle-${key}`}
         className="flex items-center justify-between gap-3 w-full rounded-xl bg-[#121822] border border-[#243044] px-4 py-3 text-left disabled:opacity-60">
@@ -3310,8 +3320,12 @@ function ManageServerView({ settings, hardcore, online, isHost, players, myId, h
               </button>
             );
           })()}
-          <p className="text-[#5a6b80] text-[10px] mt-1">Changes the weather right now. It still changes by itself over time. Rain is snow in cold biomes.</p>
+          <p className="text-[#5a6b80] text-[10px] mt-1">Changes the weather right now. Rain turns to snow when it is snow weather.</p>
         </div>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        {toggle('alwaysDay', 'Always day', 'The sky stays bright, no night')}
+        {toggle('weatherCycle', 'Weather cycle', 'Off keeps the weather the way it is now')}
       </div>
       </>}
       {tab === 'rules' && <div className="grid grid-cols-2 gap-2">
@@ -3510,7 +3524,13 @@ export function TradeOverlay({ trade, inventory, note, onTrade, onClose }: {
             const can = t.give.every(([id, n]) => countInSlots(inventory, id) >= n);
             return (
               <div key={i} className="flex items-center gap-2 rounded-xl bg-[#121822] border border-[#243044] px-3 py-2" data-testid="trade-row">
-                <div className="flex gap-1">{t.give.map(([id, n], k) => <span key={k}>{icon(id, n)}</span>)}</div>
+                {t.was && (
+                  <span className="relative flex gap-1 opacity-60" data-testid="trade-old-price" title="The old price">
+                    {t.was.map(([id, n], k) => <span key={k}>{icon(id, n)}</span>)}
+                    <span className="absolute inset-0 flex items-center justify-center text-[#ff4d4d] font-black text-3xl leading-none drop-shadow pointer-events-none">✕</span>
+                  </span>
+                )}
+                <div className="flex gap-1" data-testid="trade-price">{t.give.map(([id, n], k) => <span key={k}>{icon(id, n)}</span>)}</div>
                 <span className="text-[#5a6b80] px-1">→</span>
                 {icon(t.get[0], t.get[1])}
                 <span className="flex-1 text-xs text-[#8ea0b8] truncate pl-1">{t.ench ? `Enchanted Book: ${Object.entries(t.ench).map(([k, v]) => enchantLabel(k, v)).join(', ')}` : ITEM_INFO[t.get[0]]?.name}</span>
@@ -3527,6 +3547,28 @@ export function TradeOverlay({ trade, inventory, note, onTrade, onClose }: {
 }
 
 /** Minecraft-style command block setup: the command, its type, and when it runs. */
+function SignPanel({ lines, onDone, onCancel }: { lines: string[]; onDone: (lines: string[]) => void; onCancel: () => void }) {
+  const [text, setText] = useState<string[]>(() => [0, 1, 2, 3].map((i) => lines[i] ?? ''));
+  return (
+    <div className="absolute inset-0 z-40 bg-black/70 backdrop-blur-sm flex items-center justify-center vb-fade-in" onContextMenu={(e) => e.preventDefault()} data-testid="sign-editor">
+      <div className="w-[420px] max-w-[94vw] bg-[#0d131b] border border-[#243044] rounded-2xl p-6 shadow-2xl" onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter' && (e.target as HTMLElement).dataset.last === '1') onDone(text); if (e.key === 'Escape') onCancel(); }}>
+        <h3 className="font-[var(--font-retro)] text-white text-sm tracking-wider uppercase mb-4">Edit Sign</h3>
+        <div className="rounded-lg bg-[#b08a52] border-4 border-[#6b4f2a] px-3 py-3 flex flex-col gap-1.5">
+          {text.map((t, i) => (
+            <input key={i} autoFocus={i === 0} value={t} maxLength={15} spellCheck={false} data-testid={`sign-line-${i}`} data-last={i === 3 ? '1' : '0'}
+              onChange={(e) => setText((cur) => cur.map((c, j) => (j === i ? e.target.value : c)))}
+              className="w-full bg-transparent text-center text-[#1a1208] font-bold text-sm placeholder-[#7a5f35] focus:outline-none border-b border-[#6b4f2a]/40" placeholder={`Line ${i + 1}`} />
+          ))}
+        </div>
+        <div className="mt-4 flex gap-2">
+          <button type="button" onClick={onCancel} className="flex-1 py-2 rounded-lg bg-[#121822] border border-[#243044] text-[#8ea0b8] text-xs font-bold hover:text-white">Cancel</button>
+          <button type="button" onClick={() => onDone(text)} data-testid="sign-done" className="flex-1 py-2 rounded-lg bg-[#00e676] text-[#0a0e14] text-xs font-bold">Done</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CommandBlockPanel({ info, onDone, onCancel }: {
   info: CommandBlockInfo;
   onDone: (cfg: { type: CommandType; cmd: string; auto: boolean; conditional: boolean }) => void;
@@ -4461,7 +4503,10 @@ function itemIdFromNameAny(name: string): number | null {
     const id = Number(name);
     return ITEM_INFO[id] ? id : null;
   }
-  const n = normalizeItemName(name);
+  // the old names still work in scripts: "planks" is oak planks now, "snow" is the snow block...
+  const OLD_NAMES: Record<string, string> = { planks: 'oakplanks', wood: 'oaklog', log: 'oaklog', leaves: 'oakleaves', snow: 'snowblock', door: 'oakdoor', trapdoor: 'oaktrapdoor', fence: 'oakfence', fencegate: 'oakfencegate' };
+  const n0 = normalizeItemName(name);
+  const n = OLD_NAMES[n0] ?? n0;
   let hiddenMatch: number | null = null; // block states (a lit torch on a wall...) share names: prefer the real item
   for (const [id, info] of Object.entries(ITEM_INFO)) {
     if (normalizeItemName(info.name) !== n) continue;
@@ -6111,6 +6156,7 @@ export default function App() {
   const myOg = !!account && !isGuestName(account.username) && account.og === true;
   const mySpecial: SpecialId | null = account && !isGuestName(account.username) && isSpecialId(account.special) ? account.special : null;
   const myPerk: RankId = perkRank(myRank, { staff: myStaff, og: myOg, special: mySpecial });
+  useEffect(() => { setCustomThemeAllowed(canCustomTheme(myPerk)); }, [myPerk]); // Custom menu colours: Vanguard and up
   /** [YOUTUBE] only: /undercover hides your tags from everyone (and from your own name plate, so you can see it works) */
   const myUndercover = mySpecial === 'youtube' && account?.undercover === true;
   const myUndercoverRef = useRef(myUndercover);
@@ -6208,6 +6254,13 @@ export default function App() {
     playPingSound();
   }
   useEffect(() => { (window as unknown as { __vbWhisper?: (f: string, t: string) => void }).__vbWhisper = receiveWhisper; });
+  /** Somebody wrote @yourname: a ping sound, a pop-up and a chat line, even while you are in the middle of playing. (Tests: window.__vbMention.) */
+  function receiveMention(from: string, text: string) {
+    playPingSound();
+    showToast(`${from} pinged you: ${filterProfanity(text).slice(0, 80)}`, 'dm');
+    pushMessage(`\u{1F514} ${from} pinged you`, '#7cc7ff');
+  }
+  useEffect(() => { (window as unknown as { __vbMention?: (f: string, t: string) => void }).__vbMention = receiveMention; });
   const touchChannel = (name: string) => {
     const k = name.toLowerCase();
     channelSeenRef.current[k] = { name, last: Date.now() };
@@ -6369,6 +6422,7 @@ export default function App() {
   const [xpState, setXpState] = useState({ level: 0, progress: 0 });
   const [cmdBlock, setCmdBlock] = useState<CommandBlockInfo | null>(null);
   const cmdBlockRef = useRef(false);
+  const [signEdit, setSignEdit] = useState<{ x: number; y: number; z: number; lines: string[] } | null>(null);
   const [openStation, setOpenStation] = useState<Station | null>(null);
   const [weather, setWeather] = useState<WeatherKind>('clear');
   const weatherRef = useRef<WeatherKind>('clear');
@@ -6960,7 +7014,7 @@ export default function App() {
     if (gameMode === 'playing' && canvasRef.current) {
       hadLockRef.current = false;
       lastStatTickRef.current = Date.now();
-      const applyRules = (h: { setRules: (r: { difficulty: Difficulty; keepInventory: boolean; hardcore: boolean }) => void }) => h.setRules({ difficulty: serverSettingsRef.current.difficulty, keepInventory: serverSettingsRef.current.keepInventory, hardcore: hardcoreRef.current });
+      const applyRules = (h: { setRules: (r: { difficulty: Difficulty; keepInventory: boolean; hardcore: boolean; alwaysDay?: boolean; weatherCycle?: boolean }) => void }) => h.setRules({ difficulty: serverSettingsRef.current.difficulty, keepInventory: serverSettingsRef.current.keepInventory, hardcore: hardcoreRef.current, alwaysDay: !!serverSettingsRef.current.alwaysDay, weatherCycle: serverSettingsRef.current.weatherCycle !== false });
       const handle = createVoxelGame(canvasRef.current, renderDistance, activeWorldMode, graphicsQuality, fov, activeWorldType, sfxVolume, activeSeed, activeExperimental, arenaVariantRef.current);
       gameHandleRef.current = handle;
       handle.setPlayerLook(currentLook());
@@ -7046,6 +7100,15 @@ export default function App() {
         handle.setChatOpen(true); // typing a command must not walk you around
         if (document.pointerLockElement) document.exitPointerLock();
       });
+      const openSign = (x: number, y: number, z: number, lines: string[]) => { // right-click on a sign: a small 4-line editor (shares the "a panel is open" flag with the command block)
+        cmdBlockRef.current = true;
+        setSignEdit({ x, y, z, lines });
+        handle.setChatOpen(true);
+        if (document.pointerLockElement) document.exitPointerLock();
+      };
+      handle.onSignEdit(openSign);
+      (window as unknown as { __vbSignEdit?: typeof openSign }).__vbSignEdit = openSign; // (tests open the editor with this)
+      handle.onSignChange((x, y, z, lines) => { const mp = mpRef.current; if (mp && mp.connected) mp.sendSign(x, y, z, lines); });
       handle.setCommandRunner((cmd, at) => runCommandRef.current(cmd, at));
       handle.onXpChange((level, progress) => setXpState({ level, progress }));
       setHealth(handle.getHealth());
@@ -7081,6 +7144,7 @@ export default function App() {
         pendingWelcomeRef.current = null;
         handle.setNetEnabled(true);
         handle.applyRemoteBlocks(welcome.changes);
+        for (const sg of welcome.signs ?? []) handle.setSignText(sg[0], sg[1], sg[2], sg[3], true);
         if (earlyBlocksRef.current.length) {
           handle.applyRemoteBlocks(earlyBlocksRef.current);
           earlyBlocksRef.current = [];
@@ -7338,14 +7402,14 @@ export default function App() {
     if (hardcoreRef.current) st = { ...st, difficulty: 'hard' };
     serverSettingsRef.current = st;
     setServerSettings(st);
-    gameHandleRef.current?.setRules({ difficulty: st.difficulty, keepInventory: st.keepInventory });
+    gameHandleRef.current?.setRules({ difficulty: st.difficulty, keepInventory: st.keepInventory, alwaysDay: !!st.alwaysDay, weatherCycle: st.weatherCycle !== false });
     const runner = getRunner();
     if (!st.scripts) for (const sc of scripts) runner.stop(sc.id);
     if (!st.mods) for (const id of enabledNow()) runner.stop(`mod:${id}`);
     if (!st.scripts || !st.mods) setRunningScripts(runner.runningIds().filter((id) => !id.startsWith("mod:")));
     // remember a planet's settings with the planet
     const wid = activeWorldIdRef.current;
-    if (wid && (!mpRef.current || hostingRef.current)) setSavedWorlds((prev) => prev.map((w) => (w.id === wid ? { ...w, difficulty: st.difficulty, keepInventory: st.keepInventory } : w)));
+    if (wid && (!mpRef.current || hostingRef.current)) setSavedWorlds((prev) => prev.map((w) => (w.id === wid ? { ...w, difficulty: st.difficulty, keepInventory: st.keepInventory, alwaysDay: !!st.alwaysDay, weatherCycle: st.weatherCycle !== false } : w)));
   }
   /** Manage Server changes: the host sends them to the server; alone, they apply right away. */
   function changeServerSettings(part: Partial<ServerSettings>) {
@@ -7377,7 +7441,12 @@ export default function App() {
     return true;
   }
 
+  function closeSign(lines?: string[]) {
+    setSignEdit((cur) => { if (cur && lines) gameHandleRef.current?.setSignText(cur.x, cur.y, cur.z, lines.map((l) => filterProfanity(l).slice(0, 15))); return null; });
+    closeCommandBlock();
+  }
   function closeCommandBlock(cfg?: { type: CommandType; cmd: string; auto: boolean; conditional: boolean }) {
+    setSignEdit(null);
     setCmdBlock((cur) => { if (cur && cfg) gameHandleRef.current?.setCommandBlock(cur.key, cfg); return null; });
     if (!cmdBlockRef.current) return;
     cmdBlockRef.current = false;
@@ -7623,6 +7692,8 @@ export default function App() {
         const me = usernameRef.current;
         if (me && name.toLowerCase() !== me.toLowerCase() && new RegExp(`(^|[^a-z0-9_])${me.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^a-z0-9_])`, 'i').test(text)) playPingSound(); // somebody said your name
       },
+      onMention: (from, text) => receiveMention(from, text), // @yourname: a sound and a pop-up, even while you are playing
+      onSign: (x, y, z, lines) => { gameHandleRef.current?.setSignText(x, y, z, lines, true); },
       onTitle: (text, sub) => showTitle(text, sub),
       onDrop: (d) => gameHandleRef.current?.addRemoteDrop(d),
       onDropGone: (n) => gameHandleRef.current?.removeNetDrop(n),
@@ -7924,7 +7995,7 @@ export default function App() {
     const config: WorldConfig = {
       ...(existing ?? { image: mode === 'creative' ? '/images/creative-bg.jpg' : '/images/survival-bg.jpg', tag: 'Shared', accent: '#00e676', createdAt: Date.now(), playSeconds: 0 }),
       name: w.name, mode, worldType: w.worldType === 'superflat' ? 'superflat' : 'default', seed: Number(d.seed) || 0, id,
-      difficulty: (settings.difficulty as Difficulty | undefined) ?? 'normal', keepInventory: !!settings.keepInventory,
+      difficulty: (settings.difficulty as Difficulty | undefined) ?? 'normal', keepInventory: !!settings.keepInventory, alwaysDay: !!settings.alwaysDay, weatherCycle: settings.weatherCycle !== false,
       creator: w.owner, owner: w.owner, sharedId: sid, experimental: !!d.experimental, privacy: w.privacy,
       bans: Array.isArray(d.bans) ? (d.bans as string[]) : [], roles: (d.roles ?? {}) as WorldConfig['roles'], lastPlayed: Date.now(),
     };
@@ -8235,6 +8306,29 @@ export default function App() {
       }
       case 'world.explode': S.explode(num(args[0], 'x'), num(args[1], 'y'), num(args[2], 'z'), opt(args[3], 3, 'power')); return null;
       case 'world.dropItem': S.dropItem(num(args[0], 'x'), num(args[1], 'y'), num(args[2], 'z'), item(args[3]), opt(args[4], 1, 'count')); return null;
+      case 'world.getSign': return h.getSignText(Math.floor(num(args[0], 'x')), Math.floor(num(args[1], 'y')), Math.floor(num(args[2], 'z')));
+      case 'world.setSign': {
+        const raw = Array.isArray(args[3]) ? (args[3] as unknown[]) : [];
+        return h.setSignText(Math.floor(num(args[0], 'x')), Math.floor(num(args[1], 'y')), Math.floor(num(args[2], 'z')), [0, 1, 2, 3].map((i) => filterProfanity(String(raw[i] ?? '')).slice(0, 15)));
+      }
+      case 'world.getHighestBlock': {
+        const x = Math.floor(num(args[0], 'x')), z = Math.floor(num(args[1], 'z'));
+        for (let y = 255; y > -64; y--) { const b = h.getBlock(x, y, z); if (b !== 0 && !isWater(b)) return y; }
+        return null;
+      }
+      case 'world.findBlock': {
+        const want = blockIdFromName(args[0]);
+        const cx = Math.floor(num(args[1], 'x')), cy = Math.floor(num(args[2], 'y')), cz = Math.floor(num(args[3], 'z'));
+        const r = Math.max(1, Math.min(16, Math.floor(opt(args[4], 8, 'radius'))));
+        let best: { x: number; y: number; z: number } | null = null, bd = Infinity;
+        for (let dx = -r; dx <= r; dx++) for (let dy = -r; dy <= r; dy++) for (let dz = -r; dz <= r; dz++) {
+          const d = dx * dx + dy * dy + dz * dz;
+          if (d < bd && d <= r * r && h.getBlock(cx + dx, cy + dy, cz + dz) === want) { bd = d; best = { x: cx + dx, y: cy + dy, z: cz + dz }; }
+        }
+        return best;
+      }
+      case 'world.setAlwaysDay': changeServerSettings({ alwaysDay: !!args[0] }); return null;
+      case 'world.setWeatherCycle': changeServerSettings({ weatherCycle: !!args[0] }); return null;
       case 'world.getTime': return Math.round(S.getTime() * 24000);
       case 'world.getWeather': return S.getWeather();
       case 'world.setWeather': {
@@ -9483,7 +9577,7 @@ export default function App() {
     const hc = config.mode === 'hardcore';
     hardcoreRef.current = hc;
     setHardcore(hc);
-    const s: ServerSettings = { ...DEFAULT_SERVER, difficulty: hc ? 'hard' : config.difficulty ?? 'normal', keepInventory: config.keepInventory ?? false };
+    const s: ServerSettings = { ...DEFAULT_SERVER, difficulty: hc ? 'hard' : config.difficulty ?? 'normal', keepInventory: config.keepInventory ?? false, alwaysDay: !!config.alwaysDay, weatherCycle: config.weatherCycle !== false };
     serverSettingsRef.current = s;
     setServerSettings(s);
     setActiveWorldMode((hc ? 'survival' : config.mode) as GameWorldMode);
@@ -9693,7 +9787,7 @@ export default function App() {
           netStatus={netStatus}
           netError={netError}
         />
-        {!compactLayout && <ProfilePanel username={currentUsername} onOpenLeaderboard={() => handleNavClick('leaderboard')} />}
+        {!compactLayout && <ProfilePanel username={currentUsername} onOpenLeaderboard={() => handleNavClick('leaderboard')} onSignIn={() => setShowModal(true)} />}
         {showModal && <LoginOverlay onGuest={handleGuest} onClose={username ? () => setShowModal(false) : undefined} />}
         {profileName && <ProfileModal name={profileName} me={account} onClose={() => setProfileName(null)} />}
       </div>
@@ -9734,7 +9828,7 @@ export default function App() {
             creative={playMode === 'creative'}
             onPlayers={netStatus === 'online' ? () => setShowPlayerList((v) => !v) : undefined}
             playersOn={showPlayerList}
-            paused={menuOpen || inventoryOpen || chatOpen || helpOpen || !!deathReason || !!trading || !!cmdBlock || !!disconnectReason || panelOpen}
+            paused={menuOpen || inventoryOpen || chatOpen || helpOpen || !!deathReason || !!trading || !!cmdBlock || !!signEdit || !!disconnectReason || panelOpen}
           />
         )}
         {!showMenu && touchOn && <RotateHint />}
@@ -9860,6 +9954,7 @@ export default function App() {
           <TradeOverlay trade={trading} inventory={inventory} note={tradeNote} onClose={closeTrade}
             onTrade={(i) => { const r = gameHandleRef.current?.trade(trading.id, i); setTradeNote(r === 'missing' ? "You don't have what this trade needs." : r === 'worn' ? 'You are already wearing that.' : r === 'gone' ? 'The villager walked away.' : null); if (r === 'gone') closeTrade(); }} />
         )}
+        {!showMenu && signEdit && <SignPanel key={`${signEdit.x},${signEdit.y},${signEdit.z}`} lines={signEdit.lines} onDone={(l) => closeSign(l)} onCancel={() => closeSign()} />}
         {!showMenu && cmdBlock && <CommandBlockPanel key={cmdBlock.key} info={cmdBlock} onDone={(cfg) => closeCommandBlock(cfg)} onCancel={() => closeCommandBlock()} />}
         {!showMenu && levelToast && (
           <div className="absolute top-24 left-1/2 -translate-x-1/2 z-30 pointer-events-none vb-fade-in text-center">

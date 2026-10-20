@@ -224,6 +224,28 @@ const __game = {
     spawnProjectile: (spec) => __call('world.spawnProjectile', spec),
     removeProjectile: (id) => __call('world.removeProjectile', id),
     getDimension: () => __call('dimensions.current'),
+    getSign: (x, y, z) => __call('world.getSign', x, y, z),
+    setSign: (x, y, z, lines) => __call('world.setSign', x, y, z, lines),
+    getHighestBlock: (x, z) => __call('world.getHighestBlock', x, z),
+    findBlock: (block, x, y, z, radius) => __call('world.findBlock', block, x, y, z, radius == null ? 8 : radius),
+    setAlwaysDay: (on) => __call('world.setAlwaysDay', !!on),
+    setWeatherCycle: (on) => __call('world.setWeatherCycle', !!on),
+    isDay: async () => { const t = await __call('world.getTime'); return t < 12000; },
+    sphere: async (x, y, z, r, block, hollow) => {
+      r = Math.max(1, Math.min(14, Number(r) || 1));
+      const list = [];
+      for (let dx = -r; dx <= r; dx++) for (let dy = -r; dy <= r; dy++) for (let dz = -r; dz <= r; dz++) {
+        const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (d <= r + 0.3 && (!hollow || d >= r - 0.7)) list.push([x + dx, y + dy, z + dz, block]);
+      }
+      return __call('world.setBlocks', list);
+    },
+    line: async (x1, y1, z1, x2, y2, z2, block) => {
+      const n = Math.max(1, Math.min(2000, Math.ceil(Math.max(Math.abs(x2 - x1), Math.abs(y2 - y1), Math.abs(z2 - z1)))));
+      const list = [];
+      for (let i = 0; i <= n; i++) { const t = i / n; list.push([Math.round(x1 + (x2 - x1) * t), Math.round(y1 + (y2 - y1) * t), Math.round(z1 + (z2 - z1) * t), block]); }
+      return __call('world.setBlocks', list);
+    },
   },
   entities: {
     list: () => __call('entities.list'),
@@ -233,6 +255,22 @@ const __game = {
     remove: (id) => __call('entities.remove', id),
     damage: (id, amount, knockback) => __call('entities.damage', id, amount, knockback == null ? 1 : knockback),
     knockback: (id, x, y, z) => __call('entities.knockback', id, x, y, z),
+    nearest: async (type, x, y, z, radius) => {
+      let best = null, bd = radius == null ? 32 : radius;
+      for (const e of await __call('entities.list')) { if (type && e.type !== type) continue; const d = Math.hypot(e.x - x, e.y - y, e.z - z); if (d <= bd) { bd = d; best = e; } }
+      return best;
+    },
+    count: async (type) => (await __call('entities.list')).filter((e) => !type || e.type === type).length,
+    removeAll: async (type) => { let n = 0; for (const e of await __call('entities.list')) if (!type || e.type === type) { __call('entities.remove', e.id); n++; } return n; },
+  },
+  util: {
+    distance: (a, b) => Math.hypot((a.x || 0) - (b.x || 0), (a.y || 0) - (b.y || 0), (a.z || 0) - (b.z || 0)),
+    randomInt: (min, max) => { min = Math.ceil(min); max = Math.floor(max); return Math.floor(Math.random() * (max - min + 1)) + min; },
+    choice: (list) => (list && list.length ? list[Math.floor(Math.random() * list.length)] : undefined),
+    shuffle: (list) => { const a = list.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; },
+    clamp: (v, lo, hi) => Math.max(lo, Math.min(hi, v)),
+    lerp: (a, b, t) => a + (b - a) * t,
+    formatTime: (ms) => { const s = Math.max(0, Math.floor(ms / 1000)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); },
   },
   items: { register: (def) => __call('items.register', def) },
   blocks: { register: (def) => __call('blocks.register', def) },
@@ -528,7 +566,7 @@ export const OFFICIAL_MODS: Mod[] = [
     name: 'Guns',
     author: 'VibeBlox',
     official: true,
-    description: 'Desert Eagle, AK-47, Sawed-Off and AWP, plus grenades and flashbangs. Left-click shoots, right-click aims (the AWP scopes in); right-click throws grenades and flashbangs.',
+    description: 'Ten guns (Pistol, Revolver, Desert Eagle, SMG, AK-47, M4, Pump Shotgun, Sawed-Off, AWP...) plus grenades and flashbangs. Left-click shoots, right-click aims (the AWP scopes in); right-click throws grenades and flashbangs.',
     code: `// Guns: Desert Eagle, AK-47, Sawed-Off and AWP, plus grenades and flashbangs.
 // Left-click shoots (hold it with the AK-47), right-click aims; the AWP scopes in.
 // Bullets are crafted from an iron ingot + coal (smelt the ore in a furnace first).
@@ -672,6 +710,41 @@ const ART = {
   ],
 };
 
+
+// ---- More guns: drawn from simple shapes (x0, y0, x1, y1, colour) with an outline added around them ----
+const drawGun = (shapes) => {
+  const g = Array.from({ length: 24 }, () => Array(32).fill('.'));
+  for (const [x0, y0, x1, y1, c] of shapes) for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) g[y][x] = c;
+  const out = g.map((r) => r.slice());
+  for (let y = 0; y < 24; y++) for (let x = 0; x < 32; x++) {
+    if (g[y][x] !== '.') continue;
+    if ((y > 0 && g[y - 1][x] !== '.') || (y < 23 && g[y + 1][x] !== '.') || (x > 0 && g[y][x - 1] !== '.') || (x < 31 && g[y][x + 1] !== '.')) out[y][x] = 'K';
+  }
+  return out.map((r) => r.join(''));
+};
+ART.pistol = drawGun([[7, 9, 24, 9, 'A'], [7, 10, 24, 13, 'z'], [7, 14, 20, 15, 'm'], [8, 16, 13, 22, 'p'], [9, 17, 12, 21, 'P'], [14, 16, 17, 17, 'M'], [24, 10, 25, 11, 'N']]);
+ART.revolver = drawGun([[10, 9, 28, 10, 'A'], [10, 11, 28, 12, 'z'], [11, 10, 16, 15, 'm'], [12, 11, 15, 14, 'M'], [5, 10, 11, 14, 'Z'], [5, 15, 10, 22, 'w'], [6, 16, 9, 21, 'W'], [11, 15, 17, 16, 'M'], [28, 9, 29, 9, 'y']]);
+ART.smg = drawGun([[3, 10, 5, 12, 'M'], [6, 9, 22, 9, 'z'], [6, 10, 22, 14, 'Z'], [22, 10, 29, 11, 'm'], [30, 10, 30, 11, 'M'], [12, 15, 15, 23, 'N'], [13, 16, 14, 22, 'Q'], [6, 15, 10, 21, 'P'], [8, 7, 13, 8, 'M']]);
+ART.shotgun = drawGun([[0, 10, 3, 16, 'W'], [4, 9, 12, 14, 'w'], [4, 10, 12, 10, 'W'], [13, 9, 31, 10, 'm'], [13, 12, 27, 13, 'Z'], [15, 12, 21, 14, 'V'], [13, 11, 31, 11, 'M'], [8, 15, 11, 18, 'P']]);
+ART.m4 = drawGun([[0, 10, 7, 14, 'P'], [8, 9, 22, 13, 'N'], [8, 8, 18, 8, 'M'], [22, 10, 31, 11, 'M'], [22, 12, 28, 13, 'Z'], [13, 14, 16, 21, 'N'], [14, 15, 15, 20, 'Q'], [8, 14, 10, 19, 'P'], [30, 9, 31, 9, 'M']]);
+const MORE_GUNS = {
+  'guns:pistol': { name: 'Pistol', art: 'pistol', hold: 'one_hand', damage: 6, cooldown: 280, auto: false, pellets: 1,
+    spread: 0.02, aimSpread: 0.006, range: 60, recoil: 0.05, zoom: 0.88, knockback: 0.5,
+    lore: ['\\\\gray\\\\A light sidearm.', '\\\\white\\\\Damage: \\\\gold\\\\6 \\\\gray\\\\| Semi-auto', '\\\\white\\\\Quick to fire, easy to control'] },
+  'guns:revolver': { name: 'Revolver', art: 'revolver', hold: 'one_hand', damage: 12, cooldown: 700, auto: false, pellets: 1,
+    spread: 0.01, aimSpread: 0.002, range: 85, recoil: 0.11, zoom: 0.8, knockback: 1.1,
+    lore: ['\\\\gray\\\\Six shots of pure punch.', '\\\\white\\\\Damage: \\\\gold\\\\12 \\\\gray\\\\| Slow, steady', '\\\\red\\\\Kicks hard'] },
+  'guns:smg': { name: 'SMG', art: 'smg', hold: 'two_hands', damage: 3, cooldown: 65, auto: true, pellets: 1,
+    spread: 0.055, aimSpread: 0.025, range: 45, recoil: 0.014, zoom: 0.85, knockback: 0.2,
+    lore: ['\\\\gray\\\\Sprays fast at close range.', '\\\\white\\\\Damage: \\\\gold\\\\3 \\\\gray\\\\| Full-auto, \\\\gold\\\\900 RPM', '\\\\white\\\\Hold left-click to spray'] },
+  'guns:shotgun': { name: 'Pump Shotgun', art: 'shotgun', hold: 'two_hands', damage: 2.5, cooldown: 950, auto: false, pellets: 7,
+    spread: 0.09, aimSpread: 0.06, range: 22, recoil: 0.1, zoom: 0.9, knockback: 1.3,
+    lore: ['\\\\gray\\\\Pump action.', '\\\\white\\\\Damage: \\\\gold\\\\2.5 x 7 pellets', '\\\\white\\\\Great up close'] },
+  'guns:m4': { name: 'M4 Carbine', art: 'm4', hold: 'two_hands', damage: 4, cooldown: 80, auto: true, pellets: 1,
+    spread: 0.026, aimSpread: 0.008, range: 90, recoil: 0.018, zoom: 0.72, knockback: 0.35,
+    lore: ['\\\\gray\\\\Accurate and quick.', '\\\\white\\\\Damage: \\\\gold\\\\4 \\\\gray\\\\| Full-auto, \\\\gold\\\\750 RPM', '\\\\white\\\\Right-click to aim for tighter spread'] },
+};
+
 const GUNS = {
   'guns:deagle': { name: 'Desert Eagle', art: 'deagle', hold: 'one_hand', damage: 9, cooldown: 420, auto: false, pellets: 1,
     spread: 0.012, aimSpread: 0.003, range: 70, recoil: 0.08, zoom: 0.82, knockback: 0.8,
@@ -687,6 +760,8 @@ const GUNS = {
     lore: ['\\\\gray\\\\Bolt-action sniper rifle.', '\\\\white\\\\Damage: \\\\gold\\\\20 \\\\gray\\\\| One shot, most mobs', '\\\\white\\\\Right-click to scope in', '\\\\red\\\\Wild without the scope'] },
 };
 
+Object.assign(GUNS, MORE_GUNS);
+
 game.items.register({ id: 'guns:bullet', name: 'Bullets', maxStack: 64,
   lore: ['\\\\gray\\\\Ammo for every gun.', '\\\\white\\\\Iron ingot + coal = 16'],
   icon: { palette: { b: '#c0c0c0', y: '#e3b341', Y: '#a8801f' }, pixels: [
@@ -700,6 +775,11 @@ game.recipes.register({ id: 'deagle', pattern: ['III', 'I  '], key: { I: 'iron_i
 game.recipes.register({ id: 'ak47', pattern: ['III', 'PIP'], key: { I: 'iron_ingot', P: 'planks' }, output: 'guns:ak47' });
 game.recipes.register({ id: 'sawed_off', pattern: ['III', 'P  '], key: { I: 'iron_ingot', P: 'planks' }, output: 'guns:sawed_off' });
 game.recipes.register({ id: 'awp', pattern: ['DII', 'III', 'P  '], key: { D: 'diamond', I: 'iron_ingot', P: 'planks' }, output: 'guns:awp' });
+game.recipes.register({ id: 'pistol', pattern: ['II', 'I '], key: { I: 'iron_ingot' }, output: 'guns:pistol' });
+game.recipes.register({ id: 'revolver', pattern: ['III', 'I P'], key: { I: 'iron_ingot', P: 'planks' }, output: 'guns:revolver' });
+game.recipes.register({ id: 'smg', pattern: ['IIC', 'III'], key: { I: 'iron_ingot', C: 'coal' }, output: 'guns:smg' });
+game.recipes.register({ id: 'pump_shotgun', pattern: ['III', 'PPI'], key: { I: 'iron_ingot', P: 'planks' }, output: 'guns:shotgun' });
+game.recipes.register({ id: 'm4', pattern: ['III', 'IDP'], key: { I: 'iron_ingot', D: 'diamond', P: 'planks' }, output: 'guns:m4' });
 
 const lastShot = {};
 let aiming = null; // the gun being aimed, or null
@@ -837,7 +917,7 @@ game.on('projectileHit', (e) => {
     name: "Farmer's Delight",
     author: 'VibeBlox',
     official: true,
-    description: 'Kitchen knives that hit harder, and hearty meals cooked from vanilla wheat, apples and meat.',
+    description: 'Six kitchen knives that hit harder, and a dozen hearty meals cooked from wheat, eggs, fish, apples and meat.',
     code: `// Farmer's Delight: kitchen knives and hearty meals.
 // Farming itself (hoes, farmland, seeds, wheat, bread) is part of the base game now;
 // this mod adds what you cook with it.
@@ -852,6 +932,8 @@ const knives = {
   iron: { name: 'Iron Knife', bonus: 3, mat: 'iron_ingot', blade: '#c8c8c8', edge: '#ffffff' },
   golden: { name: 'Golden Knife', bonus: 3, mat: 'gold_ingot', blade: '#f2c230', edge: '#fff2a0' },
   diamond: { name: 'Diamond Knife', bonus: 5, mat: 'diamond', blade: '#4fd8e6', edge: '#c8fbff' },
+  wooden: { name: 'Wooden Knife', bonus: 1, mat: 'planks', blade: '#a8793e', edge: '#d9a866' },
+  emerald: { name: 'Emerald Knife', bonus: 5, mat: 'emerald', blade: '#2fd47a', edge: '#b8ffd8' },
 };
 for (const [key, k] of Object.entries(knives)) {
   game.items.register({ id: 'farmers:' + key + '_knife', name: k.name, maxStack: 1, hold: 'one_hand', icon: knifeIcon(k.blade, k.edge), lore: ['+' + k.bonus + ' damage on every hit'] });
@@ -870,6 +952,14 @@ const meals = [
   { id: 'burger', name: 'Steak Burger', food: 12, icon: bowl('#8a4a2a'), pattern: ['B', 'S', 'B'], key: { B: 'bread', S: 'steak' } },
   { id: 'chicken_sandwich', name: 'Chicken Sandwich', food: 11, icon: bowl('#e8aa6a'), pattern: ['B', 'C', 'B'], key: { B: 'bread', C: 'cooked_chicken' } },
   { id: 'fruit_salad', name: 'Fruit Salad', food: 7, icon: bowl('#d8322a'), pattern: ['AA', 'AW'], key: { A: 'apple', W: 'wheat' } },
+  { id: 'fried_egg', name: 'Fried Egg', food: 5, icon: bowl('#fff3b0'), pattern: ['E'], key: { E: 'egg' } },
+  { id: 'egg_sandwich', name: 'Egg Sandwich', food: 9, icon: bowl('#f0d070'), pattern: ['B', 'E', 'B'], key: { B: 'bread', E: 'egg' } },
+  { id: 'pancakes', name: 'Pancakes', food: 8, icon: bowl('#d9a35a'), pattern: ['WWW', 'EEE'], key: { W: 'wheat', E: 'egg' } },
+  { id: 'cane_cookies', name: 'Cane Cookies', food: 4, icon: bowl('#b8864a'), pattern: ['WCW'], key: { W: 'wheat', C: 'sugar_cane' } },
+  { id: 'salmon_sandwich', name: 'Salmon Sandwich', food: 10, icon: bowl('#f08a6a'), pattern: ['B', 'S', 'B'], key: { B: 'bread', S: 'cooked_salmon' } },
+  { id: 'fish_stew', name: 'Fish Stew', food: 12, icon: bowl('#e0a070'), pattern: ['CS', ' W'], key: { C: 'cooked_cod', S: 'cooked_salmon', W: 'wheat' } },
+  { id: 'mutton_wrap', name: 'Mutton Wrap', food: 11, icon: bowl('#c87a5a'), pattern: ['W', 'M', 'W'], key: { W: 'wheat', M: 'cooked_mutton' } },
+  { id: 'roast_dinner', name: 'Roast Dinner', food: 18, icon: bowl('#7a3a1a'), pattern: ['SPM', 'BAB'], key: { S: 'steak', P: 'cooked_porkchop', M: 'cooked_mutton', B: 'bread', A: 'apple' } },
   { id: 'stew', name: "Farmer's Stew", food: 14, icon: bowl('#a0552a'), pattern: ['SPC', ' W '], key: { S: 'steak', P: 'cooked_porkchop', C: 'cooked_chicken', W: 'wheat' } },
 ];
 for (const m of meals) {
@@ -1247,8 +1337,8 @@ export const API_DOCS: ApiDoc[] = [
   ['world.dropItem', '(x, y, z, item, count?)', 'Drop an item stack on the ground.'],
   ['world.getTime', '()', '0-24000 (0 sunrise, 6000 noon, 12000 sunset, 18000 midnight).'],
   ['world.setTime', '(time)', '"sunrise" | "day" | "noon" | "sunset" | "night" | "midnight" | 0-24000.'],
-  ['world.getWeather', '()', '"clear", "rain" or "snow".'],
-  ['world.setWeather', '(weather)', '"clear" | "rain" | "snow". Rain falls as snow in cold biomes.'],
+  ['world.getWeather', '()', '"clear", "rain", "snow" or "thunder".'],
+  ['world.setWeather', '(weather)', '"clear" | "rain" | "snow". Snow weather puts snow on the ground (snowy grass, snow layers).'],
   ['world.raycast', '(origin?, direction?, maxDistance?, { entities, blocks }?)', 'Defaults to your eye and look direction. Returns null or { type:"block"|"entity", point:{x,y,z}, distance, block:{x,y,z,name}|null, entity:{id,type}|null }.'],
   ['world.spawnProjectile', '(spec) or (name, x, y, z, vx, vy, vz)', 'spec = { x, y, z, vx, vy, vz, gravity, damage, color, size, lifetime, explosion, knockback }. Returns an id and later fires the projectileHit event.'],
   ['world.removeProjectile', '(id)', 'Delete a projectile.'],
@@ -1258,6 +1348,15 @@ export const API_DOCS: ApiDoc[] = [
   ['world.getPlayersNear', '(x, y, z, radius)', 'Synchronous: player objects within the radius.'],
   ['world.getEntitiesNear', '(x, y, z, radius)', 'Synchronous: mobs within the radius, as { id, type, pos, health, maxHealth }.'],
   ['world.getEntities', '()', 'Synchronous: every mob.'],
+  ['world.getSign', '(x, y, z)', 'The 4 lines of text on a sign (array of 4 strings; empty strings for blank lines).'],
+  ['world.setSign', '(x, y, z, lines)', 'Write up to 4 lines (15 characters each) on a sign that is already placed. Returns true if there is a sign there.'],
+  ['world.getHighestBlock', '(x, z)', 'The y of the highest block that is not air or water in that column.'],
+  ['world.findBlock', '(block, x, y, z, radius?)', 'Nearest block of that kind within the radius (default 8, max 16): { x, y, z } or null.'],
+  ['world.setAlwaysDay', '(on)', 'true keeps the sky bright all the time (same as the Manage Server switch).'],
+  ['world.setWeatherCycle', '(on)', 'false keeps the weather exactly as it is now (same as the Manage Server switch).'],
+  ['world.isDay', '()', 'Async: true between sunrise and sunset.'],
+  ['world.sphere', '(x, y, z, radius, block, hollow?)', 'Build a ball of blocks (radius 1-14). hollow: true makes a shell.'],
+  ['world.line', '(x1, y1, z1, x2, y2, z2, block)', 'Place a straight line of blocks.'],
 
   // ---- mobs ----
   ['entities.list', '()', '[{ id, type, x, y, z, health, maxHealth }] for every mob.'],
@@ -1267,6 +1366,18 @@ export const API_DOCS: ApiDoc[] = [
   ['entities.remove', '(id)', 'Remove a mob.'],
   ['entities.damage', '(id, amount, knockback?)', 'Hurt a mob.'],
   ['entities.knockback', '(id, vx, vy, vz)', 'Fling a mob.'],
+  ['entities.nearest', '(type|null, x, y, z, radius?)', 'The closest mob of that type (any type if null) within the radius (default 32), or null.'],
+  ['entities.count', '(type?)', 'How many mobs there are (of one type, if given).'],
+  ['entities.removeAll', '(type?)', 'Remove every mob (or every mob of one type). Returns how many.'],
+
+  // ---- helpers ----
+  ['util.distance', '(a, b)', 'Synchronous: distance between two {x, y, z} points.'],
+  ['util.randomInt', '(min, max)', 'Synchronous: a whole number from min to max (both included).'],
+  ['util.choice', '(list)', 'Synchronous: a random item from an array.'],
+  ['util.shuffle', '(list)', 'Synchronous: a shuffled copy of an array.'],
+  ['util.clamp', '(value, min, max)', 'Synchronous: keeps a number between min and max.'],
+  ['util.lerp', '(a, b, t)', 'Synchronous: a number between a and b (t 0-1).'],
+  ['util.formatTime', '(ms)', 'Synchronous: 83000 becomes "1:23".'],
 
   // ---- new items, blocks and recipes ----
   ['items.register', '({ id, name, maxStack, food, lore, hold, leftClick, icon })', 'id is "mymod:thing". hold: "item" | "one_hand" | "two_hands". leftClick: "use" makes left-click fire the itemAttack event instead of mining. icon = { pixels: [16 or 32 rows of characters], palette: { char: "#hex" } } where "." is see-through. lore is a list of lines (color codes work). food = hunger points restored on right-click.'],
@@ -1331,13 +1442,15 @@ export const EVENTS_HELP = `Events (game.on(name, fn); fn gets one data object):
   entityDeath: { id, type, x, y, z }
   projectileHit: { id, x, y, z, entity: { id, type } | null, block: { x, y, z } | null }
   dimensionChange: { dimension }
+  throw: { item, x, y, z }                   the player threw an egg or a snowball
+  eggHatch: { x, y, z }                      a thrown egg hatched into a baby chicken
 Miniblox-style names also work: playerInteract (button "left"/"right"), entityDamageByEntity, playerJoin, scriptLoad.
 There is also a global print(text) that writes to the script output.`;
 
 const NAMESPACE_TITLES: Record<string, string> = {
   '': 'GENERAL', player: 'PLAYER', world: 'WORLD', entities: 'MOBS', items: 'ITEMS', blocks: 'BLOCKS', recipes: 'RECIPES',
   particles: 'PARTICLES', sounds: 'SOUNDS', gui: 'SCREEN', commands: 'COMMANDS', storage: 'SAVING', scheduler: 'TIMERS',
-  dimensions: 'DIMENSIONS', stats: 'COUNTERS (Miniblox style)', playerData: 'COUNTERS (Miniblox style)', scoreboard: 'COUNTERS (Miniblox style)', mods: 'PACKS',
+  dimensions: 'DIMENSIONS', stats: 'COUNTERS (Miniblox style)', playerData: 'COUNTERS (Miniblox style)', scoreboard: 'COUNTERS (Miniblox style)', mods: 'PACKS', util: 'HELPERS',
 };
 
 /** The full reference, grouped by area. Shown in the editor's API panel and sent to the AI. */

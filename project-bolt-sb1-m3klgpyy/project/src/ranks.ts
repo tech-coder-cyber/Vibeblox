@@ -6,6 +6,12 @@ export type RankId = 'none' | 'vanguard' | 'elite' | 'champion';
 export const WORLD_LIMITS: Record<RankId, number> = { none: 5, vanguard: 8, elite: 10, champion: 15 };
 export const RANK_NAMES: Record<RankId, string> = { none: 'No rank', vanguard: 'Vanguard', elite: 'Elite', champion: 'Champion' };
 
+const RANK_ORDER: RankId[] = ['none', 'vanguard', 'elite', 'champion'];
+/** Ranks stack: Elite has everything Vanguard has, and Champion has everything Elite has. True if `rank` is `min` or better. */
+export const rankAtLeast = (rank: RankId | string | undefined | null, min: RankId): boolean => RANK_ORDER.indexOf((rank as RankId) ?? 'none') >= RANK_ORDER.indexOf(min);
+/** Custom menu theme colours: a Vanguard perk (so Elite and Champion get it too). Pass the rank whose perks you get (see perkRank). */
+export const canCustomTheme = (perk: RankId | string | undefined | null): boolean => rankAtLeast(perk, 'vanguard');
+
 export function worldLimit(rank: RankId): number { return WORLD_LIMITS[rank] ?? WORLD_LIMITS.none; }
 
 const KEY = 'vb-rank';
