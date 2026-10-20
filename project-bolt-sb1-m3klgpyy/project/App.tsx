@@ -1,15 +1,16 @@
+import { setBgInterval, clearBgInterval } from './bgTimer';
 import { useState, useEffect, useRef, useMemo, useCallback, useSyncExternalStore, createContext, useContext, type FormEvent, type ChangeEvent, type MouseEvent as ReactMouseEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
 import { ADVANCEMENT_TABS, rewardText, advancementsFor, checkItems, checkEvent, loadAdvancements, saveAdvancements, clearAdvancements, type Advancement, type AdvancementTab } from './advancements';
 import { SKINS, CAPES, CUSTOM_SKIN_ID, isCustomSkinData, type PlayerLook } from '@/cosmetics';
 import { CAN_LINK_OUT, CAN_SELL_RANKS, ADS_POSSIBLE, PLATFORM, initAds, triggerRewardedAd, setGameplayActive, reportLoadingFinished, setAdsBlocked, maybeInterstitial, lastAdResult } from '@/adEconomy';
 import {
   getProgress, subscribeProgress, onLevelUp, setCustomSkin, addActiveSeconds, rewardAdCoins, rewardAdBooster, claimCoins, claimBooster, claimStatus, COIN_CLAIMS_PER_HOUR, buyCosmetic, equipCosmetic, currentLook, reloadProgress, progressForAccount, mergeAccountProgress,
-  dailyStatus, claimDaily, openLootbox, buyShopItem, FREEZE_PRICE, BOOSTER_PRICE, MAX_FREEZES, DAILY_COINS, DAILY_LOOTBOX_DAYS, WEEKLY_FALLBACK_COINS, type DailyGrant, type LootResult,
+  dailyStatus, claimDaily, openLootbox, buyShopItem, FREEZE_PRICE, BOOSTER_PRICE, LOOTBOX_PRICE, LOOTBOX_PACK_PRICE, MAX_FREEZES, DAILY_COINS, DAILY_LOOTBOX_DAYS, WEEKLY_FALLBACK_COINS, type DailyGrant, type LootResult,
   xpForLevel, DISCORD_INVITE_URL, TEBEX_STORE_URL, AD_COINS, LEVEL_UP_COINS, XP_PER_PERIOD, SECONDS_PER_PERIOD, BOOSTER_SECONDS, IDLE_AFTER_SECONDS,
 } from '@/progression';
 import { ModBuilder } from '@/ModBuilder';
 import { parseModCode } from '@/modBuilderLogic';
-import { readRank, worldLimit, WORLD_LIMITS, RANK_NAMES, effectiveRank, playerCap, scriptBudgetMs, canUploadSkin, SCRIPT_BUDGET_MS, creatorTier, CREATOR_PLAYS, CREATOR_NAMES, PLAYER_CAP, adsAllowedFor, badgeTags, perkRank, isStaffId, type StaffId, type RankId, type CreatorTier } from '@/ranks';
+import { readRank, worldLimit, WORLD_LIMITS, RANK_NAMES, effectiveRank, playerCap, scriptBudgetMs, canUploadSkin, SCRIPT_BUDGET_MS, creatorTier, CREATOR_PLAYS, CREATOR_NAMES, PLAYER_CAP, adsAllowedFor, badgeTags, perkRank, isStaffId, isSpecialId, type SpecialId, type StaffId, type RankId, type CreatorTier } from '@/ranks';
 import { GAME_VERSION, NEWS } from '@/news';
 import { t, useLanguage, setLanguage, LANGUAGES, type LangCode } from '@/i18n';
 import { useKeybinds, rebind, resetBinds, keyLabel, KEY_ACTIONS, setCapturingKey, isCapturingKey, getBinds } from '@/keybinds';
@@ -53,7 +54,11 @@ import Tutorial, { tutorialDone } from './Tutorial';
 import { LOYALTY_RANKS, isYearMilestone, loyaltyLabel, pendingMilestones, nextMilestone, type LoyaltyRank } from './loyalty';
 import { fetchLoyalty, claimLoyalty, type LoyaltyInfo } from './social';
 import { WORLD_TAGS, MAX_WORLD_TAGS, cleanTags, toggleTag, tagInfo } from './worldTags';
-import { setWorldLike, saveProgressToAccount, loadProgressFromAccount, fetchLevelLeaderboard, reportCheat, cleanWorldImage, type LevelRow, addFriend, unfriendByName, loadFriends, sendDM, startPolling, isGuestName, reportActivity, fetchPlayingCounts, fetchLeaderboard, fetchStanding, recordPlay, setServerPresence, isOwnerName, listHostedWorlds, publishHostedWorld, unpublishHostedWorld, verifyToken, isFriendOf, isBannedName, isAdminToken, type DM, type Activity, type Friend, type LeaderRow, type Standing, type HostedWorld } from './social';
+import { fetchProfile, type PlayerProfile, type Account } from './social';
+import { openProfile, setProfileOpener } from './profileBus';
+import { setWorldWaker, wakeWorld } from './wakeBus';
+import { watchOutsideScripts, FLAG_LABELS, type Flag } from './integrity';
+import { saveWorldSnapshot, releaseWorld, deleteWorldSnapshot, listSleepingWorlds, claimWorld, transferWorld, type SleepingWorld, setWorldLike, saveProgressToAccount, loadProgressFromAccount, fetchLevelLeaderboard, reportCheat, cleanWorldImage, type LevelRow, addFriend, unfriendByName, loadFriends, sendDM, startPolling, isGuestName, reportActivity, fetchPlayingCounts, fetchLeaderboard, fetchStanding, recordPlay, setServerPresence, isOwnerName, listHostedWorlds, publishHostedWorld, unpublishHostedWorld, verifyToken, isFriendOf, isBannedName, isAdminToken, banEverywhere, unbanEverywhere, type DM, type Activity, type Friend, type LeaderRow, type Standing, type HostedWorld } from './social';
 
 // Multiplayer is optional: Vite only includes src/multiplayer.ts if the file
 // exists, so deleting it (or the server folder) never breaks the game.
@@ -72,7 +77,7 @@ const PRIVACY_INFO: Record<WorldPrivacy, { label: string; hint: string }> = {
 };
 const PRIVACY_ORDER: WorldPrivacy[] = ['public', 'accounts', 'friends', 'private'];
 type AntiCheatLike = { settings: AcSettings };
-type HostRoomLike = { count: number; full: boolean; setPrivacy(p: WorldPrivacy): void; stop(reason?: string): void; anticheat?: AntiCheatLike };
+type HostRoomLike = { count: number; full: boolean; setPrivacy(p: WorldPrivacy): void; stop(reason?: string): void; anticheat?: AntiCheatLike; handOff?(newRoomId: string): string | null; snapshot?(): Record<string, unknown> & { seed: number; changes: Array<[number, number, number, number]> }; setRole?(byRole: ServerRole | null, byName: string, name: string, to: 'admin' | 'coowner' | 'none'): string; getRoles?(): Record<string, 'admin' | 'coowner'>; owner?: string };
 /** Anti-cheat (anticheat.ts): an alert about a player in the world you host, and its switches. */
 type CheatAlertLike = { at: number; id: number; player: string; kind: string; detail: string; points: number };
 type AcSettings = { enabled: boolean; autoKick: boolean; kickAt: number };
@@ -80,7 +85,7 @@ const AC_KEY = 'vb-anticheat';
 function loadAcSettings(): AcSettings {
   try { const o = JSON.parse(localStorage.getItem(AC_KEY) ?? '{}') as Partial<AcSettings>; return { enabled: o.enabled !== false, autoKick: o.autoKick !== false, kickAt: typeof o.kickAt === 'number' && o.kickAt >= 4 && o.kickAt <= 60 ? o.kickAt : 12 }; } catch { return { enabled: true, autoKick: true, kickAt: 12 }; }
 }
-const CHEAT_NAMES: Record<string, string> = { fly: 'Flying', speed: 'Speed', reach: 'Reach', killaura: 'Kill aura', autoclicker: 'Auto clicker', nuker: 'Nuker', spam: 'Chat spam' };
+const CHEAT_NAMES: Record<string, string> = { fly: 'Flying', speed: 'Speed', reach: 'Reach', killaura: 'Kill aura', autoclicker: 'Auto clicker', nuker: 'Nuker', spam: 'Chat spam', script: 'Outside script' };
 /** An online EggWars / Bridge Duels match, as the host's room sends it (see hosting.ts). */
 type NetMatch = {
   phase: 'waiting' | 'countdown' | 'playing' | 'over'; left: number; round: number; winner: number | null;
@@ -103,7 +108,7 @@ type HostingMod = {
 };
 function loadHosting(): Promise<HostingMod | null> {
   const l = Object.values(hostingModules)[0];
-  return l ? l().then((m) => m as HostingMod).catch(() => null) : Promise.resolve(null);
+  return l ? l().then((m) => m as unknown as HostingMod).catch(() => null) : Promise.resolve(null);
 }
 /** How players find each other: a Supabase Realtime channel (tests put their own in window.__vbSignaling). */
 function signalingFor(h: HostingMod): unknown {
@@ -134,9 +139,14 @@ function listImage(img?: string): Promise<string | undefined> {
 type NetBlock = [number, number, number, number];
 type NetBadge = { owner?: boolean; rank?: string; tier?: string };
 type NetPlayerInfo = { id: number; name: string; x: number; y: number; z: number; yaw: number; pitch: number; mode: string; look?: PlayerLook; badge?: NetBadge };
-type ServerSettings = { difficulty: Difficulty; keepInventory: boolean; scripts: boolean; mods: boolean; commands: boolean; pvp?: boolean };
+type ServerSettings = { difficulty: Difficulty; keepInventory: boolean; scripts: boolean; mods: boolean; commands: boolean; pvp?: boolean; scriptPerm?: ScriptPerm };
 const DEFAULT_SERVER: ServerSettings = { difficulty: 'normal', keepInventory: false, scripts: true, mods: true, commands: true, pvp: true };
-type Welcome = { game?: NetGame; id: number; name: string; seed: number; worldType: 'default' | 'superflat' | 'eggwars' | 'bridge'; mode: string; time: number; changes: NetBlock[]; players: NetPlayerInfo[]; hostId?: number | null; settings?: ServerSettings; weather?: WeatherKind; experimental?: boolean; maxPlayers?: number; ranks?: unknown };
+type Welcome = { game?: NetGame; id: number; name: string; seed: number; worldType: 'default' | 'superflat' | 'eggwars' | 'bridge'; mode: string; time: number; changes: NetBlock[]; players: NetPlayerInfo[]; hostId?: number | null; settings?: ServerSettings; weather?: WeatherKind; experimental?: boolean; maxPlayers?: number; ranks?: unknown; roles?: Record<string, string>; drops?: NetDrop[] };
+import type { NetDrop } from './multiplayer';
+import { ShadersPanel, CrosshairPanel, CrosshairView } from './ShadersPanel';
+import { subscribeShaders, getShaders } from './shaderPrefs';
+import { RoleIcon, ROLE_LABELS, SCRIPT_PERM_LABELS, roleLevel, canRunScripts, type ServerRole, type ScriptPerm } from './roles';
+type NetHandoff = Record<string, unknown> & { seed: number; owner: string; name: string; changes: NetBlock[]; time: number; weather: WeatherKind; settings: ServerSettings; ranks: unknown; roles: Record<string, 'admin' | 'coowner'>; bans: string[]; privacy: WorldPrivacy; maxPlayers: number; worldType: string; mode: string; experimental: boolean };
 type MpEvents = {
   onPing?: (ms: number) => void;
   onWelcome?: (w: Welcome) => void;
@@ -149,6 +159,10 @@ type MpEvents = {
   onLook?: (id: number, look: PlayerLook) => void;
   onChat?: (name: string, text: string) => void;
   onTitle?: (text: string, sub: string) => void;
+  onDrop?: (d: NetDrop) => void;
+  onDropGone?: (n: string) => void;
+  onPickupResult?: (n: string, ok: boolean) => void;
+  onRemoteCmd?: (cmd: string, args: Record<string, unknown>, from: string) => void;
   onRanks?: (ranks: unknown) => void;
   onBadge?: (id: number, badge: NetBadge) => void;
   onSystem?: (text: string) => void;
@@ -161,12 +175,20 @@ type MpEvents = {
   onAdminPlayers?: (list: Array<{ id: number; name: string; mode: string }>) => void;
   onMatch?: (m: NetMatch) => void;
   onMatchReset?: (round: number) => void;
-  onHurt?: (h: { by: number; name: string; dmg: number; kx: number; kz: number }) => void;
+  onHurt?: (h: { by: number; name: string; dmg: number; kx: number; kz: number; breach?: number; kbm?: number }) => void;
   onHurtFx?: (id: number) => void;
+  onRoles?: (roles: Record<string, string>) => void;
+  onAnticheat?: (settings: { enabled: boolean; autoKick: boolean; kickAt: number }) => void;
+  onCheat?: (alert: Record<string, unknown>) => void;
+  onBecomeHost?: (room: string, state: NetHandoff) => void;
+  onMigrate?: (room: string, host: string) => void;
   onClose?: (reason: string) => void;
 };
 type MpClient = {
-  sendHit(id: number, dmg: number, kx: number, kz: number, bow?: boolean): void;
+  sendPromote(name: string, role: 'admin' | 'coowner' | 'none'): void;
+  sendMod(action: 'kick' | 'ban' | 'unban', name: string): void;
+  sendAnticheat(settings: { enabled: boolean; autoKick: boolean; kickAt: number }): void;
+  sendHit(id: number, dmg: number, kx: number, kz: number, bow?: boolean, extra?: { breach?: number; kbm?: number }): void;
   sendMatchStart(): void;
   sendMatchDied(by: number | null): void;
   sendMatchEgg(team: number): void;
@@ -188,6 +210,9 @@ type MpClient = {
   sendSleep(on: boolean): void;
   sendWhisper(to: string, text: string): void;
   sendTitle(to: string, text: string, sub?: string): void;
+  sendDrop(d: NetDrop): void;
+  sendPickup(n: string): void;
+  sendRemoteCmd(to: string, cmd: string, args: Record<string, unknown>): void;
   sendRanks(ranks: unknown): void;
   sendAdmin(token: string, action: 'check' | 'players' | 'kick' | 'ban' | 'unban' | 'bans' | 'gamemode' | 'mute' | 'unmute' | 'mutes', extra?: { name?: string; mode?: string }): void;
   disconnect(): void;
@@ -201,10 +226,12 @@ type SavedSettings = {
 const savedSettings: SavedSettings = (() => {
   try { return JSON.parse(localStorage.getItem('vb-settings') ?? '{}') as SavedSettings; } catch { return {}; }
 })();
+/** The texture size a graphics tier draws: Low is always 16×16, Epic and Max always 32×32; in between, your choice. */
+function texResFor(q: GraphicsQuality, chosen: TextureRes): TextureRes { return q === 'low' ? 16 : q === 'epic' || q === 'max' ? 32 : chosen; }
 // Before version 15 "Max" was what is now called "Epic": keep those players on the tier they picked
 if (savedSettings.graphicsQuality === 'max' && !savedSettings.gfxV) savedSettings.graphicsQuality = 'epic';
 // Textures must be set before anything is drawn, so this runs right away
-setTextureResolution(savedSettings.textureRes === 32 && savedSettings.graphicsQuality !== 'low' ? 32 : 16); // Low graphics always uses 16×16
+setTextureResolution(texResFor(savedSettings.graphicsQuality ?? 'medium', savedSettings.textureRes === 32 ? 32 : 16)); // Low is always 16×16, Epic and Max always 32×32
 import {
   Settings,
   Users,
@@ -244,6 +271,7 @@ import {
   Newspaper,
   Gift,
   Snowflake,
+  X,
 } from 'lucide-react';
 
 type View = 'home' | 'shop' | 'settings' | 'create-world' | 'servers' | 'planets' | 'social' | 'news' | 'leaderboard';
@@ -422,7 +450,6 @@ function Sidebar({ username, view, onNavClick, socialBadge = 0, compact = false 
   useLanguage();
   const { guest } = useContext(StandingContext);
   const locked = (v: View | undefined) => !!guest && !!v && GUEST_LOCKED.includes(v);
-  const initial = username ? username.charAt(0).toUpperCase() : 'P';
   const [seen, setSeen] = useState(readNewsSeen);
   useEffect(() => { if (view === 'news') { try { localStorage.setItem(NEWS_SEEN_KEY, String(GAME_VERSION)); } catch { /* private window */ } setSeen(GAME_VERSION); } }, [view]);
   const newsUnread = seen < GAME_VERSION;
@@ -484,7 +511,6 @@ function Sidebar({ username, view, onNavClick, socialBadge = 0, compact = false 
           DISCORD
         </a>
       )}
-      <div className="w-10 h-10 rounded-full bg-[#00e676] flex items-center justify-center text-[#0a0e14] font-bold">{initial}</div>
       <button
         data-testid="nav-news"
         onClick={() => onNavClick('news')}
@@ -817,7 +843,7 @@ function MinigamePicker({ kind, onPlay, onClose, onFind }: { kind: ArenaKind; on
     : { title: 'Bridge Duels', blurb: 'Two islands over the void. Build a bridge across, fight your opponent, and jump into their goal hole. First to 5 goals wins.' };
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 vb-fade-in" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }} data-testid="minigame-picker">
-      <div className="w-[480px] max-w-full rounded-2xl bg-[#0d131b] border border-[#243044] p-6 shadow-2xl">
+      <div data-testid="minigame-card" className="w-[480px] max-w-full rounded-2xl bg-[#0d131b] border border-[#243044] p-6 shadow-2xl my-auto">
         <div className="flex items-start justify-between gap-3 mb-2">
           <h2 className="font-[var(--font-retro)] text-white text-lg tracking-wider">{info.title.toUpperCase()}</h2>
           <button onClick={onClose} className="text-[#8ea0b8] hover:text-white text-sm" aria-label="Close">✕</button>
@@ -918,6 +944,8 @@ function newWorldId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
+/** A new id for a world that moves to another player (the same shape hosting.ts uses). */
+function randomRoomId(): string { return Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => 'abcdefghijklmnopqrstuvwxyz0123456789'[b % 36]).join(''); }
 function randomSeed(): number {
   return 1 + Math.floor(Math.random() * 2_000_000_000);
 }
@@ -950,8 +978,11 @@ type WorldConfig = {
   experimental?: boolean; // early-access features, chosen at creation and fixed after
   privacy?: WorldPrivacy; // who may join while you play it (public when not set)
   bans?: string[];        // players banned from this world
+  roles?: Record<string, 'admin' | 'coowner'>; // admins and co-owners the owner promoted (lowercase names)
   description?: string;   // shown with the world's picture on the Servers page while it is open
   tags?: string[];        // up to three server tags (Survival, PvP...) shown on the Servers page
+  owner?: string;         // a world woken up from the Servers page keeps its first owner (roles and Manage Server follow them)
+  sharedId?: string;      // the id of this world's saved copy online, so it can be joined even when its host has left
 };
 
 const modeConfig: Record<WorldMode, { image: string; tag: string; accent: string; icon: typeof Swords; description: string }> = {
@@ -1464,7 +1495,7 @@ function SettingsView({
   compact?: boolean;
 }) {
   useLanguage();
-  const [tab, setTab] = useState<'video' | 'audio' | 'controls' | 'hud' | 'language' | 'account' | 'about'>('video');
+  const [tab, setTab] = useState<'video' | 'shaders' | 'crosshair' | 'audio' | 'controls' | 'hud' | 'language' | 'account' | 'about'>('video');
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [showCredits, setShowCredits] = useState(false);
   const builtInTracks: Array<{ value: AnySoundtrack; label: string }> = SOUNDTRACKS;
@@ -1500,7 +1531,7 @@ function SettingsView({
 
       <div className="flex gap-5" data-testid="settings-layout">
       <SideNav testid="settings-sidenav" active={tab} onSelect={setTab} tabs={[
-        { id: 'video', label: 'Video' }, { id: 'audio', label: 'Audio' }, { id: 'controls', label: t('settings.controls') }, { id: 'hud', label: 'HUD' },
+        { id: 'video', label: 'Video' }, { id: 'shaders', label: 'Shaders' }, { id: 'crosshair', label: 'Crosshair' }, { id: 'audio', label: 'Audio' }, { id: 'controls', label: t('settings.controls') }, { id: 'hud', label: 'HUD' },
         { id: 'language', label: t('settings.language') }, { id: 'account', label: 'Account' }, { id: 'about', label: 'About' },
       ]} />
       <div className="flex-1 min-w-0 max-w-2xl vb-stack">
@@ -1588,17 +1619,23 @@ function SettingsView({
           <label className="text-white text-sm font-medium">{t('settings.textures')}</label>
           <p className="text-[#5a6b80] text-xs mt-0.5">{t('settings.texturesDesc')}</p>
         </div>
+        {(graphicsQuality === 'low' || graphicsQuality === 'epic' || graphicsQuality === 'max') && (
+          <p className="text-[#ffb347] text-xs -mt-2 mb-3" data-testid="tex-locked">{graphicsQuality === 'low' ? 'Low graphics always uses 16×16 textures.' : `${graphicsQuality === 'max' ? 'Max' : 'Epic'} graphics always uses 32×32 textures.`} Pick Medium or High to choose.</p>
+        )}
         <div className="grid grid-cols-2 gap-3">
           {([
             { value: 16 as TextureRes, label: '16×16', name: t('tex.classic'), blurb: t('tex.classicDesc') },
             { value: 32 as TextureRes, label: '32×32', name: t('tex.detailed'), blurb: t('tex.detailedDesc') },
           ]).map((opt) => {
-            const active = textureRes === opt.value;
+            const locked = graphicsQuality === 'low' || graphicsQuality === 'epic' || graphicsQuality === 'max';
+            const active = texResFor(graphicsQuality, textureRes) === opt.value;
             return (
               <button
                 key={opt.value}
+                disabled={locked}
+                data-testid={`tex-${opt.value}`}
                 onClick={() => onTextureResChange(opt.value)}
-                className={`flex flex-col items-center gap-1 py-3 px-2 rounded-xl border text-center transition-all duration-200 hover:scale-[1.02] active:scale-95 ${
+                className={`disabled:cursor-not-allowed ${locked && !active ? 'opacity-40' : ''} flex flex-col items-center gap-1 py-3 px-2 rounded-xl border text-center transition-all duration-200 hover:scale-[1.02] active:scale-95 ${
                   active ? 'bg-[#00e676]/15 border-[#00e676] text-[#00e676]' : 'bg-[#0a0e14] border-[#243044] text-[#8ea0b8] hover:border-[#364860] hover:text-white'
                 }`}
               >
@@ -1618,6 +1655,8 @@ function SettingsView({
       {tab === 'controls' && <ControlsPanel />}
       {tab === 'account' && <AccountTab />}
 
+      {tab === 'shaders' && <ShadersPanel />}
+      {tab === 'crosshair' && <CrosshairPanel />}
       {tab === 'audio' && <>
       <section className="bg-[#121822] rounded-2xl border border-[#243044] p-6 mt-6">
         <div className="flex items-center justify-between mb-3">
@@ -1999,6 +2038,25 @@ function ShopView({ compact = false }: { compact?: boolean }) {
           {adsFree && <p className="-mt-3 mb-5 text-[#5a6b80] text-xs" data-testid="no-ads-note">You have a rank, so you never see ads. Claim coins up to {COIN_CLAIMS_PER_HOUR} times an hour and a booster every 15 minutes instead.</p>}
           {!adsOk && !adsFree && <p className="-mt-3 mb-5 text-[#5a6b80] text-xs">{ADS_POSSIBLE ? 'No ads are available right now. Try again in a moment.' : 'Ads are available when you play VibeBlox on CrazyGames or Poki. Here you earn coins by levelling up.'}</p>}
 
+          {/* Lootboxes for coins */}
+          <div className="rounded-2xl bg-gradient-to-r from-[#3a2a08] to-[#121822] border border-[#ffd23a]/40 p-4 mb-3" data-testid="shop-lootboxes">
+            <div className="flex items-center gap-2 mb-1"><Package className="w-5 h-5 text-[#ffd23a]" /><span className="text-white text-sm font-bold">Lootboxes</span></div>
+            <p className="text-[#c8b890] text-xs mb-3">Coins, Streak Freezes, XP Boosters, skins, and now and then a rare skin or cape.</p>
+            <div className="grid sm:grid-cols-2 gap-3 mb-3">
+              <button data-testid="buy-lootbox" onClick={() => { const r = buyShopItem('lootbox'); setNote(r === 'ok' ? 'You bought a lootbox! Open it below.' : 'Not enough coins yet.'); }}
+                className="flex items-center justify-between gap-2 rounded-xl px-4 py-3 bg-[#121822] border border-[#243044] hover:border-[#ffd23a] text-left transition-all active:scale-95">
+                <span className="text-white text-sm font-bold">1 Lootbox</span>
+                <span className={`inline-flex items-center gap-1 text-sm font-bold ${p.coins >= LOOTBOX_PRICE ? 'text-[#ffd23a]' : 'text-[#5a6b80]'}`}><Coins className="w-4 h-4" />{LOOTBOX_PRICE}</span>
+              </button>
+              <button data-testid="buy-lootbox5" onClick={() => { const r = buyShopItem('lootbox5'); setNote(r === 'ok' ? 'You bought 5 lootboxes! Open them below.' : 'Not enough coins yet.'); }}
+                className="flex items-center justify-between gap-2 rounded-xl px-4 py-3 bg-[#121822] border border-[#243044] hover:border-[#ffd23a] text-left transition-all active:scale-95">
+                <span className="text-white text-sm font-bold">5 Lootboxes <span className="text-[#7cfc7c] text-[11px] font-normal">save {LOOTBOX_PRICE * 5 - LOOTBOX_PACK_PRICE}</span></span>
+                <span className={`inline-flex items-center gap-1 text-sm font-bold ${p.coins >= LOOTBOX_PACK_PRICE ? 'text-[#ffd23a]' : 'text-[#5a6b80]'}`}><Coins className="w-4 h-4" />{LOOTBOX_PACK_PRICE}</span>
+              </button>
+            </div>
+            <LootboxRow />
+          </div>
+
           {/* Streak freeze and XP booster */}
           <div className="grid sm:grid-cols-2 gap-3 mb-5" data-testid="shop-items">
             <button data-testid="buy-freeze" onClick={() => { const r = buyShopItem('freeze'); setNote(r === 'ok' ? 'Streak Freeze added! It saves your daily streak if you miss a day.' : r === 'full' ? `You can hold up to ${MAX_FREEZES} Streak Freezes.` : 'Not enough coins yet.'); }}
@@ -2161,6 +2219,7 @@ function MainContent({
     <main className="flex-1 min-h-0 overflow-y-auto vb-scroll bg-[#0a0e14]" style={backgroundStyle(bgPic)} data-testid="main-bg" data-bg={bgPic.url ? 'on' : 'off'}>
       <div className={compact ? 'px-3 py-3' : 'px-8 py-6'}>
         {view === 'home' && compact && <MobileProfileBar username={username} onPlayNow={() => onPlaySurvival()} />}
+        {view === 'home' && compact && <div className="mb-4"><LeaderboardCard collapsible onOpenLeaderboard={() => onNavClick('leaderboard')} /></div>}
         {view === 'home' && !compact && <DiscordBanner />}
         {view === 'home' && <HomeView username={username} onPlaySurvival={onPlaySurvival} savedWorlds={savedWorlds} onPlayWorld={onPlayWorld} onCreatePreset={onCreatePreset} onMinigame={onMinigame} counts={playingCounts} />}
         {view === 'shop' && <ShopView />}
@@ -2265,7 +2324,7 @@ function DailyCard() {
 }
 
 /** Your rank, whether you are a Rising Creator, and your plays: provided by App, read by the shop and the panels. */
-const StandingContext = createContext<{ rank: RankId; rising: boolean; tier: CreatorTier; isOwner: boolean; standing: Standing | null; signedIn: boolean; /** known not to be signed in: worlds, levels, the shop and social are switched off */ guest: boolean }>({ rank: 'none', rising: false, tier: 'none', isOwner: false, standing: null, signedIn: false, guest: false });
+const StandingContext = createContext<{ /** the tags shown before your name: [OWNER], [MOD], [Elite] ... */ nameTags?: string[]; rank: RankId; rising: boolean; tier: CreatorTier; isOwner: boolean; standing: Standing | null; signedIn: boolean; /** known not to be signed in: worlds, levels, the shop and social are switched off */ guest: boolean }>({ rank: 'none', rising: false, tier: 'none', isOwner: false, standing: null, signedIn: false, guest: false });
 /** Lets the profile panel (right side of Home) open the daily reward window. */
 const DailyUiContext = createContext<{ openDaily: () => void }>({ openDaily: () => {} });
 
@@ -2518,7 +2577,7 @@ function LeaderboardView({ username }: { username: string }) {
             return (
               <div key={r.username} data-testid="lb-level-row" className={`flex items-center gap-3 px-4 py-2.5 border-b border-[#1a2230] last:border-0 ${you ? 'bg-[#00e676]/10' : ''}`}>
                 <span className={`w-7 text-center font-[var(--font-display)] ${i === 0 ? 'text-[#ffd23a]' : i === 1 ? 'text-[#cfd8e3]' : i === 2 ? 'text-[#e8a87c]' : 'text-[#5a6b80]'}`}>{i + 1}</span>
-                <span className="text-white text-sm font-semibold truncate flex-1">{r.username}</span>
+                <button onClick={() => openProfile(r.username)} data-testid="lb-name" className="text-white text-sm font-semibold truncate flex-1 text-left hover:underline">{r.username}</button>
                 <LevelBadge level={r.level} you={you} />
                 <span className="text-[#5a6b80] text-xs tabular-nums w-20 text-right">{r.xp.toLocaleString()} XP</span>
               </div>
@@ -2533,7 +2592,7 @@ function LeaderboardView({ username }: { username: string }) {
         {rows?.map((r, i) => (
           <div key={r.username} data-testid="lb-row" className={`flex items-center gap-3 px-4 py-2.5 border-b border-[#1a2230] last:border-0 ${r.username.toLowerCase() === username.toLowerCase() ? 'bg-[#00e676]/10' : ''}`}>
             <span className={`w-7 text-center font-[var(--font-display)] ${i === 0 ? 'text-[#ffd23a]' : i === 1 ? 'text-[#cfd8e3]' : i === 2 ? 'text-[#e8a87c]' : 'text-[#5a6b80]'}`}>{i + 1}</span>
-            <span className="text-white text-sm font-semibold truncate flex-1">{r.username}</span>
+            <button onClick={() => openProfile(r.username)} data-testid="lb-name" className="text-white text-sm font-semibold truncate flex-1 text-left hover:underline">{r.username}</button>
             {r.level != null && <LevelBadge level={r.level} you={r.username.toLowerCase() === username.toLowerCase()} />}
             <TierBadge tier={creatorTier(r.plays)} small />
             <span className="text-[#8ea0b8] text-sm tabular-nums">{t('lb.plays', { n: r.plays.toLocaleString() })}</span>
@@ -2548,16 +2607,16 @@ function LeaderboardView({ username }: { username: string }) {
 function MobileProfileBar({ username, onPlayNow }: { username: string; onPlayNow: () => void }) {
   useLanguage();
   const p = useProgress();
-  const { guest } = useContext(StandingContext);
+  const { guest, nameTags } = useContext(StandingContext);
   const curXp = xpForLevel(p.level), nextXp = xpForLevel(p.level + 1);
   const pct = Math.max(0, Math.min(100, ((p.xp - curXp) / (nextXp - curXp)) * 100));
   return (
     <>
     <div className="mb-3 flex items-center gap-3 rounded-2xl bg-[#121822] border border-[#243044] p-3" data-testid="mobile-profile">
-      <div className="w-11 h-11 shrink-0 rounded-xl bg-gradient-to-br from-[#3b5998] to-[#00e676] flex items-center justify-center text-white font-[var(--font-display)]">{(username || 'P').charAt(0).toUpperCase()}</div>
+      <button onClick={() => openProfile(username || 'PlayerOne')} aria-label="Your profile" className="shrink-0"><HeadAvatar className="w-12 h-12" width={96} height={96} fallback={(username || 'P').charAt(0).toUpperCase()} /></button>
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-2">
-          <span className="text-white text-sm font-bold truncate">{username || 'PlayerOne'}</span>
+          <span className="text-white text-sm font-bold truncate" data-testid="mobile-name">{!guest && (nameTags ?? []).map((tg, i) => <span key={i} className="mr-1"><FancyText text={tg} /></span>)}{username || 'PlayerOne'}</span>
           <span className={`text-[#8ea0b8] text-[11px] shrink-0 ${guest ? 'opacity-40' : ''}`} data-testid="panel-level">{t('profile.level', { n: p.level })} · {p.coins} coins</span>
         </div>
         <div className="h-1.5 mt-1.5 bg-[#0a0e14] rounded-full overflow-hidden"><div className="h-full bg-gradient-to-r from-[#00e676] to-[#00b248]" style={{ width: `${pct}%` }} /></div>
@@ -2571,11 +2630,166 @@ function MobileProfileBar({ username, onPlayNow }: { username: string; onPlayNow
   );
 }
 
-function ProfilePanel({ username, onPlayNow, onOpenLeaderboard }: { username: string; onPlayNow: () => void; onOpenLeaderboard: () => void }) {
+/** The top creators list on the right of Home (on a phone it can be shown or hidden). */
+function LeaderboardCard({ onOpenLeaderboard, collapsible = false }: { onOpenLeaderboard: () => void; collapsible?: boolean }) {
+  useLanguage();
+  const top = useLeaderboard(5);
+  const [open, setOpen] = useState(() => { try { return localStorage.getItem('vb-lb-open') !== '0'; } catch { return true; } });
+  const toggle = () => setOpen((o) => { const n = !o; try { localStorage.setItem('vb-lb-open', n ? '1' : '0'); } catch { /* storage blocked */ } return n; });
+  return (
+    <div className="bg-[#121822] rounded-2xl border border-[#243044] p-4" data-testid="lb-card">
+      <h3 className="font-[var(--font-display)] text-white text-sm tracking-wide flex items-center gap-2">
+        <Trophy className="w-4 h-4 text-[#ffd23a]" /> {t('lb.title').toUpperCase()}
+        {collapsible && <button onClick={toggle} data-testid="lb-toggle" className="ml-auto px-2.5 py-1 rounded-lg bg-[#1a2230] text-[#8ea0b8] text-[11px] font-bold">{open ? 'Hide' : 'Show'}</button>}
+      </h3>
+      {open && (
+        <div className="mt-3">
+          {top === null && <p className="text-[#5a6b80] text-xs">…</p>}
+          {top !== null && top.length === 0 && <p className="text-[#5a6b80] text-xs">{t('lb.empty')}</p>}
+          <ol className="space-y-1.5">
+            {top?.map((r, i) => (
+              <li key={r.username} className="flex items-center gap-2 text-xs">
+                <span className={`w-4 text-center font-bold ${i === 0 ? 'text-[#ffd23a]' : 'text-[#5a6b80]'}`}>{i + 1}</span>
+                <button onClick={() => openProfile(r.username)} data-testid="lb-name" className="text-white truncate flex-1 text-left hover:underline">{r.username}</button>
+                <span className="text-[#8ea0b8] tabular-nums">{r.plays.toLocaleString()}</span>
+              </li>
+            ))}
+          </ol>
+          <button onClick={() => { nextBoard = 'creators'; onOpenLeaderboard(); }} data-testid="lb-see-all" className="mt-3 w-full py-1.5 rounded-lg bg-[#1a2230] text-[#8ea0b8] text-xs font-bold hover:text-white hover:bg-[#243044] transition-colors">{t('lb.seeAll')}</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Your character instead of a letter: a little 3D player in your skin, and its head follows your mouse
+ * (the same preview as the inventory). `full` shows the whole body, otherwise head and shoulders.
+ */
+function HeadAvatar({ full = false, own = true, className = 'w-14 h-14', width = 112, height = 112, fallback = '?' }: { full?: boolean; own?: boolean; className?: string; width?: number; height?: number; fallback?: string }) {
+  const ref = useRef<HTMLCanvasElement | null>(null);
+  const pv = useRef<ReturnType<typeof createPlayerPreview> | null>(null);
+  const [failed, setFailed] = useState(false);
+  const prog = useProgress();
+  useEffect(() => {
+    if (!ref.current) return;
+    try { pv.current = createPlayerPreview(ref.current, { bust: !full }); if (own) pv.current.setAppearance(currentLook()); } catch { pv.current = null; setFailed(true); return; }
+    let raf = 0; let last: MouseEvent | null = null;
+    const apply = () => {
+      raf = 0;
+      const c = ref.current;
+      if (!c || !pv.current || !last) return;
+      const r = c.getBoundingClientRect();
+      const nx = (last.clientX - (r.left + r.width / 2)) / 220, ny = (last.clientY - (r.top + r.height * (full ? 0.25 : 0.4))) / 220;
+      pv.current.setLook(nx, ny);
+      c.dataset.look = `${Math.max(-1, Math.min(1, nx)).toFixed(2)},${Math.max(-1, Math.min(1, ny)).toFixed(2)}`;
+    };
+    const onMove = (e: MouseEvent) => { last = e; if (!raf) raf = requestAnimationFrame(apply); };
+    window.addEventListener('mousemove', onMove);
+    return () => { window.removeEventListener('mousemove', onMove); if (raf) cancelAnimationFrame(raf); pv.current?.dispose(); pv.current = null; };
+  }, [full, own]);
+  useEffect(() => { if (own) pv.current?.setAppearance(currentLook()); }, [prog, own]);
+  if (failed) return <div className={`${className} rounded-2xl bg-gradient-to-br from-[#3b5998] to-[#00e676] flex items-center justify-center text-white font-[var(--font-display)]`}>{fallback}</div>;
+  return <canvas ref={ref} width={width} height={height} data-testid="head-avatar" className={`${className} rounded-2xl bg-gradient-to-br from-[#1d2a3d] to-[#16301f] ring-2 ring-[#243044]`} />;
+}
+
+const RANK_CHIP: Record<string, string> = { vanguard: 'bg-[#4dd0e1]/15 text-[#4dd0e1]', elite: 'bg-[#ffd23a]/15 text-[#ffd23a]', champion: 'bg-[#ff6ec7]/15 text-[#ff8be6]' };
+/** A player's profile card: opens from the leaderboards, your friends and your own picture. */
+function ProfileModal({ name, me, onClose }: { name: string; me: Account | null; onClose: () => void }) {
+  useLanguage();
+  const [prof, setProf] = useState<PlayerProfile | null | 'loading'>('loading');
+  const [note, setNote] = useState('');
+  const prog = useProgress();
+  const guestName = isGuestName(name);
+  const isMe = !!me && me.username.toLowerCase() === name.toLowerCase();
+  const owner = isOwnerName(name);
+  useEffect(() => {
+    setNote('');
+    if (guestName) { setProf(null); return; }
+    let alive = true;
+    setProf('loading');
+    void fetchProfile(name).then((p) => { if (alive) setProf(p); });
+    return () => { alive = false; };
+  }, [name, guestName]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [onClose]);
+  const p = prof === 'loading' ? null : prof;
+  const level = isMe ? prog.level : p?.level ?? 1;
+  const xp = isMe ? prog.xp : p?.xp ?? 0;
+  const curXp = xpForLevel(level), nextXp = xpForLevel(level + 1);
+  const pct = Math.max(0, Math.min(100, ((xp - curXp) / Math.max(1, nextXp - curXp)) * 100));
+  const rank = p?.rank && p.rank !== 'none' ? p.rank : null;
+  const tier = creatorTier(p?.plays ?? 0);
+  const canFriend = !!me && !isGuestName(me.username) && !isMe && !guestName && !!p;
+  async function friend() {
+    if (!me) return;
+    const r = await addFriend(me, name);
+    setNote(r.ok ? r.message : r.error);
+  }
+  return (
+    <div className="fixed inset-0 z-[70] bg-black/65 flex items-center justify-center p-4" onClick={onClose} data-testid="profile-modal">
+      <div className="w-[min(94vw,440px)] rounded-3xl bg-[#0d131b] border border-[#243044] shadow-2xl p-5 vb-fade-in" onClick={(e) => e.stopPropagation()}>
+        <div className="flex gap-4">
+          <HeadAvatar full own={isMe} className="w-[120px] h-[168px] shrink-0" width={240} height={336} fallback={name.charAt(0).toUpperCase()} />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-start justify-between gap-2">
+              <h2 className="font-[var(--font-display)] text-white text-lg truncate" data-testid="profile-name">{name}</h2>
+              <button onClick={onClose} data-testid="profile-close" aria-label="Close" className="shrink-0 w-7 h-7 rounded-lg bg-[#1a2230] text-[#8ea0b8] hover:text-white flex items-center justify-center"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="flex flex-wrap gap-1.5 mt-1.5" data-testid="profile-tags">
+              {isMe && <span className="px-2 py-0.5 rounded-full bg-[#00e676]/15 text-[#00e676] text-[10px] font-bold">YOU</span>}
+              {owner && <span className="px-2 py-0.5 rounded-full bg-[#ffd23a]/15 text-[#ffd23a] text-[10px] font-bold">OWNER</span>}
+              {p?.staff && <span className="px-2 py-0.5 rounded-full bg-[#4dd0e1]/15 text-[#4dd0e1] text-[10px] font-bold">{p.staff.toUpperCase()}</span>}
+              {p?.special && <span className="px-2 py-0.5 rounded-full bg-[#ff4d4d]/15 text-[#ff6b6b] text-[10px] font-bold">{p.special.toUpperCase()}</span>}
+              {(p?.og || (isMe && me?.og === true)) && <span className="px-2 py-0.5 rounded-full bg-[#22e6e6]/15 text-[#22e6e6] text-[10px] font-bold">OG</span>}
+              {rank && <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${RANK_CHIP[rank] ?? 'bg-[#243044] text-white'}`}>{RANK_NAMES[rank as RankId] ?? rank}</span>}
+              {p && <TierBadge tier={tier} small />}
+              {guestName && <span className="px-2 py-0.5 rounded-full bg-[#243044] text-[#8ea0b8] text-[10px] font-bold">GUEST</span>}
+            </div>
+            {guestName ? (
+              <p className="text-[#8ea0b8] text-xs mt-3" data-testid="profile-guest-note">Guests don't have a profile. Sign in to keep your level, climb the leaderboards and make friends.</p>
+            ) : prof === 'loading' ? (
+              <p className="text-[#5a6b80] text-sm mt-4">…</p>
+            ) : !p && !isMe ? (
+              <p className="text-[#8ea0b8] text-xs mt-3" data-testid="profile-missing">No profile found for this player.</p>
+            ) : (
+              <>
+                <div className="mt-3">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[#b39dff] text-xs font-bold" data-testid="profile-level">Level {level}</span>
+                    <span className="text-[#5a6b80] text-[11px]">{Math.max(0, xp - curXp).toLocaleString()} / {(nextXp - curXp).toLocaleString()} XP</span>
+                  </div>
+                  <div className="h-2 bg-[#0a0e14] rounded-full overflow-hidden"><div className="h-full bg-gradient-to-r from-[#00e676] to-[#00b248]" style={{ width: `${pct}%` }} /></div>
+                </div>
+                {p && (
+                  <dl className="grid grid-cols-2 gap-2 mt-3 text-xs" data-testid="profile-stats">
+                    {([['Plays', p.plays.toLocaleString()], ['Friends', String(p.friends)], ['Worlds', String(p.worlds)], ['Joined', p.joined ? new Date(p.joined).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '-']] as const).map(([k, v]) => (
+                      <div key={k} className="rounded-xl bg-[#121822] border border-[#243044] px-2.5 py-1.5"><dt className="text-[#5a6b80] text-[10px]">{k}</dt><dd className="text-white font-bold tabular-nums">{v}</dd></div>
+                    ))}
+                  </dl>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+        {(canFriend || note) && (
+          <div className="mt-4 flex items-center gap-3">
+            {canFriend && <button onClick={() => void friend()} data-testid="profile-add-friend" className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#00e676] to-[#00b248] text-[#0a0e14] text-xs font-bold active:scale-95">Add friend</button>}
+            {note && <span className="text-[#8ea0b8] text-xs" data-testid="profile-note">{note}</span>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ProfilePanel({ username, onOpenLeaderboard }: { username: string; onOpenLeaderboard: () => void }) {
   useLanguage();
   const p = useProgress();
-  const { rising, tier, signedIn, guest } = useContext(StandingContext);
-  const top = useLeaderboard(5);
+  const { rising, tier, signedIn, guest, nameTags } = useContext(StandingContext);
   const displayName = username || 'PlayerOne';
   const initial = username ? username.charAt(0).toUpperCase() : 'P';
   const curXp = xpForLevel(p.level), nextXp = xpForLevel(p.level + 1);
@@ -2584,11 +2798,14 @@ function ProfilePanel({ username, onPlayNow, onOpenLeaderboard }: { username: st
     <aside className="w-[280px] shrink-0 bg-[#0d131b] border-l border-[#243044] flex flex-col p-5 gap-5 overflow-y-auto">
       <div className="bg-[#121822] rounded-2xl border border-[#243044] p-4">
         <div className="flex items-center gap-3 mb-4">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#3b5998] to-[#00e676] ring-2 ring-[#243044] flex items-center justify-center text-white font-[var(--font-display)] text-xl">
-            {initial}
-          </div>
+          <button onClick={() => openProfile(displayName)} data-testid="panel-avatar" title="View your profile" className="shrink-0 rounded-2xl hover:scale-105 active:scale-95 transition-transform">
+            <HeadAvatar className="w-16 h-16" width={128} height={128} fallback={initial} />
+          </button>
           <div className="min-w-0">
-            <p className="font-[var(--font-display)] text-white text-sm truncate max-w-[160px]">{displayName}</p>
+            <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0 text-sm" data-testid="panel-namerow">
+              {!guest && (nameTags ?? []).length > 0 && <span className="shrink-0 font-bold" data-testid="panel-tags">{(nameTags ?? []).map((tg, i) => <span key={i} className="mr-1"><FancyText text={tg} /></span>)}</span>}
+              <button onClick={() => openProfile(displayName)} data-testid="panel-name" className="block text-left font-[var(--font-display)] text-white text-sm truncate max-w-[160px] hover:underline">{displayName}</button>
+            </div>
             <p className="text-[#5a6b80] text-xs">{signedIn ? 'Online' : 'Guest'}</p>
             {rising && <div className="mt-1"><TierBadge tier={tier} small /></div>}
           </div>
@@ -2603,15 +2820,6 @@ function ProfilePanel({ username, onPlayNow, onOpenLeaderboard }: { username: st
           </div>
           {guest && <p className="mt-1.5 text-[#8ea0b8] text-[11px]" data-testid="level-guest-note">Sign in to level up</p>}
         </div>
-      </div>
-
-      <div className="bg-[#121822] rounded-2xl border border-[#243044] p-4">
-        <h3 className="font-[var(--font-display)] text-white text-sm tracking-wide mb-3 flex items-center gap-2">
-          <Play className="w-4 h-4 text-[#00e676] fill-current" /> QUICK PLAY
-        </h3>
-        <button onClick={onPlayNow} className="w-full py-3 rounded-xl bg-gradient-to-r from-[#00e676] to-[#00b248] text-[#0a0e14] font-[var(--font-display)] text-sm tracking-wide flex items-center justify-center gap-2 hover:from-[#00ff88] hover:to-[#00c853] transition-all duration-300 hover:scale-[1.02] active:scale-95 vb-glow">
-          <Play className="w-4 h-4 fill-current" /> PLAY NOW
-        </button>
       </div>
 
       <div className={`bg-[#121822] rounded-2xl border border-[#243044] p-4 ${guest ? 'opacity-40 select-none' : ''}`} aria-disabled={guest || undefined} data-testid="currency-card">
@@ -2629,36 +2837,14 @@ function ProfilePanel({ username, onPlayNow, onOpenLeaderboard }: { username: st
 
       <DailyCard />
 
-      <div className="bg-[#121822] rounded-2xl border border-[#243044] p-4" data-testid="lb-card">
-        <h3 className="font-[var(--font-display)] text-white text-sm tracking-wide mb-3 flex items-center gap-2">
-          <Trophy className="w-4 h-4 text-[#ffd23a]" /> {t('lb.title').toUpperCase()}
-        </h3>
-        {top === null && <p className="text-[#5a6b80] text-xs">…</p>}
-        {top !== null && top.length === 0 && <p className="text-[#5a6b80] text-xs">{t('lb.empty')}</p>}
-        <ol className="space-y-1.5">
-          {top?.map((r, i) => (
-            <li key={r.username} className="flex items-center gap-2 text-xs">
-              <span className={`w-4 text-center font-bold ${i === 0 ? 'text-[#ffd23a]' : 'text-[#5a6b80]'}`}>{i + 1}</span>
-              <span className="text-white truncate flex-1">{r.username}</span>
-              <span className="text-[#8ea0b8] tabular-nums">{r.plays.toLocaleString()}</span>
-            </li>
-          ))}
-        </ol>
-        <button onClick={() => { nextBoard = 'creators'; onOpenLeaderboard(); }} data-testid="lb-see-all" className="mt-3 w-full py-1.5 rounded-lg bg-[#1a2230] text-[#8ea0b8] text-xs font-bold hover:text-white hover:bg-[#243044] transition-colors">{t('lb.seeAll')}</button>
-      </div>
+      <LeaderboardCard onOpenLeaderboard={onOpenLeaderboard} />
     </aside>
   );
 }
 
+/** The crosshair (Settings > Crosshair). */
 function GameOverlay() {
-  return (
-    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 pointer-events-none">
-      <div className="relative w-6 h-6">
-        <div className="absolute top-1/2 left-0 w-full h-0.5 bg-white/50 -translate-y-1/2" />
-        <div className="absolute left-1/2 top-0 h-full w-0.5 bg-white/50 -translate-x-1/2" />
-      </div>
-    </div>
-  );
+  return <CrosshairView />;
 }
 
 function ItemIcon({ id, className = 'w-7 h-7' }: { id: number; className?: string }) {
@@ -2935,13 +3121,13 @@ const TIME_PRESETS: Array<{ label: string; time: number }> = [
   { label: 'Sunrise', time: 0 }, { label: 'Noon', time: 0.25 }, { label: 'Sunset', time: 0.5 }, { label: 'Midnight', time: 0.75 },
 ];
 const WEATHER_OPTIONS: Array<{ kind: WeatherKind; label: string }> = [
-  { kind: 'clear', label: 'Clear' }, { kind: 'rain', label: 'Rain' }, { kind: 'snow', label: 'Snow' },
+  { kind: 'clear', label: 'Clear' }, { kind: 'rain', label: 'Rain' }, { kind: 'thunder', label: 'Thunderstorm' }, { kind: 'snow', label: 'Snow' },
 ];
 
 /** Manage Server > Anti-cheat: its switches, and what it caught in the world you host. */
-function AntiCheatPanel({ settings, onChange, alerts, onKick, onBan, hosting }: {
+function AntiCheatPanel({ settings, onChange, alerts, onKick, onBan, onDismiss, onClear, hosting }: {
   settings: AcSettings; onChange: (s: AcSettings) => void; alerts: CheatAlertLike[]; hosting: boolean;
-  onKick: (name: string) => void; onBan: (name: string) => void;
+  onKick: (name: string) => void; onBan: (name: string) => void; onDismiss: (a: CheatAlertLike) => void; onClear: () => void;
 }) {
   const row = (on: boolean, label: string, hint: string, flip: () => void, id: string) => (
     <button onClick={flip} data-testid={id} aria-pressed={on}
@@ -2952,7 +3138,7 @@ function AntiCheatPanel({ settings, onChange, alerts, onKick, onBan, hosting }: 
   );
   return (
     <div className="flex flex-col gap-3" data-testid="anticheat-panel">
-      <p className="text-[#8ea0b8] text-xs">Watches players who join your world for flying, speed, reach, kill aura, auto clickers, nukers and chat spam. Alerts show here and in chat, and go to the VibeBlox admins.</p>
+      <p className="text-[#8ea0b8] text-xs">Watches players who join your world for flying, speed, reach, kill aura, auto clickers, nukers, chat spam and outside scripts (Tampermonkey and the like). Creative mode, elytra and the game's own commands are never counted. Alerts show here and in chat, and go to the VibeBlox admins.</p>
       <div className="grid sm:grid-cols-2 gap-2">
         {row(settings.enabled, 'Anti-cheat', 'Check players in your world', () => onChange({ ...settings, enabled: !settings.enabled }), 'ac-enabled')}
         {row(settings.autoKick, 'Kick cheaters', `Kick a player after ${settings.kickAt} warning points`, () => onChange({ ...settings, autoKick: !settings.autoKick }), 'ac-autokick')}
@@ -2962,7 +3148,10 @@ function AntiCheatPanel({ settings, onChange, alerts, onKick, onBan, hosting }: 
         <span className="text-white tabular-nums w-16 text-right">{settings.kickAt} points</span>
       </label>
       <div className="rounded-xl bg-[#121822] border border-[#243044] p-3">
-        <div className="text-white text-sm font-medium mb-2">Caught in this world</div>
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <div className="text-white text-sm font-medium">Caught in this world</div>
+          {alerts.length > 0 && <button onClick={onClear} data-testid="ac-clear" className="px-2 py-1 rounded-md bg-[#243044] text-[#8ea0b8] hover:text-white text-[11px] font-bold">Dismiss all</button>}
+        </div>
         {!hosting && <p className="text-[#5a6b80] text-xs">Your world isn't open to others right now.</p>}
         {hosting && !alerts.length && <p className="text-[#5a6b80] text-xs" data-testid="ac-none">Nothing suspicious so far.</p>}
         <div className="flex flex-col gap-1.5 max-h-72 overflow-y-auto vb-scroll">
@@ -2970,6 +3159,7 @@ function AntiCheatPanel({ settings, onChange, alerts, onKick, onBan, hosting }: 
             <div key={`${a.at}-${i}`} className="flex items-center gap-2 rounded-lg bg-[#0a0e14] border border-[#243044] px-3 py-2" data-testid="ac-alert">
               <span className="text-[#ff6b6b] text-[11px] font-bold w-24 shrink-0">{CHEAT_NAMES[a.kind] ?? a.kind}</span>
               <span className="flex-1 min-w-0 text-xs"><span className="text-white font-semibold">{a.player}</span> <span className="text-[#5a6b80]">{a.detail} · {new Date(a.at).toLocaleTimeString()}</span></span>
+              <button onClick={() => onDismiss(a)} data-testid="ac-dismiss" title="It was a mistake or lag: remove this report" className="px-2 py-1 rounded-md bg-[#243044] text-[#8ea0b8] hover:text-white text-[11px] font-bold">Dismiss</button>
               <button onClick={() => onKick(a.player)} className="px-2 py-1 rounded-md bg-[#ff9800]/15 text-[#ff9800] text-[11px] font-bold">Kick</button>
               <button onClick={() => onBan(a.player)} className="px-2 py-1 rounded-md bg-[#ff5252]/15 text-[#ff5252] text-[11px] font-bold">Ban</button>
             </div>
@@ -2980,8 +3170,10 @@ function AntiCheatPanel({ settings, onChange, alerts, onKick, onBan, hosting }: 
   );
 }
 
-function ManageServerView({ settings, hardcore, online, isHost, players, myId, hostId, weather, onChange, onKick, onBan, bans, onUnban, onTime, onWeather, tagOf, privacy, schematics, anticheat }: {
+function ManageServerView({ settings, hardcore, online, isHost, players, myId, hostId, weather, onChange, onKick, onBan, bans, onUnban, onTime, onWeather, tagOf, privacy, schematics, anticheat, role = null, roles = {}, onPromote }: {
   tagOf?: (name: string) => string;
+  /** Your role here ('owner' in your own world), everyone's roles, and promoting someone */
+  role?: ServerRole | null; roles?: Record<string, string>; onPromote?: (name: string, to: 'admin' | 'coowner' | 'none') => void;
   /** The schematic maker (select, save, paste and share builds), shown in the Schematics tab */
   schematics?: ReactNode;
   /** Anti-cheat alerts about players in this world (host only) */
@@ -2996,11 +3188,14 @@ function ManageServerView({ settings, hardcore, online, isHost, players, myId, h
   onTime: (t: number) => void; onWeather: (k: WeatherKind) => void;
 }) {
   const [confirmBan, setConfirmBan] = useState<number | null>(null);
-  const [tab, setTab] = useState<'world' | 'rules' | 'players' | 'schematics' | 'anticheat'>('world');
+  const lvl = isHost ? 3 : roleLevel(role);
+  const canRules = lvl >= 2, canCheat = lvl >= 1;
+  const roleOfName = (n: string) => (roles[n.toLowerCase()] as ServerRole | undefined) ?? null;
+  const [tab, setTab] = useState<'world' | 'rules' | 'players' | 'roles' | 'schematics' | 'anticheat'>(() => (lvl >= 2 ? 'world' : 'players'));
   const toggle = (key: 'keepInventory' | 'scripts' | 'mods' | 'commands' | 'pvp', label: string, hint: string) => {
     const on = key === 'pvp' ? settings.pvp !== false : settings[key];
     return (
-      <button disabled={!isHost} onClick={() => onChange({ [key]: !on })} data-testid={`toggle-${key}`}
+      <button disabled={!canRules} onClick={() => onChange({ [key]: !on })} data-testid={`toggle-${key}`}
         className="flex items-center justify-between gap-3 w-full rounded-xl bg-[#121822] border border-[#243044] px-4 py-3 text-left disabled:opacity-60">
         <span><span className="block text-white text-sm">{label}</span><span className="block text-[#5a6b80] text-[11px]">{hint}</span></span>
         <span className={`w-11 h-6 shrink-0 rounded-full p-0.5 transition-colors ${on ? 'bg-[#00e676]' : 'bg-[#2a3444]'}`}><span className={`block w-5 h-5 rounded-full bg-white transition-transform ${on ? 'translate-x-5' : ''}`} /></span>
@@ -3009,9 +3204,10 @@ function ManageServerView({ settings, hardcore, online, isHost, players, myId, h
   };
   return (
     <div className="flex gap-5" data-testid="manage-server">
-     <SideNav tabs={[{ id: 'world', label: 'World' }, { id: 'rules', label: 'Rules' }, { id: 'players', label: 'Players' }, { id: 'schematics', label: 'Schematics' }, ...(anticheat ? [{ id: 'anticheat' as const, label: 'Anti-cheat' }] : [])]} active={tab} onSelect={setTab} testid="manage-sidenav" />
+     <SideNav tabs={[{ id: 'world', label: 'World' }, { id: 'rules', label: 'Rules' }, { id: 'players', label: 'Players' }, ...(online ? [{ id: 'roles' as const, label: 'Roles' }] : []), ...(canRules ? [{ id: 'schematics' as const, label: 'Schematics' }] : []), ...(anticheat && canRules ? [{ id: 'anticheat' as const, label: 'Anti-cheat' }] : [])]} active={tab} onSelect={setTab} testid="manage-sidenav" />
      <div className="flex-1 min-w-0 flex flex-col gap-4">
-      {!isHost && <p className="text-[#ffb347] text-xs">Only the host can change these.</p>}
+      {!isHost && role && <p className="text-[#8ea0b8] text-xs flex items-center" data-testid="my-role"><RoleIcon role={role} />You are {role === 'admin' ? 'an admin' : role === 'coowner' ? 'a co-owner' : 'the owner'} here. {role === 'admin' ? 'You can kick and ban players and use commands.' : role === 'coowner' ? 'You can change the rules, use schematics, set up anti-cheat and promote admins.' : ''}</p>}
+      {!isHost && !role && <p className="text-[#ffb347] text-xs">Only the host can change these.</p>}
       {tab === 'world' && <>
       {privacy && (
         <div data-testid="manage-privacy">
@@ -3035,7 +3231,7 @@ function ManageServerView({ settings, hardcore, online, isHost, players, myId, h
         <p className="text-[#8ea0b8] text-xs mb-1.5">Difficulty{hardcore ? ' (Hardcore is always Hard)' : ''}</p>
         <div className="grid grid-cols-4 gap-2">
           {(['peaceful', 'easy', 'normal', 'hard'] as Difficulty[]).map((d) => (
-            <button key={d} disabled={!isHost || hardcore} onClick={() => onChange({ difficulty: d })} data-testid={`server-difficulty-${d}`}
+            <button key={d} disabled={!canRules || hardcore} onClick={() => onChange({ difficulty: d })} data-testid={`server-difficulty-${d}`}
               className={`py-2 rounded-xl text-xs font-bold capitalize ${settings.difficulty === d ? 'bg-[#00e676] text-[#0a0e14]' : 'bg-[#121822] border border-[#243044] text-[#8ea0b8] hover:text-white'} disabled:cursor-not-allowed`}>{d}</button>
           ))}
         </div>
@@ -3045,7 +3241,7 @@ function ManageServerView({ settings, hardcore, online, isHost, players, myId, h
           <p className="text-[#8ea0b8] text-xs mb-1.5">Time</p>
           <div className="grid grid-cols-2 gap-2">
             {TIME_PRESETS.map((p) => (
-              <button key={p.label} disabled={!isHost} onClick={() => onTime(p.time)} data-testid={`server-time-${p.label.toLowerCase()}`}
+              <button key={p.label} disabled={!canCheat} onClick={() => onTime(p.time)} data-testid={`server-time-${p.label.toLowerCase()}`}
                 className="py-2 rounded-xl text-xs font-bold bg-[#121822] border border-[#243044] text-[#8ea0b8] hover:text-white hover:border-[#00e676]/50 active:scale-95 transition-all disabled:cursor-not-allowed disabled:opacity-60">{p.label}</button>
             ))}
           </div>
@@ -3057,7 +3253,7 @@ function ManageServerView({ settings, hardcore, online, isHost, players, myId, h
             const i = Math.max(0, WEATHER_OPTIONS.findIndex((w) => w.kind === weather));
             const next = WEATHER_OPTIONS[(i + 1) % WEATHER_OPTIONS.length];
             return (
-              <button disabled={!isHost} onClick={() => onWeather(next.kind)} data-testid="server-weather"
+              <button disabled={!canCheat} onClick={() => onWeather(next.kind)} data-testid="server-weather"
                 className="w-full py-2 rounded-xl text-xs font-bold bg-[#121822] border border-[#243044] text-white hover:border-[#00e676]/50 active:scale-95 transition-all disabled:cursor-not-allowed disabled:opacity-60">
                 Now: {WEATHER_OPTIONS[i]?.label ?? weather} · click for {next.label.toLowerCase()}
               </button>
@@ -3073,7 +3269,48 @@ function ManageServerView({ settings, hardcore, online, isHost, players, myId, h
         {toggle('scripts', 'Allow scripts', 'Off hides the Scripts button')}
         {toggle('mods', 'Allow mods', 'Off hides the Mods button')}
         {toggle('pvp', 'PvP', 'Players can hit each other (when others join your world)')}
+        <div className="col-span-2 rounded-xl bg-[#121822] border border-[#243044] px-4 py-3" data-testid="script-perm">
+          <span className="block text-white text-sm">Who can use scripts</span>
+          <span className="block text-[#5a6b80] text-[11px] mb-2">Owner only means the owner and co-owners.</span>
+          <div className="grid grid-cols-4 gap-2">
+            {(['off', 'all', 'admin', 'owner'] as ScriptPerm[]).map((v) => {
+              const cur: ScriptPerm = !settings.scripts ? 'off' : settings.scriptPerm ?? 'owner';
+              return (
+                <button key={v} disabled={!canRules} data-testid={`script-perm-${v}`} onClick={() => onChange(v === 'off' ? { scripts: false, scriptPerm: 'off' } : { scripts: true, scriptPerm: v })}
+                  className={`py-1.5 rounded-lg text-xs font-bold ${cur === v ? 'bg-[#00e676] text-[#0a0e14]' : 'bg-[#0a0e14] border border-[#243044] text-[#8ea0b8] hover:text-white'} disabled:cursor-not-allowed`}>{SCRIPT_PERM_LABELS[v]}</button>
+              );
+            })}
+          </div>
+        </div>
       </div>}
+      {tab === 'roles' && (
+        <div className="flex flex-col gap-3" data-testid="manage-roles">
+          <div className="rounded-xl bg-[#121822] border border-[#243044] px-4 py-3 text-[11px] text-[#8ea0b8] leading-relaxed">
+            <p className="flex items-center"><RoleIcon role="admin" /><b className="text-white mr-1">Admin</b> bans and kicks players here, and can use commands.</p>
+            <p className="flex items-center"><RoleIcon role="coowner" /><b className="text-white mr-1">Co-owner</b> also changes the rules, uses schematics, sets up anti-cheat and promotes admins.</p>
+            <p className="flex items-center"><RoleIcon role="owner" /><b className="text-white mr-1">Owner</b> is the world's creator. Only the owner makes co-owners.</p>
+            <p className="mt-1">These roles only count in this world. The icons show in the player list (Tab).</p>
+          </div>
+          {players.filter((pl) => pl.id !== myId).length === 0 && <p className="text-[#5a6b80] text-xs rounded-xl bg-[#121822] border border-[#243044] px-4 py-3">Nobody else is here right now. You can also type <b>/promote name admin</b> in chat.</p>}
+          {players.filter((pl) => pl.id !== myId).map((pl) => {
+            const r = roleOfName(pl.name);
+            const opt = (to: 'admin' | 'coowner' | 'none', label: string) => {
+              const allowed = r !== 'owner' && (lvl >= 3 || (lvl === 2 && to !== 'coowner' && r !== 'coowner'));
+              const active = (to === 'none' && !r) || to === r;
+              return (
+                <button key={to} disabled={!allowed || active || !onPromote} onClick={() => onPromote?.(pl.name, to)} data-testid={`promote-${to}`}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold ${active ? 'bg-[#00e676] text-[#0a0e14]' : 'bg-[#1a2230] text-[#8ea0b8] hover:text-white'} disabled:cursor-not-allowed ${!active && !allowed ? 'opacity-40' : ''}`}>{label}</button>
+              );
+            };
+            return (
+              <div key={pl.id} className="flex items-center gap-2 rounded-xl bg-[#121822] border border-[#243044] px-4 py-2" data-testid="role-row">
+                <span className="text-white text-sm flex-1 truncate flex items-center"><RoleIcon role={r} />{pl.name}</span>
+                {r === 'owner' ? <span className="text-[#ffd23a] text-xs font-bold">Owner</span> : <>{opt('none', 'Player')}{opt('admin', 'Admin')}{opt('coowner', 'Co-owner')}</>}
+              </div>
+            );
+          })}
+        </div>
+      )}
       {tab === 'schematics' && (
         <div className="flex flex-col gap-5" data-testid="manage-schematics">
           {schematics}
@@ -3095,8 +3332,8 @@ function ManageServerView({ settings, hardcore, online, isHost, players, myId, h
           <div className="flex flex-col gap-1.5" data-testid="player-list">
             {players.map((pl) => (
               <div key={pl.id} className="flex items-center gap-2 rounded-xl bg-[#121822] border border-[#243044] px-4 py-2">
-                <span className="text-white text-sm flex-1 truncate" data-testid="manage-player">{tagOf && tagOf(pl.name) ? <FancyText text={tagOf(pl.name)} /> : null}{pl.name}{pl.id === myId ? ' (you)' : ''}{pl.id === hostId ? ' · host' : ''}</span>
-                {isHost && pl.id !== myId && (confirmBan === pl.id ? (
+                <span className="text-white text-sm flex-1 truncate" data-testid="manage-player"><RoleIcon role={roleOfName(pl.name)} />{tagOf && tagOf(pl.name) ? <FancyText text={tagOf(pl.name)} /> : null}{pl.name}{pl.id === myId ? ' (you)' : ''}{pl.id === hostId ? ' · host' : ''}</span>
+                {(isHost || (lvl >= 1 && lvl > roleLevel(roleOfName(pl.name)))) && pl.id !== myId && roleOfName(pl.name) !== 'owner' && (confirmBan === pl.id ? (
                   <>
                     <span className="text-[#ff8a8a] text-xs">Ban {pl.name}?</span>
                     <button onClick={() => { onBan(pl.id); setConfirmBan(null); }} className="px-3 py-1 rounded-lg bg-[#ff5555] text-white text-xs font-bold">Ban</button>
@@ -3760,7 +3997,7 @@ function InventoryOverlay({
     ));
 
   const previewRecipe = recipePreview !== null ? RECIPES.find((r) => r.output.id === recipePreview) ?? null : null;
-  const title = station?.kind === 'enchanting' ? 'Enchanting Table' : station?.kind === 'anvil' ? 'Anvil' : furnaceKey ? (furnaceKey.startsWith('B|') ? 'Brewing Stand' : 'Furnace') : chestKey ? 'Chest' : atCraftingTable ? 'Crafting Table' : 'Inventory';
+  const title = station?.kind === 'enchanting' ? 'Enchanting Table' : station?.kind === 'anvil' ? 'Anvil' : furnaceKey ? (furnaceKey.startsWith('B|') ? 'Brewing Stand' : 'Furnace') : chestKey ? (chestKey === 'ender' ? 'Ender Chest' : 'Chest') : atCraftingTable ? 'Crafting Table' : 'Inventory';
 
   // ---- Enchanting table ----
   const lapisHere = stationSlots[1]?.id === ITEM_LAPIS ? stationSlots[1].count : 0;
@@ -4114,6 +4351,9 @@ const COMMANDS: Array<{ names: string[]; usage: string; desc: string }> = [
   { names: ['pardon', 'unban'], usage: '/pardon <player>', desc: 'Let a banned player join this world again (the world\'s owner, or an admin in someone else\'s world).' },
   { names: ['mute', 'unmute', 'mutes'], usage: '/mute <player> · /unmute <player> · /mutes', desc: 'Stop a player from chatting in this world (the host and staff: HELPER and MOD).' },
   { names: ['kick', 'ban'], usage: '/kick <player> · /ban <player>', desc: 'Remove a player from this world (staff and admins; a ban only covers this world).' },
+  { names: ['promote', 'demote', 'roles'], usage: '/promote <player> <admin|coowner> · /demote <player> · /roles', desc: 'World roles. Admins ban players and use cheats; co-owners also change rules, schematics and anti-cheat. Only the owner makes co-owners.' },
+  { names: ['join'], usage: '/join <friend>', desc: 'Go to the world a friend is playing in.' },
+  { names: ['globalban', 'globalunban'], usage: '/globalban <player> [reason] · /globalunban <player>', desc: 'VibeBlox staff ([HELPER], [MOD]) and admins: ban a player from all of VibeBlox.' },
   { names: ['gamerule'], usage: '/gamerule keepInventory true|false', desc: 'Keep your items when you die.' },
   { names: ['screenshot', 'ss'], usage: '/screenshot', desc: 'Save a picture of the game (a PNG download). F2 does the same. Works everywhere.' },
   { names: ['locate'], usage: '/locate village | temple | fortress | dungeon | portal | treasure', desc: 'Find the closest village, desert temple, dungeon, ruined portal, buried treasure, or (in the Nether) fortress.' },
@@ -4238,8 +4478,39 @@ function SleepOverlay({ online, onLeave, onChat }: { online: boolean; onLeave: (
   );
 }
 
-function ChatBox({ open, initialText, messages, history, onSubmit, restricted = false }: {
+/** How long a private-message channel stays open without anyone writing in it. */
+export const CHANNEL_IDLE_MS = 5 * 60 * 1000;
+/** (tests can shorten it with window.__vbChannelIdleMs) */
+const channelIdleMs = () => { const v = (window as unknown as { __vbChannelIdleMs?: number }).__vbChannelIdleMs; return typeof v === 'number' && v > 0 ? v : CHANNEL_IDLE_MS; };
+let pingCtx: AudioContext | null = null;
+/** A short two-note "ping" for an incoming message (works with the tab in the background, as long as sound is allowed). */
+export function playPingSound() {
+  try {
+    const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    if (!Ctor) return;
+    pingCtx ??= new Ctor();
+    const ctx = pingCtx;
+    if (ctx.state === 'suspended') void ctx.resume();
+    const t0 = ctx.currentTime;
+    for (const [i, f] of [880, 1318].entries()) {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'sine'; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t0 + i * 0.09);
+      g.gain.exponentialRampToValueAtTime(0.18, t0 + i * 0.09 + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + i * 0.09 + 0.32);
+      o.connect(g); g.connect(ctx.destination);
+      o.start(t0 + i * 0.09); o.stop(t0 + i * 0.09 + 0.35);
+    }
+    (window as unknown as { __pings?: number }).__pings = ((window as unknown as { __pings?: number }).__pings ?? 0) + 1;
+  } catch { /* no audio: no ping */ }
+}
+
+function ChatBox({ open, initialText, messages, history, onSubmit, restricted = false, channels = [], channel = null, onChannel }: {
   restricted?: boolean;
+  /** Private-message channels that are open right now (Tab / the chips switch between them and the server chat). */
+  channels?: string[];
+  channel?: string | null;
+  onChannel?: (c: string | null) => void;
   open: boolean;
   initialText: string;
   messages: ChatMessage[];
@@ -4284,7 +4555,12 @@ function ChatBox({ open, initialText, messages, history, onSubmit, restricted = 
       setText(i >= 0 ? history[history.length - 1 - i] : '');
     } else if (e.key === 'Tab') {
       e.preventDefault();
-      if (suggestions[0]) setText('/' + suggestions[0].names[0] + ' ');
+      if (suggestions[0]) { setText('/' + suggestions[0].names[0] + ' '); return; }
+      if (!onChannel || !channels.length) return;
+      // Server chat -> each private channel -> server chat. (Shift+Tab goes the other way.)
+      const order: Array<string | null> = [null, ...channels];
+      const at = Math.max(0, order.indexOf(channel ?? null));
+      onChannel(order[(at + (e.shiftKey ? order.length - 1 : 1)) % order.length]);
     }
   }
 
@@ -4315,6 +4591,21 @@ function ChatBox({ open, initialText, messages, history, onSubmit, restricted = 
           <div className="px-2 pt-0.5 text-[10px] text-[#7a7a7a]">Tab to autocomplete</div>
         </div>
       )}
+      {open && channels.length > 0 && (
+        <div data-testid="chat-channels" className="flex flex-wrap items-center gap-1 pointer-events-auto text-xs select-none">
+          <button
+            type="button" data-testid="chat-channel-server" onMouseDown={(e) => e.preventDefault()} onClick={() => onChannel?.(null)}
+            className={`px-2 py-0.5 rounded-sm border ${channel === null ? 'bg-white/85 text-black border-white' : 'bg-black/60 text-white/80 border-white/25'}`}
+          >Server</button>
+          {channels.map((c) => (
+            <button
+              key={c} type="button" data-testid={`chat-channel-${c.toLowerCase()}`} onMouseDown={(e) => e.preventDefault()} onClick={() => onChannel?.(c)}
+              className={`px-2 py-0.5 rounded-sm border ${channel === c ? 'bg-[#c8a2ff] text-black border-[#c8a2ff]' : 'bg-black/60 text-[#c8a2ff] border-[#c8a2ff]/50'}`}
+            >{c}</button>
+          ))}
+          <span className="text-white/45 hidden sm:inline">Tab to switch</span>
+        </div>
+      )}
       {open && (
         <input
           autoFocus
@@ -4323,7 +4614,9 @@ function ChatBox({ open, initialText, messages, history, onSubmit, restricted = 
           onChange={(e) => { setText(e.target.value); setHistIdx(-1); }}
           onKeyDown={onKeyDown}
           className="w-full px-2 py-1.5 bg-black/65 text-white text-sm font-mono outline-none border border-white/20 focus:border-white/50 rounded-sm transition-colors"
-          placeholder="Type a message, or / for commands"
+          placeholder={channel ? `Message ${channel} privately (Tab: back to the server chat)` : 'Type a message, or / for commands'}
+          style={channel ? { borderColor: 'rgba(200,162,255,0.7)' } : undefined}
+          data-channel={channel ?? ''}
         />
       )}
     </div>
@@ -4841,6 +5134,31 @@ function advKindLabel(a: Advancement): { text: string; color: string } {
   return { text: 'Advancement Made!', color: '#ffe066' };
 }
 /** The Minecraft-style pop-ups in the top right corner. */
+/** Flames licking up the bottom of the screen while you are on fire. */
+function BurnOverlay() {
+  const tongues = Array.from({ length: 16 }, (_, i) => i);
+  return (
+    <div data-testid="burn-overlay" className="absolute inset-x-0 bottom-0 z-[16] pointer-events-none overflow-hidden" style={{ height: '34vh' }}>
+      <style>{`
+        @keyframes vbFlame { 0%{transform:translateY(8%) scaleY(.75) scaleX(1)} 25%{transform:translateY(0) scaleY(1.1) scaleX(.92)} 50%{transform:translateY(5%) scaleY(.88) scaleX(1.08)} 75%{transform:translateY(-2%) scaleY(1.15) scaleX(.95)} 100%{transform:translateY(8%) scaleY(.75) scaleX(1)} }
+        @keyframes vbFlameGlow { 0%,100%{opacity:.55} 50%{opacity:.8} }
+      `}</style>
+      <div className="absolute inset-x-0 bottom-0 h-full" style={{ background: 'linear-gradient(to top, rgba(255,90,10,0.55), rgba(255,140,20,0.22) 55%, rgba(255,140,20,0) 100%)', animation: 'vbFlameGlow 0.5s ease-in-out infinite' }} />
+      {tongues.map((i) => (
+        <div
+          key={i}
+          style={{
+            position: 'absolute', bottom: '-4%', left: `${(i / tongues.length) * 100 - 3}%`, width: `${100 / tongues.length * 2.1}%`, height: `${62 + ((i * 37) % 38)}%`,
+            background: 'radial-gradient(ellipse at 50% 100%, #fff3a0 0%, #ffc230 28%, #ff7a12 58%, rgba(255,60,0,0) 100%)',
+            borderRadius: '50% 50% 18% 18% / 90% 90% 10% 10%', transformOrigin: '50% 100%', filter: 'blur(1.5px)',
+            animation: `vbFlame ${0.38 + ((i * 53) % 30) / 100}s ease-in-out ${-(i * 0.13)}s infinite`, opacity: 0.88,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
 function AdvancementToasts({ toasts }: { toasts: AdvToast[] }) {
   return (
     <div className="absolute top-3 right-3 z-30 flex flex-col gap-2 pointer-events-none" data-testid="advancement-toasts">
@@ -4923,7 +5241,7 @@ function GameMenu({ page, onResume, onOpenSettings, onOpenScripts, onOpenMods, o
 }) {
   useLanguage();
   return (
-    <div data-testid="game-menu" className="absolute inset-0 z-40 bg-black/55 flex items-center justify-center overflow-y-auto py-4 vb-fade-in" onContextMenu={(e) => e.preventDefault()}>
+    <div data-testid="game-menu" className="absolute inset-0 z-40 bg-black/55 flex justify-center overflow-y-auto overscroll-contain py-4 [@media(max-height:500px)]:py-1 vb-fade-in" onContextMenu={(e) => e.preventDefault()}>
       {page === 'main' ? (
         <div className="w-[400px] max-w-[90vw] flex flex-col gap-2.5 [@media(max-height:500px)]:gap-1.5 my-auto">
           <h2 className="font-[var(--font-retro)] text-white text-2xl text-center mb-4 [@media(max-height:500px)]:mb-1 [@media(max-height:500px)]:text-lg drop-shadow-[0_3px_0_rgba(0,0,0,0.6)]">{t('menu.title')}</h2>
@@ -4941,7 +5259,7 @@ function GameMenu({ page, onResume, onOpenSettings, onOpenScripts, onOpenMods, o
           <p className="text-center text-white/50 text-[11px] mt-2">{t('menu.hint')}</p>
         </div>
       ) : (
-        <div className={`${page === 'settings' ? 'w-[960px]' : page === 'scripts' ? 'w-[1180px]' : page === 'server' ? 'w-[1040px]' : 'w-[820px]'} max-w-[96vw] max-h-[90vh] flex flex-col bg-[#0a0e14]/95 border border-[#243044] rounded-2xl shadow-2xl overflow-hidden vb-fade-in vb-themed`}>
+        <div className={`${page === 'settings' ? 'w-[960px]' : page === 'scripts' ? 'w-[1180px]' : page === 'server' ? 'w-[1040px]' : 'w-[820px]'} max-w-[96vw] max-h-[90vh] [@media(max-height:500px)]:max-h-[97vh] my-auto flex flex-col bg-[#0a0e14]/95 border border-[#243044] rounded-2xl shadow-2xl overflow-hidden vb-fade-in vb-themed`}>
           <div className="flex items-center gap-3 px-5 py-3 border-b border-[#243044]">
             <button
               onClick={onBack}
@@ -4951,7 +5269,7 @@ function GameMenu({ page, onResume, onOpenSettings, onOpenScripts, onOpenMods, o
             </button>
             <span className="font-[var(--font-retro)] text-white text-xs tracking-wider">{t('page.' + page).toUpperCase()}</span>
           </div>
-          <div className="overflow-y-auto vb-scroll p-5">{children}</div>
+          <div className="overflow-y-auto overscroll-contain vb-scroll p-5 [@media(max-height:500px)]:p-3 min-h-0 flex-1" data-testid="menu-page-scroll">{children}</div>
         </div>
       )}
     </div>
@@ -5009,6 +5327,16 @@ function TagPicker({ value, onChange, disabled = false, testid = 'tag-picker' }:
   );
 }
 
+/** "5 min ago", "3 days ago": how long ago a world's host left. */
+function timeAgo(iso: string): string {
+  const mins = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+  if (!Number.isFinite(mins)) return '';
+  if (mins < 2) return 'just now';
+  if (mins < 120) return `${mins} min ago`;
+  const h = Math.round(mins / 60);
+  return h < 48 ? `${h} hours ago` : `${Math.round(h / 24)} days ago`;
+}
+
 type NetStatus = 'offline' | 'connecting' | 'online';
 
 function ServersView({ serverUrl, onServerUrlChange, onJoin, status, error, available }: {
@@ -5029,6 +5357,14 @@ function ServersView({ serverUrl, onServerUrlChange, onJoin, status, error, avai
   const [sortBy, setSortBy] = useState<'players' | 'likes'>('players');
   const [likeMsg, setLikeMsg] = useState<string | null>(null);
   const [liking, setLiking] = useState<string | null>(null);
+  const [sleeping, setSleeping] = useState<SleepingWorld[]>([]);
+  const [waking, setWaking] = useState<string | null>(null);
+  const [wakeError, setWakeError] = useState<string | null>(null);
+  async function wakeUp(w: SleepingWorld) {
+    setWaking(w.id); setWakeError(null);
+    const err = await wakeWorld(w.id);
+    if (err) { setWakeError(err); setWaking(null); }
+  }
   const signedIn = !!summary.username && !isGuestName(summary.username);
   /** Like or un-like a world: shows the change at once, then the real count from the database. */
   async function toggleLike(w: HostedWorld) {
@@ -5052,6 +5388,8 @@ function ServersView({ serverUrl, onServerUrlChange, onJoin, status, error, avai
       const r = await listHostedWorlds();
       if (!live) return;
       if (r.ok) { setWorlds(r.worlds); setListError(null); } else setListError(r.error);
+      const sl = await listSleepingWorlds();
+      if (live && sl.ok) setSleeping(sl.worlds);
     };
     void load();
     const t = window.setInterval(load, 8000);
@@ -5060,7 +5398,8 @@ function ServersView({ serverUrl, onServerUrlChange, onJoin, status, error, avai
   useEffect(() => { if (!connecting) setJoiningId(null); }, [connecting]);
   const canJoin = available && hostingAvailable;
   // filter by tag, then sort (most players first by default; most liked first when asked; ties keep the order from the database)
-  const shownWorlds = (worlds ?? []).filter((w) => !tagFilter || w.tags.includes(tagFilter)).map((w, i) => ({ w, i }))
+  // EggWars and Bridge Duels matches aren't open worlds: they are found from the minigame menus instead
+  const shownWorlds = (worlds ?? []).filter((w) => w.worldType !== 'eggwars' && w.worldType !== 'bridge').filter((w) => !tagFilter || w.tags.includes(tagFilter)).map((w, i) => ({ w, i }))
     .sort((a, b) => (sortBy === 'likes' ? b.w.likes - a.w.likes : 0) || b.w.players - a.w.players || a.i - b.i).map((x) => x.w);
   const privacyBadge = (p: HostedWorld['privacy']) => (p === 'friends' ? { icon: Users, text: 'Friends', cls: 'text-[#c8a2ff]' } : p === 'accounts' ? { icon: Shield, text: 'Accounts', cls: 'text-[#6ec6ff]' } : { icon: Globe, text: 'Public', cls: 'text-[#7cfc7c]' });
   const gameLabel = (w: HostedWorld) => (w.worldType === 'eggwars' ? 'EggWars' : w.worldType === 'bridge' ? 'Bridge Duels' : `${w.mode.charAt(0).toUpperCase()}${w.mode.slice(1)}${w.worldType === 'superflat' ? ' · Superflat' : ''}`);
@@ -5162,6 +5501,28 @@ function ServersView({ serverUrl, onServerUrlChange, onJoin, status, error, avai
             );
           })}
         </div>
+        {sleeping.length > 0 && (
+          <div className="mt-6" data-testid="sleeping-worlds">
+            <h3 className="text-white text-sm font-bold mb-1">💤 Sleeping worlds</h3>
+            <p className="text-[#8ea0b8] text-xs mb-3">Their host has left, but you can still join: the world wakes up on your device from its saved copy and others can join you.</p>
+            {wakeError && <p className="text-[#ff8a8a] text-xs mb-2" data-testid="wake-error">{wakeError}</p>}
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+              {sleeping.map((w) => (
+                <div key={w.id} className="rounded-2xl bg-[#0a0e14] border border-[#243044] p-3 flex flex-col gap-1.5" data-testid="sleeping-row">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-white text-sm font-bold truncate" data-testid="sleeping-name">{w.name}</span>
+                    <span className="shrink-0 px-2 py-0.5 rounded-md text-[10px] font-bold bg-[#243044] text-[#8ea0b8]">{w.mode.charAt(0).toUpperCase() + w.mode.slice(1)}{w.worldType === 'superflat' ? ' · Superflat' : ''}</span>
+                  </div>
+                  <div className="text-[#5a6b80] text-[11px]">by <span className="text-[#8ea0b8]">{w.owner}</span> · {timeAgo(w.updatedAt)}</div>
+                  <button disabled={!canJoin || connecting || !!waking || !signedIn} onClick={() => void wakeUp(w)} data-testid="sleeping-join"
+                    className="mt-1 w-full py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-[#00e676] to-[#00b248] text-[#0a0e14] disabled:opacity-50">
+                    {waking === w.id ? 'Waking up…' : !signedIn ? 'Sign in to join' : 'Wake up & join'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         <p className="text-[#5a6b80] text-[11px] mt-4 leading-relaxed">
           To open your own world, sign in and play it. Pick who can join (Public, Accounts only, Friends only or Private) when you create it, or in
           Esc → Manage Server. Players connect straight to your game, so it stays open only while you're playing.
@@ -5219,14 +5580,16 @@ function ServersView({ serverUrl, onServerUrlChange, onJoin, status, error, avai
   );
 }
 
-function PlayerList({ players, myId, max, tagOf }: { players: Record<number, string>; myId: number | null; max?: number | null; tagOf?: (name: string) => string }) {
-  const entries = Object.entries(players).sort((a, b) => a[1].localeCompare(b[1]));
+/** The player list (hold Tab, or LIST on a phone): down the right side, with world role icons (helmet, crown, king's crown). */
+function PlayerList({ players, myId, max, tagOf, roles = {} }: { players: Record<number, string>; myId: number | null; max?: number | null; tagOf?: (name: string) => string; roles?: Record<string, string> }) {
+  const roleOf = (n: string) => (roles[n.toLowerCase()] as ServerRole | undefined) ?? null;
+  const entries = Object.entries(players).sort((a, b) => roleLevel(roleOf(b[1])) - roleLevel(roleOf(a[1])) || a[1].localeCompare(b[1]));
   return (
-    <div className="absolute top-8 left-1/2 -translate-x-1/2 z-30 w-[300px] bg-black/60 rounded-lg p-3 pointer-events-none vb-fade-in">
-      <div className="text-center text-white text-xs font-bold mb-2">Players online ({entries.length}{max ? `/${max}` : ''})</div>
+    <div className="absolute top-14 right-3 z-30 w-[260px] max-w-[45vw] max-h-[70vh] overflow-y-auto bg-black/60 rounded-lg p-2.5 pointer-events-none vb-fade-in [@media(pointer:coarse)]:top-16 [@media(pointer:coarse)]:pointer-events-auto" data-testid="player-list-panel">
+      <div className="text-white text-xs font-bold mb-1.5 px-1">Players online ({entries.length}{max ? `/${max}` : ''})</div>
       <div className="flex flex-col gap-0.5">
         {entries.map(([id, name]) => (
-          <div key={id} className={`px-2 py-0.5 text-sm bg-white/10 ${Number(id) === myId ? 'text-[#ffe066]' : 'text-white'}`} data-testid="player-row">{tagOf && tagOf(name) ? <><FancyText text={tagOf(name)} /></> : null}{name}</div>
+          <div key={id} className={`px-2 py-0.5 text-sm bg-white/10 rounded-sm truncate flex items-center ${Number(id) === myId ? 'text-[#ffe066]' : 'text-white'}`} data-testid="player-row"><RoleIcon role={roleOf(name)} />{tagOf && tagOf(name) ? <><FancyText text={tagOf(name)} /></> : null}{name}</div>
         ))}
       </div>
     </div>
@@ -5657,6 +6020,8 @@ export default function App() {
   viewRef.current = view;
   // ---- accounts, friends, private messages, admin ----
   const { account, admin, checked: accountChecked, signOut: doSignOut, rename: doRename } = useAccount();
+  const [profileName, setProfileName] = useState<string | null>(null);
+  useEffect(() => { setProfileOpener(setProfileName); return () => setProfileOpener(null); }, []);
   const accountRef = useRef(account);
   accountRef.current = account;
   const adminRef = useRef(admin);
@@ -5689,17 +6054,19 @@ export default function App() {
     return () => { live = false; save(); window.clearInterval(t); offLevel(); document.removeEventListener('visibilitychange', onHide); };
   }, [account?.username]); // eslint-disable-line react-hooks/exhaustive-deps
   const myRank: RankId = effectiveRank(account, isOwnerAccount);
-  const myOg = !!account && !isGuestName(account.username) && account.og === true;
   const myStaff: StaffId | null = account && !isGuestName(account.username) && isStaffId(account.staff) ? account.staff : null;
-  /** The rank whose perks you get: OG players and staff (HELPER, MOD) get Elite's perks. The tag still shows the real rank. */
-  const myPerk: RankId = perkRank(myRank, { og: myOg, staff: myStaff });
+  /** The rank whose perks you get: Staff (HELPER, MOD) get Elite's perks. The tag still shows the real rank. */
+  const myOg = !!account && !isGuestName(account.username) && account.og === true;
+  const mySpecial: SpecialId | null = account && !isGuestName(account.username) && isSpecialId(account.special) ? account.special : null;
+  const myPerk: RankId = perkRank(myRank, { staff: myStaff, og: myOg, special: mySpecial });
   const myTier: CreatorTier = isOwnerAccount ? 'star' : creatorTier(standing?.plays ?? 0);
   /** Admins and staff can kick, ban, mute and use commands in every world. */
   const canModerate = !!admin || !!myStaff;
   const canModerateRef = useRef(canModerate);
   canModerateRef.current = canModerate;
-  const myOgRef = useRef(myOg); myOgRef.current = myOg;
   const myStaffRef = useRef<StaffId | null>(myStaff); myStaffRef.current = myStaff;
+  const myOgRef = useRef(myOg); myOgRef.current = myOg;
+  const mySpecialRef = useRef<SpecialId | null>(mySpecial); mySpecialRef.current = mySpecial;
   const rising = myTier !== 'none';
   const budgetRef = useRef(scriptBudgetMs(myPerk, myTier));
   budgetRef.current = scriptBudgetMs(myPerk, myTier);
@@ -5723,7 +6090,7 @@ export default function App() {
     if (fr) parts.push(`${fr}\\reset\\`);
     const me = name.toLowerCase() === (usernameRef.current || '').toLowerCase();
     const a = accountRef.current;
-    const badge: NetBadge | undefined = me ? (a && !isGuestName(a.username) ? { owner: isOwnerRef.current, rank: myRankRef.current, tier: myTierRef.current, og: myOgRef.current, staff: myStaffRef.current } : undefined) : badgesRef.current[name.toLowerCase()];
+    const badge: NetBadge | undefined = me ? (a && !isGuestName(a.username) ? { owner: isOwnerRef.current, rank: myRankRef.current, tier: myTierRef.current, staff: myStaffRef.current, og: myOgRef.current, special: mySpecialRef.current } : undefined) : badgesRef.current[name.toLowerCase()];
     parts.push(...badgeTags(badge));
     return parts.length ? parts.join(' ') + ' ' : '';
   }
@@ -5772,6 +6139,37 @@ export default function App() {
 
   const sleepingRef = useRef(false);
   const lastWhisperFromRef = useRef<string | null>(null);
+  // Private-message channels: one opens when someone messages you (or you message them) and closes after 5 minutes without a message
+  const channelSeenRef = useRef<Record<string, { name: string; last: number }>>({}); // (a plain object: `Map` is the map icon in this file)
+  const [chatChannels, setChatChannels] = useState<string[]>([]);
+  const [chatChannel, setChatChannel] = useState<string | null>(null);
+  const chatChannelRef = useRef<string | null>(null);
+  /** A private message came in: show it, open that person's channel and ping. (Also reachable from tests as window.__vbWhisper.) */
+  function receiveWhisper(from: string, text: string) {
+    lastWhisperFromRef.current = from;
+    touchChannel(from);
+    pushMessage(`[${from} \u2192 you] ${text}`, '#c8a2ff');
+    playPingSound();
+  }
+  useEffect(() => { (window as unknown as { __vbWhisper?: (f: string, t: string) => void }).__vbWhisper = receiveWhisper; });
+  const touchChannel = (name: string) => {
+    const k = name.toLowerCase();
+    channelSeenRef.current[k] = { name, last: Date.now() };
+    setChatChannels(Object.values(channelSeenRef.current).map((c) => c.name));
+  };
+  const switchChannel = (c: string | null) => { chatChannelRef.current = c; setChatChannel(c); };
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      const now = Date.now();
+      let changed = false;
+      for (const [k, v] of Object.entries(channelSeenRef.current)) if (now - v.last > channelIdleMs()) { delete channelSeenRef.current[k]; changed = true; }
+      if (!changed) return;
+      setChatChannels(Object.values(channelSeenRef.current).map((c) => c.name));
+      const cur = chatChannelRef.current;
+      if (cur && !channelSeenRef.current[cur.toLowerCase()]) switchChannel(null);
+    }, 5000);
+    return () => window.clearInterval(id);
+  }, []);
   const pendingWhisperRef = useRef<{ to: string; text: string } | null>(null);
   const [gameMode, setGameMode] = useState<GameMode>('menu');
   useEffect(() => {
@@ -5794,6 +6192,17 @@ export default function App() {
   const memberTeamsRef = useRef<Record<number, number>>({});
   // Anti-cheat alerts about players in the world you host
   const [cheatAlerts, setCheatAlerts] = useState<CheatAlertLike[]>([]);
+  // Outside scripts (Tampermonkey and the like) in this page: online worlds hear about it, and so do you, once
+  const outsideFlagsRef = useRef<string[]>([]);
+  const outsideToldRef = useRef(false);
+  const [outsideNotice, setOutsideNotice] = useState<string[] | null>(null);
+  useEffect(() => watchOutsideScripts((flags) => {
+    outsideFlagsRef.current = flags;
+    if (flags.length && mpRef.current?.connected) mpRef.current.sendIntegrity(flags);
+    if (flags.length && !outsideToldRef.current) { outsideToldRef.current = true; setOutsideNotice(flags); }
+  }), []); // eslint-disable-line react-hooks/exhaustive-deps
+  /** Co-owners: the anti-cheat settings of the world you are in (the host's room sends them) */
+  const [remoteAc, setRemoteAc] = useState<AcSettings | null>(null);
   const [acSettings, setAcSettingsState] = useState<AcSettings>(loadAcSettings);
   function setAcSettings(next: AcSettings) {
     setAcSettingsState(next);
@@ -5830,11 +6239,13 @@ export default function App() {
   const [renderDistance, setRenderDistance] = useState(savedSettings.renderDistance ?? 6);
   const [graphicsQuality, setGraphicsQuality] = useState<GraphicsQuality>(savedSettings.graphicsQuality ?? 'medium');
   const [textureRes, setTextureRes] = useState<TextureRes>(savedSettings.textureRes === 32 ? 32 : 16);
+  /** Lagging: ask once whether to switch to Low graphics (Yes/No) */
+  const [askOptimise, setAskOptimise] = useState(false);
 
   /** Switch textures right now, even in the middle of a game. */
   const [, bumpTexIcons] = useState(0);
   function changeTextureRes(res: TextureRes) {
-    setTextureResolution(graphicsQuality === 'low' ? 16 : res); // clears every cached texture (Low graphics stays 16×16)
+    setTextureResolution(texResFor(graphicsQuality, res)); // clears every cached texture (Low stays 16×16, Epic and Max 32×32)
     setTextureRes(res); // saves the choice and redraws the hotbar and inventory icons
     gameHandleRef.current?.reloadTextures(); // re-skins the running world
   }
@@ -5874,7 +6285,16 @@ export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   // Touch screens (phones, tablets): on-screen controls instead of mouse and keyboard
   const [touchPref, setTouchPrefState] = useState<TouchPref>(loadTouchPref);
-  const touchOn = touchEnabled(touchPref);
+  // Some phones say they have a mouse too (a stylus, a "desktop site" setting): a real finger on the screen turns touch controls on anyway
+  const [sawTouch, setSawTouch] = useState(false);
+  useEffect(() => {
+    if (touchPref !== 'auto' || sawTouch) return;
+    const f = (e: TouchEvent | PointerEvent) => { if (!('pointerType' in e) || e.pointerType === 'touch') setSawTouch(true); };
+    addEventListener('touchstart', f, { passive: true });
+    addEventListener('pointerdown', f, { passive: true });
+    return () => { removeEventListener('touchstart', f); removeEventListener('pointerdown', f); };
+  }, [touchPref, sawTouch]);
+  const touchOn = touchEnabled(touchPref) || (touchPref === 'auto' && sawTouch);
   const touchOnRef = useRef(touchOn);
   touchOnRef.current = touchOn;
   useEffect(() => { if (touchOn) lockViewportForTouch(); }, [touchOn]);
@@ -5904,10 +6324,27 @@ export default function App() {
   /** Where you are playing online right now ("p2p:<id>" for a hosted world): friends get a Join button for it. */
   const joinedAddressRef = useRef<string | null>(null);
   const [myNetId, setMyNetId] = useState<number | null>(null);
+  /** Roles in the world you are in (lowercase name -> 'owner' | 'coowner' | 'admin'), from the room */
+  const [netRoles, setNetRoles] = useState<Record<string, string>>({});
+  /** You keep a world open that its owner left (you run it, but it isn't yours: your role decides what you may do) */
+  const [handedOver, setHandedOver] = useState(false);
+  const handedOverRef = useRef(false);
+  handedOverRef.current = handedOver;
+  /** The host is leaving and the world moves to another player: reconnect there instead of showing "Disconnected" */
+  const migratingRef = useRef<{ room: string; host: string } | null>(null);
+  /** Bumped to reload the world view (joining the same world again after it moved to another host) */
+  const [gameNonce, setGameNonce] = useState(0);
+  /** Your things in a world you joined are kept on this device under this key */
+  const mpSaveKeyRef = useRef<string | null>(null);
   // Minigames, and worlds that belong to somebody else, have no cheats: no commands, mods, scripts or server admin.
   // Advancements are for survival worlds only.
   const isMinigame = activeWorldType === 'eggwars' || activeWorldType === 'bridge';
-  const ownsWorld = !isMinigame && !(netStatus === 'online' && hostId !== myNetId);
+  const myRole: ServerRole | null = netStatus === 'online' && !isMinigame ? ((netRoles[(username ?? '').toLowerCase()] as ServerRole | undefined) ?? null) : null;
+  const myRoleRef = useRef<ServerRole | null>(null);
+  myRoleRef.current = myRole;
+  const netRolesRef = useRef(netRoles);
+  netRolesRef.current = netRoles;
+  const ownsWorld = !isMinigame && !(netStatus === 'online' && hostId !== myNetId) && !(handedOver && myRole !== 'owner');
   const advAllowed = !isMinigame && activeWorldMode === 'survival';
   const ownsWorldRef = useRef(true);
   ownsWorldRef.current = ownsWorld;
@@ -5932,6 +6369,7 @@ export default function App() {
   const [builderMod, setBuilderMod] = useState<Mod | null>(null);
   const [scriptsTab, setScriptsTab] = useState<'scripts' | 'builder'>('scripts');
   const [hurtFlash, setHurtFlash] = useState(false);
+  const [burning, setBurning] = useState(false);
   const menuOpenRef = useRef(false);
   const menuPageRef = useRef<MenuPage>('main');
   menuPageRef.current = menuPage;
@@ -5941,6 +6379,58 @@ export default function App() {
   const [armor, setArmor] = useState<Slots>(() => emptySlots(4));
   const [titleCard, setTitleCard] = useState<{ text: string; sub: string; id: number } | null>(null);
   /** Shows a big title (colour codes and effects work: \\green\\\\shiny\\ Hello). */
+  /** The host ran /give, /clear, /effect, /xp or /tp on you (from @a, @p or your name). */
+  function applyRemoteCmd(cmd: string, args: Record<string, unknown>, from: string) {
+    const h = gameHandleRef.current;
+    if (!h) return;
+    const num = (v: unknown, lo: number, hi: number, def: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : def);
+    switch (cmd) {
+      case 'give': {
+        let id = Math.floor(num(args.id, 1, 4000, 0));
+        if (!id || !ITEM_INFO[id]) return;
+        if (isPlayerHeadItem(id)) id = playerHeadItem(currentLook().skin);
+        const count = Math.floor(num(args.count, 1, 64 * 36, 1));
+        const ench = args.ench && typeof args.ench === 'object' ? (args.ench as Record<string, number>) : undefined;
+        if (ench) {
+          const inv = h.getInventory();
+          if (addStackToSlots(inv, { id, count: 1, ench }) > 0) { pushMessage(`${from} tried to give you ${ITEM_INFO[id].name}, but your inventory is full`, '#ff6b6b'); return; }
+          h.setSlots(inv);
+          pushMessage(`${from} gave you [${ITEM_INFO[id].name}]`, '#aaaaaa');
+          return;
+        }
+        const given = h.addItem(id, count);
+        pushMessage(given > 0 ? `${from} gave you ${given} [${ITEM_INFO[id].name}]` : `${from} tried to give you ${ITEM_INFO[id].name}, but your inventory is full`, given > 0 ? '#aaaaaa' : '#ff6b6b');
+        return;
+      }
+      case 'clear': h.clearInventory(); pushMessage(`${from} cleared your inventory`, '#aaaaaa'); return;
+      case 'effclear': h.clearEffects(); pushMessage(`${from} removed your effects`, '#aaaaaa'); return;
+      case 'effect': {
+        const name = String(args.name ?? '');
+        if (!/^[a-z_]{3,20}$/.test(name)) return;
+        const secs = num(args.secs, 1, 3600, 30), level = Math.floor(num(args.level, 1, 5, 1));
+        h.giveEffect(name, secs, level);
+        pushMessage(`${from} gave you ${name.replace('_', ' ')} ${level} for ${Math.round(secs)} seconds`, '#aaaaaa');
+        return;
+      }
+      case 'xp': {
+        const n = Math.floor(num(args.n, 0, 100000, 0));
+        if (args.mode === 'set') h.setXpLevel(n);
+        else if (args.mode === 'levels') h.setXpLevel(h.getXp().level + n);
+        else h.addXp(n);
+        pushMessage(`${from} changed your experience`, '#aaaaaa');
+        return;
+      }
+      case 'tp': {
+        const x = num(args.x, -30000000, 30000000, NaN), y = num(args.y, -64, 400, NaN), z = num(args.z, -30000000, 30000000, NaN);
+        if ([x, y, z].some((v) => Number.isNaN(v))) return;
+        h.teleport(x, y, z);
+        pushMessage(`${from} teleported you`, '#aaaaaa');
+        return;
+      }
+      default:
+    }
+  }
+
   function showTitle(text: string, sub = '', seconds = 3) {
     setTitleCard({ text: String(text).slice(0, 160), sub: String(sub).slice(0, 200), id: Date.now() + Math.random() });
     window.clearTimeout(titleTimerRef.current);
@@ -6222,8 +6712,8 @@ export default function App() {
 
   // The soundtrack you picked last time starts again at your first click or key press (browsers don't allow sound before that)
   useEffect(() => {
-    let saved = '';
-    try { saved = localStorage.getItem('vb-soundtrack') ?? ''; } catch { /* storage blocked */ }
+    let saved = 'overworld'; // the default soundtrack (until you pick another one, or stop the music)
+    try { const v = localStorage.getItem('vb-soundtrack'); if (v !== null) saved = v; } catch { /* storage blocked */ }
     if (!saved || !SOUNDTRACKS.some((t) => t.value === saved && t.value !== 'arcade')) return;
     const go = () => { cleanup(); playBuiltInTrack(saved as AnySoundtrack); };
     const cleanup = () => { removeEventListener('pointerdown', go, true); removeEventListener('keydown', go, true); };
@@ -6267,9 +6757,10 @@ export default function App() {
     setToasts((t) => [...t.slice(-3), { key, text, kind }]);
     window.setTimeout(() => setToasts((t) => t.filter((x) => x.key !== key)), kind === 'announce' ? 9000 : 5000);
   }
+  /** An announcement goes into the chat of everyone who is playing right now (players in the menus don't get it). */
   function showAnnouncement(text: string) {
-    pushMessage(`[Announcement] ${text}`, '#ffd700');
-    showToast(text, 'announce');
+    if (gameModeRef.current !== 'playing') return;
+    pushMessage(`ANNOUNCEMENT: ${text}`, '#ffd700');
   }
 
   async function handleIncomingMessages(msgs: DM[]) {
@@ -6441,7 +6932,7 @@ export default function App() {
         else if (e.type === 'egg') mp.sendMatchEgg(e.team);
         else mp.sendMatchGoal(e.team);
       });
-      handle.onPvpHit((id, dmg, kx, kz, bow) => mpRef.current?.sendHit(id, dmg, kx, kz, bow));
+      handle.onPvpHit((id, dmg, kx, kz, bow, extra) => mpRef.current?.sendHit(id, dmg, kx, kz, bow, extra));
       if (onlineMgRef.current?.host) window.setTimeout(() => { if (gameHandleRef.current === handle) void startMatchHostingRef.current(); }, 600);
       // Advancements belong to this planet; whatever you already hold on load is granted quietly
       advRef.current = loadAdvancements(activeWorldIdRef.current);
@@ -6473,6 +6964,7 @@ export default function App() {
       setPanelOpen(false);
       handle.setSleepOnline(!!mpRef.current?.connected); // online, the server skips the night once half the players sleep
       handle.setTouchMode(touchOnRef.current);
+      handle.setShaderPrefs(getShaders());
       // First time ever in a world (not a minigame): the tutorial
       if (!tutorialDone() && activeWorldType !== 'eggwars' && activeWorldType !== 'bridge') setShowTutorial(true);
       if (touchOnRef.current) { try { const el = document.documentElement; if (!document.fullscreenElement && el.requestFullscreen) void el.requestFullscreen().then(() => (screen.orientation as unknown as { lock?: (o: string) => Promise<void> })?.lock?.('landscape')).catch(() => {}); } catch { /* not allowed */ } }
@@ -6513,6 +7005,8 @@ export default function App() {
       menuOpenRef.current = false;
       setMenuOpen(false);
       setMenuPage('main');
+      handle.onBurning((on) => setBurning(on));
+      setBurning(false);
       handle.onPlayerHurt(() => {
         setHurtFlash(true);
         window.clearTimeout(hurtTimerRef.current);
@@ -6543,7 +7037,23 @@ export default function App() {
           handle.setRemotePlayer(p.id, p.name, p.x, p.y, p.z, p.yaw, p.pitch, p.mode);
           if (p.look) handle.setRemoteLook(p.id, p.look);
         }
+        for (const d of welcome.drops ?? []) handle.addRemoteDrop(d); // things already lying around
         pushMessage(`Connected as ${welcome.name}. ${welcome.players.length} other player${welcome.players.length === 1 ? '' : 's'} online.`, '#ffe066');
+        // your things from last time in this world
+        const key = mpSaveKeyRef.current;
+        if (key) {
+          try {
+            const raw = localStorage.getItem(key);
+            if (raw) {
+              const ps = JSON.parse(raw) as { selected?: number };
+              handle.loadPlayerSave(ps as Parameters<typeof handle.loadPlayerSave>[0]);
+              setSelectedSlot(Number.isInteger(ps.selected) ? ps.selected! : 0);
+              setInventory(handle.getInventory()); setOffhand(handle.getOffhand()); setArmor(handle.getArmor());
+              setHealth(handle.getHealth()); setHunger(handle.getHunger()); setXpState(handle.getXp());
+              pushMessage('Welcome back! Your items and spot in this world were kept.', '#ffe066');
+            }
+          } catch { /* a broken save just starts fresh */ }
+        }
       }
       handle.setBlockOutline(getQol().outline);
       handle.onHint((text) => {
@@ -6568,6 +7078,13 @@ export default function App() {
             pushMessage('Welcome back! Your progress was restored.', '#ffe066');
           }
         } catch { /* a broken save just starts fresh */ }
+      }
+      // A sleeping world that was just woken up: its blocks and time come from the saved copy
+      const wake = pendingWakeRef.current;
+      if (wake && worldId && wake.worldId === worldId) {
+        pendingWakeRef.current = null;
+        try { handle.applyRemoteBlocks(wake.changes, true); handle.setTime(wake.time); handle.setWeather?.(wake.weather); } catch { /* a bad copy just starts fresh */ }
+        pushMessage(`You woke up ${wake.name}. Others can join you now.`, '#7cfc7c');
       }
       // Your own world opens to others (as its privacy allows) a moment after it has loaded
       if (worldId && !mpRef.current) window.setTimeout(() => { if (gameHandleRef.current === handle) void maybeStartHostingRef.current(); }, 1200);
@@ -6599,7 +7116,7 @@ export default function App() {
         gameHandleRef.current = null;
       };
     }
-  }, [gameMode, activeWorldMode, activeWorldType, activeSeed, activeExperimental]);
+  }, [gameMode, activeWorldMode, activeWorldType, activeSeed, activeExperimental, gameNonce]);
 
   useEffect(() => {
     if (gameHandleRef.current) {
@@ -6608,8 +7125,8 @@ export default function App() {
   }, [renderDistance]);
 
   useEffect(() => {
-    // Low graphics always draws 16×16 textures; leaving Low brings your chosen resolution back
-    setTextureResolution(graphicsQuality === 'low' ? 16 : textureRes);
+    // Low graphics always draws 16×16 textures, Epic and Max always 32×32; the others use your choice
+    setTextureResolution(texResFor(graphicsQuality, textureRes));
     if (gameHandleRef.current) {
       gameHandleRef.current.setGraphicsQuality(graphicsQuality);
       gameHandleRef.current.reloadTextures();
@@ -6626,6 +7143,31 @@ export default function App() {
 
   // Video settings (clouds, stars, fast render, frame cap...) go straight to the running game
   useEffect(() => subscribeVideo(() => gameHandleRef.current?.setVideoPrefs(getVideo())), []);
+  useEffect(() => subscribeShaders(() => gameHandleRef.current?.setShaderPrefs(getShaders())), []);
+  // Lagging badly for a while (and not already on Low)? Offer to switch to Low graphics: once per visit, unless you say No forever.
+  useEffect(() => {
+    if (gameMode !== 'playing' || graphicsQuality === 'low' || navigator.webdriver) return; // (no question for automated browsers)
+    let never = false;
+    try { never = localStorage.getItem('vb-fps-never') === '1' || sessionStorage.getItem('vb-fps-asked') === '1'; } catch { /* storage blocked */ }
+    if (never) return;
+    const started = performance.now();
+    const samples: number[] = [];
+    const t = window.setInterval(() => {
+      const h = gameHandleRef.current;
+      if (!h || document.visibilityState !== 'visible' || menuOpenRef.current || performance.now() - started < 15_000) { samples.length = 0; return; }
+      const fps = h.getFps();
+      if (!(fps > 0)) return;
+      samples.push(fps);
+      if (samples.length > 10) samples.shift();
+      if (samples.length === 10 && samples.reduce((a, b) => a + b, 0) / 10 < 24) {
+        window.clearInterval(t);
+        try { sessionStorage.setItem('vb-fps-asked', '1'); } catch { /* storage blocked */ }
+        setAskOptimise(true);
+        if (document.pointerLockElement) document.exitPointerLock();
+      }
+    }, 1000);
+    return () => window.clearInterval(t);
+  }, [gameMode, graphicsQuality]);
 
   useEffect(() => {
     gameHandleRef.current?.setSfxVolume(sfxVolume);
@@ -6636,7 +7178,7 @@ export default function App() {
   useEffect(() => installUiSounds(), []);
   useEffect(() => subscribeQol(() => gameHandleRef.current?.setBlockOutline(getQol().outline)), []);
   // keep it right when you log in, your rank changes, or a fake rank is given
-  useEffect(() => { if (gameMode === 'playing') refreshNameTags(); }, [gameMode, account?.username, myRank, myTier, isOwnerAccount, fakeRanks, myOg, myStaff]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (gameMode === 'playing') refreshNameTags(); }, [gameMode, account?.username, myRank, myTier, isOwnerAccount, fakeRanks, myStaff, myOg, mySpecial]); // eslint-disable-line react-hooks/exhaustive-deps
   // block sounds: the switches and volume in Settings > Audio
   const applyBlockSounds = () => { const q = getQol(); gameHandleRef.current?.setBlockSoundPrefs({ breaking: q.blockBreak, placing: q.blockPlace, footsteps: q.footsteps, volume: q.blockVolume }); };
   useEffect(() => subscribeQol(applyBlockSounds), []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -6752,7 +7294,7 @@ export default function App() {
   /** Manage Server changes: the host sends them to the server; alone, they apply right away. */
   function changeServerSettings(part: Partial<ServerSettings>) {
     const mp = mpRef.current;
-    if (mp && mp.connected) { if (hostId === myNetId) mp.sendSettings(part); return; }
+    if (mp && mp.connected) { if (hostId === myNetId || roleLevel(myRoleRef.current) >= 2) mp.sendSettings(part); return; } // the host and co-owners change the rules
     applyServerSettings({ ...serverSettingsRef.current, ...part });
   }
 
@@ -6760,7 +7302,7 @@ export default function App() {
   function changeTime(t: number): boolean {
     const mp = mpRef.current;
     if (mp && mp.connected) {
-      if (hostId !== myNetId) return false;
+      if (hostId !== myNetId && roleLevel(myRoleRef.current) < 1) return false;
       mp.sendTime(t);
       return true;
     }
@@ -6770,7 +7312,7 @@ export default function App() {
   function changeWeather(kind: WeatherKind, seconds?: number): boolean {
     const mp = mpRef.current;
     if (mp && mp.connected) {
-      if (hostId !== myNetId) return false;
+      if (hostId !== myNetId && roleLevel(myRoleRef.current) < 1) return false;
       mp.sendWeather(kind);
       return true;
     }
@@ -6818,7 +7360,9 @@ export default function App() {
 
   function openGameMenu(page: MenuPage = 'main') {
     if (menuOpenRef.current) return; // already open: never stack a second one
-    if ((page === 'server' || page === 'scripts' || page === 'mods') && !ownsWorldRef.current) page = 'main';
+    if (page === 'server' && !ownsWorldRef.current && roleLevel(myRoleRef.current) < 1) page = 'main';
+    if (page === 'scripts' && !ownsWorldRef.current && !canRunScripts(serverSettingsRef.current.scriptPerm, serverSettingsRef.current.scripts, myRoleRef.current)) page = 'main';
+    if (page === 'mods' && !ownsWorldRef.current) page = 'main';
     if (page === 'advancements' && !advAllowedRef.current) page = 'main';
     menuOpenedAtRef.current = performance.now();
     menuOpenRef.current = true;
@@ -6850,6 +7394,8 @@ export default function App() {
     handleExitGame();
     setView('home');
   }
+  const exitToHomeRef = useRef(exitToHome);
+  exitToHomeRef.current = exitToHome;
 
   const lastStatTickRef = useRef(0);
   function saveWorldNow() {
@@ -6875,12 +7421,12 @@ export default function App() {
   // Autosave every 10 seconds, and whenever the tab is hidden or closed
   useEffect(() => {
     if (gameMode !== 'playing') return;
-    const t = setInterval(saveWorldNow, 10_000);
+    const t = setBgInterval(saveWorldNow, 10_000);
     const onHide = () => { if (document.visibilityState === 'hidden') saveWorldNow(); };
     window.addEventListener('beforeunload', saveWorldNow);
     document.addEventListener('visibilitychange', onHide);
     return () => {
-      clearInterval(t);
+      clearBgInterval(t);
       window.removeEventListener('beforeunload', saveWorldNow);
       document.removeEventListener('visibilitychange', onHide);
     };
@@ -6929,6 +7475,7 @@ export default function App() {
           setOnlinePlayers(names);
           setMyNetId(w.id);
           setHostId(w.hostId ?? w.id);
+          setNetRoles(w.roles ?? {});
           setServerMax(typeof w.maxPlayers === 'number' ? w.maxPlayers : null);
           const h = gameHandleRef.current;
           h?.setNetEnabled(true);
@@ -6939,6 +7486,7 @@ export default function App() {
         }
         myNetIdRef.current = w.id;
         mp.sendLook(currentLook());
+        if (outsideFlagsRef.current.length) mp.sendIntegrity(outsideFlagsRef.current);
         pendingWelcomeRef.current = w;
         const names: Record<number, string> = { [w.id]: w.name };
         for (const p of w.players) names[p.id] = p.name;
@@ -6949,7 +7497,15 @@ export default function App() {
         setOnlinePlayers(names);
         setMyNetId(w.id);
         setHostId(w.hostId ?? null);
+        setNetRoles(w.roles ?? {});
+        setHandedOver(false);
         setServerMax(typeof w.maxPlayers === 'number' ? w.maxPlayers : null);
+        // Your things in this world are kept on your device (the world's owner keeps the world)
+        {
+          const owner = Object.entries(w.roles ?? {}).find(([, r]) => r === 'owner')?.[0] ?? (w.hostId != null ? names[w.hostId] : undefined) ?? (joinedAddressRef.current ?? url);
+          mpSaveKeyRef.current = `vb-mpsave:${String(owner).toLowerCase().slice(0, 80)}:${w.seed}`;
+        }
+        if (gameModeRef.current === 'playing') setGameNonce((n) => n + 1); // already in a world (it moved to another host): load this one fresh
         // Joining someone's game counts as a play for them (the database ignores repeats and your own)
         { const hostName = w.hostId != null ? names[w.hostId] : undefined; const me = accountRef.current; if (hostName && w.hostId !== w.id && me && !isGuestName(me.username)) void recordPlay(hostName); }
         hardcoreRef.current = false; setHardcore(false);
@@ -7005,8 +7561,21 @@ export default function App() {
         onlineNamesRef.current = next;
         setOnlinePlayers(next);
       },
-      onChat: (name, text) => pushMessage(`<${tagsFor(name)}${name}> ${text}`),
+      onChat: (name, text) => {
+        pushMessage(`<${tagsFor(name)}${name}> ${text}`);
+        const me = usernameRef.current;
+        if (me && name.toLowerCase() !== me.toLowerCase() && new RegExp(`(^|[^a-z0-9_])${me.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^a-z0-9_])`, 'i').test(text)) playPingSound(); // somebody said your name
+      },
       onTitle: (text, sub) => showTitle(text, sub),
+      onDrop: (d) => gameHandleRef.current?.addRemoteDrop(d),
+      onDropGone: (n) => gameHandleRef.current?.removeNetDrop(n),
+      onPickupResult: (n, ok) => gameHandleRef.current?.resolvePickup(n, ok),
+      onRemoteCmd: (cmd, args, from) => applyRemoteCmd(cmd, args, from),
+      onRoles: (r) => setNetRoles(r),
+      onAnticheat: (st) => setRemoteAc(st),
+      onCheat: (a) => setCheatAlerts((prev) => [a as unknown as CheatAlertLike, ...prev].slice(0, 100)),
+      onBecomeHost: (room, st) => { void becomeHostRef.current(room, st); },
+      onMigrate: (room, host) => { migratingRef.current = { room, host }; pushMessage(`The host left. ${host} is keeping the world open: moving you there…`, '#ffe066'); },
       onRanks: (r) => { applyFakeRanks(cleanFakeRanks(r)); refreshNameTags(); },
       onBadge: (id, badge) => {
         const nm = onlineNamesRef.current[id];
@@ -7018,8 +7587,8 @@ export default function App() {
       onSystem: (text) => pushMessage(text, '#ffe066'),
       onTime: (t) => gameHandleRef.current?.setTime(t),
       onWeather: (k) => { gameHandleRef.current?.setWeather(k); setWeather(k); },
-      onWhisper: (from, text) => { lastWhisperFromRef.current = from; pushMessage(`[${from} \u2192 you] ${text}`, '#c8a2ff'); },
-      onWhispered: (to, text) => { pendingWhisperRef.current = null; pushMessage(`[you \u2192 ${to}] ${text}`, '#c8a2ff'); },
+      onWhisper: (from, text) => receiveWhisper(from, text),
+      onWhispered: (to, text) => { pendingWhisperRef.current = null; touchChannel(to); pushMessage(`[you \u2192 ${to}] ${text}`, '#c8a2ff'); },
       onWhisperFail: (to) => {
         const p = pendingWhisperRef.current;
         pendingWhisperRef.current = null;
@@ -7030,10 +7599,22 @@ export default function App() {
       onAdminPlayers: (list) => setAdminPlayers(list),
       onMatch: (m) => applyMatch(m),
       onMatchReset: () => gameHandleRef.current?.onlineMatchReset(),
-      onHurt: (hh) => gameHandleRef.current?.hurtByPlayer(hh.dmg, hh.kx, hh.kz, hh.name, hh.by),
+      onHurt: (hh) => gameHandleRef.current?.hurtByPlayer(hh.dmg, hh.kx, hh.kz, hh.name, hh.by, { breach: hh.breach, kbm: hh.kbm }),
       onHurtFx: (id) => gameHandleRef.current?.remoteHurtFx(id),
       onClose: (reason) => {
         if (hostingSelf) { stopHostingRef.current(true); return; } // (only if your own room shut down by itself)
+        if (mpRef.current !== mp) return; // an old connection (replaced already)
+        saveMpProgress();
+        const mig = migratingRef.current;
+        if (mig && gameModeRef.current === 'playing') {
+          // the world moved to another player: join them where it lives now, the game keeps going meanwhile
+          migratingRef.current = null;
+          mpRef.current = null;
+          const h = gameHandleRef.current;
+          for (const k of Object.keys(onlineNamesRef.current)) if (Number(k) !== myNetIdRef.current) h?.removeRemotePlayer(Number(k));
+          window.setTimeout(() => { if (gameModeRef.current === 'playing' && !mpRef.current) { friendJoinErrorRef.current = false; joinServer('p2p:' + mig.room, mig.host); } }, 3000);
+          return;
+        }
         mpRef.current = null;
         setNetStatus('offline');
         onlineNamesRef.current = {};
@@ -7057,7 +7638,7 @@ export default function App() {
   }
 
   // ---------------- Hosting: your world, open to others while you play ----------------
-  type Hosting = { id: string; room: HostRoomLike; peer: { start(): Promise<void>; stop(): void }; worldId: string; privacy: WorldPrivacy; name: string; mode: string; worldType: string; max: number; timer: number; description?: string; image?: string; tags?: string[] };
+  type Hosting = { sid?: string; snapAt?: number; id: string; room: HostRoomLike; peer: { start(): Promise<void>; stop(): void }; worldId: string; privacy: WorldPrivacy; name: string; mode: string; worldType: string; max: number; timer: number; description?: string; image?: string; tags?: string[] };
   const hostingRef = useRef<Hosting | null>(null);
   const [hostingInfo, setHostingInfo] = useState<{ privacy: WorldPrivacy; players: number } | null>(null);
   function publishHosting() {
@@ -7065,6 +7646,16 @@ export default function App() {
     if (!hs || !me) return;
     void publishHostedWorld(me, { id: hs.id, name: hs.name, mode: hs.mode, worldType: hs.worldType, privacy: hs.privacy, players: hs.room.count, max: hs.max, description: hs.description, image: hs.image, tags: hs.tags });
     void setServerPresence('p2p:' + hs.id);
+    if (hs.sid && Date.now() - (hs.snapAt ?? 0) > 60_000) snapshotHosting(hs);
+  }
+  /** Saves a copy of the world you host online, so it can be joined even after you leave (a "sleeping world"). */
+  function snapshotHosting(hs: Hosting): Promise<unknown> {
+    const me = accountRef.current;
+    if (!hs.sid || !me || isGuestName(me.username) || hs.privacy === 'private' || !HOSTABLE_TYPES.includes(hs.worldType as WorldType)) return Promise.resolve();
+    const data = hs.room.snapshot?.();
+    if (!data) return Promise.resolve();
+    hs.snapAt = Date.now();
+    return saveWorldSnapshot({ id: hs.sid, name: hs.name, mode: hs.mode, worldType: hs.worldType, privacy: hs.privacy, max: hs.max, data }).catch(() => null);
   }
   /** Opens the world you're playing to others (unless it's private, you're a guest, or it's a minigame). */
   async function maybeStartHosting() {
@@ -7084,16 +7675,23 @@ export default function App() {
     const worldType = cfg.worldType === 'superflat' ? 'superflat' : 'default';
     const max = playerCap(isOwnerRef.current ? 'star' : myTierRef.current);
     const id = hMod.randomId(16);
+    // every world you open has a saved copy online, so it can be joined even when you are not playing it
+    let sid = cfg.sharedId;
+    if (!sid) { sid = hMod.randomId(16); const made = sid; setSavedWorlds((prev) => prev.map((w) => (w.id === worldId ? { ...w, sharedId: made } : w))); }
     const room = new hMod.HostRoom({
+      sid, owner: cfg.owner,
       seed: activeSeedRef.current, worldType, mode, changes: save.edits, time: save.time, weather: weatherRef.current,
       settings: serverSettingsRef.current, ranks: fakeRanksRef.current, experimental: !!cfg.experimental, privacy, hostName: me.username, maxPlayers: max, bans: cfg.bans ?? [],
       services: roomServices(me),
       ...anticheatOptions(cfg.name),
       onCount: (n: number) => { setHostingInfo((x) => (x ? { ...x, players: n } : x)); publishHosting(); },
       onBans: (bans: string[]) => setSavedWorlds((prev) => prev.map((w) => (w.id === worldId ? { ...w, bans } : w))),
+      roles: cfg.roles ?? {}, worldName: cfg.name,
+      onRoles: (roles: Record<string, 'admin' | 'coowner'>) => setSavedWorlds((prev) => prev.map((w) => (w.id === worldId ? { ...w, roles } : w))),
+      onAnticheat: (a: AcSettings) => setAcSettings(a),
     });
     const peer = new hMod.PeerHost(id, signalingFor(hMod), room);
-    hostingRef.current = { id, room, peer, worldId, privacy, name: cfg.name, mode, worldType, max, timer: 0, description: cfg.description, image: await listImage(cfg.image), tags: cleanTags(cfg.tags) };
+    hostingRef.current = { sid, id, room, peer, worldId, privacy, name: cfg.name, mode, worldType, max, timer: 0, description: cfg.description, image: await listImage(cfg.image), tags: cleanTags(cfg.tags) };
     joinedAddressRef.current = 'p2p:' + id;
     connectWith((mpMod as { MultiplayerClient: new () => MpClient }).MultiplayerClient, undefined, { hostSocket: hMod.loopback(room) });
     setHostingInfo({ privacy, players: 1 });
@@ -7184,7 +7782,7 @@ export default function App() {
       isFriend: (uid: string) => isFriendOf(me.userId, uid),
       isBanned: isBannedName,
       isAdmin: isAdminToken,
-      standing: async (name: string) => { const st = await fetchStanding(name); return { rank: st?.rank ?? 'none', tier: creatorTier(st?.plays ?? 0), og: st?.og === true, staff: st?.staff ?? null }; },
+      standing: async (name: string) => { const st = await fetchStanding(name); return { rank: st?.rank ?? 'none', tier: creatorTier(st?.plays ?? 0), staff: st?.staff ?? null, og: st?.og === true, special: st?.special ?? null }; },
     };
   }
   /** Anti-cheat for a world you host: alerts go to you (chat + Manage Server) and to the admins' report list. */
@@ -7200,6 +7798,91 @@ export default function App() {
     };
   }
 
+  /** Your things in a world you joined (someone else's): kept on this device, so you have them next time. */
+  function saveMpProgress() {
+    const key = mpSaveKeyRef.current, h = gameHandleRef.current;
+    if (!key || !h || ownsWorldRef.current && !handedOverRef.current || isMinigameRef.current || pendingWelcomeRef.current) return;
+    try { localStorage.setItem(key, JSON.stringify(h.getPlayerSave())); } catch { /* storage full or blocked */ }
+  }
+  const saveMpProgressRef = useRef(saveMpProgress);
+  saveMpProgressRef.current = saveMpProgress;
+  useEffect(() => {
+    if (netStatus !== 'online') return;
+    const t = window.setInterval(() => saveMpProgressRef.current(), 15_000);
+    const bye = () => saveMpProgressRef.current();
+    addEventListener('pagehide', bye);
+    return () => { window.clearInterval(t); removeEventListener('pagehide', bye); };
+  }, [netStatus]);
+
+  /** The host left their world and picked you to keep it open: your browser runs it from now on. */
+  async function becomeHost(roomId: string, st: NetHandoff) {
+    const me = accountRef.current, h = gameHandleRef.current;
+    const load = Object.values(multiplayerModules)[0];
+    const [mpMod, hMod] = await Promise.all([load ? load().catch(() => null) : null, loadHosting()]);
+    if (!mpMod || !hMod || !me || !h || gameHandleRef.current !== h || hostingRef.current) return;
+    saveMpProgress();
+    const worldType = st.worldType === 'superflat' ? 'superflat' : 'default';
+    const mode = st.mode === 'creative' || st.mode === 'adventure' ? st.mode : 'survival';
+    const sid = typeof st.sid === 'string' ? st.sid : undefined;
+    const room = new hMod.HostRoom({
+      sid,
+      seed: st.seed, worldType, mode, changes: Array.isArray(st.changes) ? st.changes : [], time: Number(st.time) || 0, weather: st.weather ?? 'clear',
+      settings: { ...DEFAULT_SERVER, ...(st.settings ?? {}) }, ranks: st.ranks, experimental: !!st.experimental, privacy: st.privacy ?? 'public',
+      hostName: me.username, owner: st.owner, roles: st.roles ?? {}, worldName: st.name, maxPlayers: Math.max(2, Math.min(40, Number(st.maxPlayers) || 18)), bans: Array.isArray(st.bans) ? st.bans : [],
+      services: roomServices(me),
+      ...anticheatOptions(st.name),
+      onCount: (n: number) => { setHostingInfo((x) => (x ? { ...x, players: n } : x)); publishHosting(); },
+    });
+    const peer = new hMod.PeerHost(roomId, signalingFor(hMod), room);
+    // the old link to the leaving host closes quietly; remote players come back as they reconnect
+    const old = mpRef.current; mpRef.current = null; old?.disconnect();
+    for (const k of Object.keys(onlineNamesRef.current)) if (Number(k) !== myNetIdRef.current) h.removeRemotePlayer(Number(k));
+    setHandedOver(true);
+    hostingRef.current = { sid, id: roomId, room, peer, worldId: '', privacy: (st.privacy ?? 'public') as WorldPrivacy, name: st.name, mode, worldType, max: Number(st.maxPlayers) || 18, timer: 0, tags: [] };
+    joinedAddressRef.current = 'p2p:' + roomId;
+    connectWith((mpMod as { MultiplayerClient: new () => MpClient }).MultiplayerClient, undefined, { hostSocket: hMod.loopback(room) });
+    setHostingInfo({ privacy: (st.privacy ?? 'public') as WorldPrivacy, players: 1 });
+    peer.start().catch(() => { if (hostingRef.current?.id === roomId) pushMessage("Couldn't keep the world open for others (the matchmaking service didn't answer).", '#ff9a3c'); });
+    publishHosting();
+    hostingRef.current.timer = window.setInterval(publishHosting, 20_000);
+    pushMessage(`The host left, so the world now runs on your device. Others are joining you. If you leave, the next player takes over.`, '#7cfc7c');
+  }
+  const becomeHostRef = useRef(becomeHost);
+  becomeHostRef.current = becomeHost;
+
+  // ---------------- Sleeping worlds ----------------
+  const pendingWakeRef = useRef<{ worldId: string; name: string; changes: Array<[number, number, number, number]>; time: number; weather: WeatherKind } | null>(null);
+  /** Wakes a world whose host left (from the Servers page): you host it from its saved copy. Gives an error message, or null when it starts. */
+  async function wakeSleepingWorld(sid: string): Promise<string | null> {
+    const me = accountRef.current;
+    if (!me || isGuestName(me.username)) return 'Sign in to join worlds.';
+    if (!multiplayerAvailable || !hostingAvailable) return "Hosting isn't installed in this copy of the game.";
+    const r = await claimWorld(sid);
+    if (!r.ok) return r.error;
+    const w = r.world, d = w.data as Record<string, unknown>;
+    const settings = (d.settings ?? {}) as Partial<ServerSettings>;
+    const mode: WorldMode = w.mode === 'creative' || w.mode === 'adventure' ? w.mode : 'survival';
+    const existing = savedWorldsRef.current.find((x) => x.sharedId === sid);
+    const id = existing?.id ?? newWorldId();
+    const config: WorldConfig = {
+      ...(existing ?? { image: mode === 'creative' ? '/images/creative-bg.jpg' : '/images/survival-bg.jpg', tag: 'Shared', accent: '#00e676', createdAt: Date.now(), playSeconds: 0 }),
+      name: w.name, mode, worldType: w.worldType === 'superflat' ? 'superflat' : 'default', seed: Number(d.seed) || 0, id,
+      difficulty: (settings.difficulty as Difficulty | undefined) ?? 'normal', keepInventory: !!settings.keepInventory,
+      creator: w.owner, owner: w.owner, sharedId: sid, experimental: !!d.experimental, privacy: w.privacy,
+      bans: Array.isArray(d.bans) ? (d.bans as string[]) : [], roles: (d.roles ?? {}) as WorldConfig['roles'], lastPlayed: Date.now(),
+    };
+    setSavedWorlds((prev) => (prev.some((x) => x.id === id) ? prev.map((x) => (x.id === id ? config : x)) : [...prev, config]));
+    savedWorldsRef.current = savedWorldsRef.current.some((x) => x.id === id) ? savedWorldsRef.current.map((x) => (x.id === id ? config : x)) : [...savedWorldsRef.current, config];
+    try { localStorage.removeItem(`vb-save-${id}`); } catch { /* storage blocked */ } // the saved copy online is the truth now
+    pendingWakeRef.current = { worldId: id, name: w.name, changes: Array.isArray(d.changes) ? (d.changes as Array<[number, number, number, number]>) : [], time: Number(d.time) || 0, weather: (d.weather as WeatherKind) ?? 'clear' };
+    if (!startGuard()) { pendingWakeRef.current = null; return 'Hold on a second and try again.'; }
+    beginWorld(config);
+    return null;
+  }
+  const wakeSleepingWorldRef = useRef(wakeSleepingWorld);
+  wakeSleepingWorldRef.current = wakeSleepingWorld;
+  useEffect(() => { setWorldWaker((id) => wakeSleepingWorldRef.current(id)); return () => setWorldWaker(null); }, []);
+
   /** Closes your world to others. stillPlaying: you stay in it (it was made private). */
   function stopHosting(stillPlaying: boolean) {
     const hs = hostingRef.current;
@@ -7207,9 +7890,20 @@ export default function App() {
     hostingRef.current = null;
     setHostingInfo(null);
     window.clearInterval(hs.timer);
-    hs.peer.stop();
+    // Leaving (not just closing the door): the world stays open, run by another player
+    let handedTo: string | null = null;
+    // the saved copy first (everything up to now), so the world can be joined after you are gone
+    const saved = hs.sid ? snapshotHosting({ ...hs, snapAt: 0 }) : Promise.resolve();
+    if (!stillPlaying && hs.room.handOff && hs.privacy !== 'private') { try { handedTo = hs.room.handOff(randomRoomId()); } catch { handedTo = null; } }
+    if (hs.sid) {
+      const sid = hs.sid;
+      if (stillPlaying) void saved.then(() => deleteWorldSnapshot(sid)); // closing the door: no saved copy for others
+      else if (handedTo) void saved.then(() => transferWorld(sid, handedTo!)); // the next player keeps it up to date
+      else void saved.then(() => releaseWorld(sid)); // nobody else here: the world goes to sleep, and anyone can wake it
+    }
+    if (handedTo) window.setTimeout(() => hs.peer.stop(), 2600); else hs.peer.stop();
     if (mpRef.current) { mpRef.current.disconnect(); mpRef.current = null; }
-    hs.room.stop();
+    if (!handedTo) hs.room.stop();
     void unpublishHostedWorld(hs.id);
     void setServerPresence(null);
     joinedAddressRef.current = null;
@@ -7281,12 +7975,14 @@ export default function App() {
     joinServer(friend.server, friend.username);
   }
   useEffect(() => { if (netStatus !== 'connecting') setJoiningFriend(false); }, [netStatus]);
+  const joinFriendRef = useRef(joinFriend);
+  joinFriendRef.current = joinFriend;
 
   // Online: send our position ~10 times a second, plus any blocks we changed
   useEffect(() => {
     if (gameMode !== 'playing' || netStatus !== 'online') return;
     let last = '';
-    const t = setInterval(() => {
+    const t = setBgInterval(() => { // (a background-proof timer: other players still see you while this tab is hidden)
       const h = gameHandleRef.current;
       const mp = mpRef.current;
       if (!h || !mp || !mp.connected) return;
@@ -7299,7 +7995,11 @@ export default function App() {
       const blocks = h.takeBlockChanges();
       if (blocks.length) mp.sendBlocks(blocks);
     }, 100);
-    return () => clearInterval(t);
+    // Items you throw show up for everyone, and the server decides who picks each one up
+    const h0 = gameHandleRef.current;
+    h0?.onDropThrown((d) => mpRef.current?.sendDrop(d));
+    h0?.onPickupRequest((n) => mpRef.current?.sendPickup(n));
+    return () => { clearBgInterval(t); h0?.onDropThrown(null); h0?.onPickupRequest(null); };
   }, [gameMode, netStatus]);
 
   // Hold Tab to see who's online
@@ -7872,6 +8572,12 @@ export default function App() {
         openPanel();
         return;
       }
+    } else if (text && chatChannelRef.current && channelSeenRef.current[chatChannelRef.current.toLowerCase()]) {
+      const ch = channelSeenRef.current[chatChannelRef.current.toLowerCase()];
+      touchChannel(ch.name); // writing in a channel keeps it open
+      sendWhisper(ch.name, text); // in a private channel: it goes to that person
+      closeChat();
+      return;
     } else if (text) {
       runnerRef.current?.emit('chat', { text });
       // Online, the server echoes chat back to everyone (you included)
@@ -8015,6 +8721,22 @@ export default function App() {
       void (cmd === 'friend' ? addFriend(me, args[0]) : unfriendByName(me, args[0])).then((r) => (r.ok ? info(r.message) : err(r.error)));
       return;
     }
+    if (cmd === 'join') {
+      // /join <friend>: go to the world a friend is playing in right now
+      if (!me || isGuestName(me.username)) { err('Sign in to join friends (open the Social tab in the menu).'); return; }
+      if (!args[0]) { err('Usage: /join <friend>'); return; }
+      void loadFriends(me.userId).then((r) => {
+        if (!r.ok) { err(r.error); return; }
+        const f = r.friends.find((x) => x.username.toLowerCase() === args[0].toLowerCase());
+        if (!f) { err(`${args[0]} isn't your friend. Add them with /friend ${args[0]}`); return; }
+        if (!f.server) { err(`${f.username} isn't in a world you can join right now${f.online ? ' (they may be in a private world or the menus)' : ''}`); return; }
+        if (joinedAddressRef.current === f.server) { info(`You're already in ${f.username}'s world`); return; }
+        info(`Joining ${f.username}…`);
+        exitToHomeRef.current();
+        window.setTimeout(() => joinFriendRef.current(f), 400);
+      });
+      return;
+    }
     if (cmd === 'r' || cmd === 'reply') {
       const to = lastWhisperFromRef.current;
       if (!to) { err('Nobody has whispered to you yet'); return; }
@@ -8088,6 +8810,24 @@ export default function App() {
       if (!r.some((t) => t.who === 'you')) { err(r.some((t) => t.who === 'mob') ? `You can't ${what} a mob` : `You can only ${what} yourself here. Admins can manage other players with /panel.`); return null; }
       return true;
     };
+    /** The host can also reach other players (@a, @p, a name): the command is sent to their game and runs there. */
+    const iAmHost = !!mpRef.current?.connected && (hostId === myNetIdRef.current || roleLevel(myRoleRef.current) >= 1); // the host, and world admins (cheats)
+    const reach = (tok: string | undefined, what: string): { you: boolean; others: string[] } | null => {
+      if (tok === undefined) return { you: true, others: [] };
+      const r = resolve(tok);
+      if (typeof r === 'string') { err(r); return null; }
+      if (!r.length) { err('No targets matched that selector'); return null; }
+      const you = r.some((t) => t.who === 'you');
+      const others = r.filter((t) => t.who === 'player').map((t) => t.name);
+      if (!you && !others.length) { err(`You can't ${what} a mob`); return null; }
+      if (others.length && !iAmHost) {
+        if (!you) { err(`Only the host can ${what} other players. Admins can manage players with /panel.`); return null; }
+        return { you, others: [] };
+      }
+      return { you, others };
+    };
+    const sendOthers = (rc: { others: string[] }, c: string, a: Record<string, unknown>) => { for (const n of rc.others) mpRef.current?.sendRemoteCmd(n, c, a); };
+    const toldOthers = (rc: { others: string[] }, text: string) => { if (rc.others.length) info(`${text} ${rc.others.length === 1 ? rc.others[0] : rc.others.length + ' players'}`); };
     if (ctx && (cmd === 'help' || cmd === '?')) { info('Command blocks run commands; /help is for chat.'); return; }
     if (cmd === 'screenshot' || cmd === 'ss') { // harmless, so it works in every world, minigame and server
       if (ctx) { err('That command only works in chat'); return; }
@@ -8098,16 +8838,49 @@ export default function App() {
       });
       return;
     }
-    const SOCIAL = ['friend', 'friends', 'unfriend', 'whisper', 'w', 'msg', 'tell', 'r', 'reply', 'panel'];
+    const SOCIAL = ['friend', 'friends', 'unfriend', 'whisper', 'w', 'msg', 'tell', 'r', 'reply', 'panel', 'join'];
     if (SOCIAL.includes(cmd)) {
       if (ctx) { err('That command only works in chat'); return; }
       return runSocialCommand(cmd, args);
     }
+    if (cmd === 'promote' || cmd === 'demote' || cmd === 'roles') {
+      if (ctx) { err('That command only works in chat'); return; }
+      const mp = mpRef.current;
+      if (cmd === 'roles') {
+        const list = Object.entries(netRolesRef.current).sort((a, b) => roleLevel(b[1] as ServerRole) - roleLevel(a[1] as ServerRole));
+        info(list.length ? `Roles here: ${list.map(([n, r]) => `${n} (${ROLE_LABELS[r as ServerRole] ?? r})`).join(', ')}` : 'Nobody has a role in this world yet. The owner can use /promote <player> admin');
+        return;
+      }
+      if (!mp?.connected || isMinigameRef.current) { err('Roles are for worlds other players can join. Open your world (Manage Server > Who can join), then promote players.'); return; }
+      const who = args[0];
+      const to = cmd === 'demote' ? 'none' : (args[1] ?? 'admin').toLowerCase().replace(/[-_ ]/g, '');
+      if (!who || !['admin', 'coowner', 'none'].includes(to)) { err(cmd === 'demote' ? 'Usage: /demote <player>' : 'Usage: /promote <player> <admin|coowner>'); return; }
+      if (roleLevel(myRoleRef.current) < 2) { err('Only the owner and co-owners can promote players'); return; }
+      mp.sendPromote(who, to as 'admin' | 'coowner' | 'none'); // the world answers in chat
+      return;
+    }
+    if (cmd === 'globalban' || cmd === 'globalunban' || cmd === 'gban' || cmd === 'gunban') {
+      if (ctx) { err('That command only works in chat'); return; }
+      const me = accountRef.current;
+      if (!me || !canModerateRef.current) { err('Only VibeBlox staff ([HELPER], [MOD]) and admins can ban players from VibeBlox'); return; }
+      const who = args[0];
+      if (!who) { err(`Usage: /${cmd} <player>${cmd.includes('un') ? '' : ' [reason]'}`); return; }
+      if (cmd === 'globalunban' || cmd === 'gunban') { void unbanEverywhere(who).then((r) => (r.ok ? info(`${who} can play VibeBlox again`) : err(r.error))); return; }
+      void banEverywhere(me, who, args.slice(1).join(' ')).then((r) => {
+        if (!r.ok) { err(r.error); return; }
+        info(`${who} is banned from VibeBlox`);
+        if (mpRef.current?.connected) mpRef.current.sendAdmin(me.token, 'kick', { name: who }); // and out of this world now
+      });
+      return;
+    }
     if (cmd === 'kick' || cmd === 'ban') {
       if (ctx) { err('That command only works in chat'); return; }
       if (!args[0]) { err(`Usage: /${cmd} <player>`); return; }
-      if (canModerateRef.current && accountRef.current && mpRef.current?.connected) mpRef.current.sendAdmin(accountRef.current.token, cmd, { name: args[0] }); // the server answers in chat
-      else err('Only staff and admins can use /' + cmd + ' (hosts: use Manage Server)');
+      const mp = mpRef.current;
+      const worldPower = !!mp?.connected && !isMinigameRef.current && (roleLevel(myRoleRef.current) >= 1 || hostId === myNetIdRef.current);
+      if (worldPower) mp!.sendMod(cmd, args[0]); // world admins, co-owners and the owner (the world answers in chat)
+      else if (canModerateRef.current && accountRef.current && mp?.connected) mp.sendAdmin(accountRef.current.token, cmd, { name: args[0] }); // VibeBlox staff
+      else err(mp?.connected ? `Only this world's admins and staff can use /${cmd}` : 'Kick and ban are for players in your world (multiplayer)');
       return;
     }
     if (cmd === 'mute' || cmd === 'unmute' || cmd === 'mutes') {
@@ -8126,11 +8899,12 @@ export default function App() {
       if (!who) { err('Usage: /pardon <player>'); return; }
       if (ownsWorldRef.current) {
         if (unbanName(who)) info(`${who} can join this world again`); else err(`${who} isn't banned from this world`);
-      } else if (canModerateRef.current && accountRef.current && mpRef.current?.connected) mpRef.current.sendAdmin(accountRef.current.token, 'unban', { name: who }); // the server answers in chat
+      } else if (roleLevel(myRoleRef.current) >= 1 && mpRef.current?.connected) mpRef.current.sendMod('unban', who);
+      else if (canModerateRef.current && accountRef.current && mpRef.current?.connected) mpRef.current.sendAdmin(accountRef.current.token, 'unban', { name: who }); // the server answers in chat
       else err(isMinigameRef.current ? t('restricted.minigame') : t('restricted.world'));
       return;
     }
-    const staffPower = canModerateRef.current && !!accountRef.current; // admins and staff use commands in every world
+    const staffPower = (canModerateRef.current && !!accountRef.current) || roleLevel(myRoleRef.current) >= 1; // VibeBlox admins and staff use commands in every world; world admins in theirs
     if (!ownsWorldRef.current && !staffPower && cmd !== 'help' && cmd !== '?') { err(isMinigameRef.current ? t('restricted.minigame') : t('restricted.world')); return; } // no cheats in minigames or other people's worlds
     if (!serverSettingsRef.current.commands && !staffPower && cmd !== 'help' && cmd !== '?') { err('Commands are turned off on this server (Manage Server).'); return; }
 
@@ -8264,9 +9038,10 @@ export default function App() {
         for (const t of movers) {
           if (t.who === 'you') { h.teleport(dest.x, dest.y, dest.z); moved++; }
           else if (t.who === 'mob') { if (h.teleportEntity(t.id, dest.x, dest.y, dest.z)) moved++; }
+          else if (iAmHost) { mpRef.current?.sendRemoteCmd(t.name, 'tp', { x: dest.x, y: dest.y, z: dest.z }); moved++; }
           else refused.push(t.name);
         }
-        if (refused.length && !moved) { err(`You can only teleport yourself and mobs, not ${refused.join(', ')}`); return; }
+        if (refused.length && !moved) { err(`Only the host can teleport other players (not ${refused.join(', ')})`); return; }
         info(movers.length === 1 && movers[0].who === 'you' ? `Teleported to ${dest.label}` : `Teleported ${moved} ${moved === 1 ? 'target' : 'targets'} to ${dest.label}`);
         return;
       }
@@ -8275,18 +9050,23 @@ export default function App() {
           err(`Usage: /give <player> <item> [count]   e.g. /give @p diamond 5${args[0] && !isTargetToken(args[0]) ? ` (say who gets it: /give @s ${args.join(' ')})` : ''}`);
           return;
         }
-        if (!onlyYou(args[0], 'give items to')) return;
+        const rc = reach(args[0], 'give items to');
+        if (!rc) return;
         args.shift(); // the rest is just like before: item, count / enchantment, level
         let id = itemIdFromName(args[0]);
         if (id === null) {
           err(`Unknown item "${args[0]}". Names look like: dirt, planks, stone_pickaxe, diamond`);
           return;
         }
+        const rawId = id;
         if (isPlayerHeadItem(id)) id = playerHeadItem(currentLook().skin); // a player head shows your own skin
         if (id === ITEM_ENCHANTED_BOOK) { // /give enchanted_book [enchantment] [level]
           const def = args[1] ? findEnchantment(args[1]) : undefined;
           if (args[1] && !def) { err(`Unknown enchantment "${args[1]}". Try: ${ENCHANTMENTS.map((d) => d.key).join(', ')}`); return; }
           const level = def ? Math.max(1, Math.min(def.max, parseInt(args[2] ?? '1', 10) || 1)) : 0;
+          sendOthers(rc, 'give', { id, count: 1, ...(def ? { ench: { [def.key]: level } } : {}) });
+          toldOthers(rc, 'Gave an enchanted book to');
+          if (!rc.you) return;
           const inv = h.getInventory();
           const left = addStackToSlots(inv, def ? { id, count: 1, ench: { [def.key]: level } } : { id, count: 1 });
           if (left > 0) { err('Your inventory is full'); return; }
@@ -8295,16 +9075,25 @@ export default function App() {
           return;
         }
         const count = Math.max(1, Math.min(64 * 36, parseInt(args[1] ?? '1', 10) || 1));
+        sendOthers(rc, 'give', { id: rawId, count });
+        toldOthers(rc, `Gave ${count} [${ITEM_INFO[rawId].name}] to`);
+        if (!rc.you) return;
         const given = h.addItem(id, count);
         if (given === 0) err('Your inventory is full');
         else info(`Gave ${given} [${ITEM_INFO[id].name}]`);
         return;
       }
       case 'clear':
-        if (!onlyYou(args[0], 'clear the inventory of')) return;
+      {
+        const rc = reach(args[0], 'clear the inventory of');
+        if (!rc) return;
+        sendOthers(rc, 'clear', {});
+        toldOthers(rc, 'Cleared the inventory of');
+        if (!rc.you) return;
         h.clearInventory();
         info('Cleared your inventory');
         return;
+      }
       case 'kill': {
         const r = resolve(args[0] ?? '@s');
         if (typeof r === 'string') { err(r); return; }
@@ -8375,18 +9164,26 @@ export default function App() {
         let a = [...args];
         if ((a[0] ?? '').toLowerCase() === 'give') a = a.slice(1); // Minecraft's /effect give @p speed works too
         if ((a[0] ?? '').toLowerCase() === 'clear') {
-          if (!onlyYou(a[1], 'clear the effects of')) return;
+          const rcc = reach(a[1], 'clear the effects of');
+          if (!rcc) return;
+          sendOthers(rcc, 'effclear', {});
+          toldOthers(rcc, 'Removed every effect from');
+          if (!rcc.you) return;
           h.clearEffects();
           info('Removed every effect');
           return;
         }
         if (a.length < 2) { err(usage); return; }
-        if (!onlyYou(a[0], 'give effects to')) return;
+        const rce = reach(a[0], 'give effects to');
+        if (!rce) return;
         const name = a[1].toLowerCase().replace(/^minecraft:/, '');
         if (!effects.includes(name)) { err(`Unknown effect "${a[1]}". ${usage}`); return; }
         const secs = a[2] === undefined ? 30 : Number(a[2]);
         const level = a[3] === undefined ? 1 : Number(a[3]);
         if (!(secs > 0) || !(level >= 1)) { err(usage); return; }
+        sendOthers(rce, 'effect', { name, secs: Math.min(3600, secs), level: Math.min(5, Math.floor(level)) });
+        toldOthers(rce, `Gave ${name.replace('_', ' ')} to`);
+        if (!rce.you) return;
         h.giveEffect(name, Math.min(3600, secs), Math.min(5, Math.floor(level)));
         info(`Gave you ${name.replace('_', ' ')} ${Math.floor(level)} for ${Math.round(Math.min(3600, secs))} seconds`);
         return;
@@ -8404,10 +9201,11 @@ export default function App() {
         return;
       }
       case 'weather': {
-        const kind = (args[0] ?? '').toLowerCase();
+        const raw = (args[0] ?? '').toLowerCase();
+        const kind = raw === 'storm' || raw === 'thunderstorm' ? 'thunder' : raw;
         const secs = args[1] === undefined ? undefined : Number(args[1]);
-        if ((kind !== 'clear' && kind !== 'rain' && kind !== 'snow') || (secs !== undefined && !(secs > 0))) {
-          err('Usage: /weather <clear|rain|snow> [seconds]');
+        if ((kind !== 'clear' && kind !== 'rain' && kind !== 'snow' && kind !== 'thunder') || (secs !== undefined && !(secs > 0))) {
+          err('Usage: /weather <clear|rain|thunder|snow> [seconds]');
           return;
         }
         if (h.getDebugInfo().dimension !== 'overworld') info('There is no weather here. It will show when you go back to the Overworld.');
@@ -8449,11 +9247,15 @@ export default function App() {
       case 'experience': {
         // /xp 30 (points)  ·  /xp 5 levels  ·  /xp set 10  (a player or selector anywhere, e.g. /xp 5 levels @p)
         const who = args.findIndex((a) => isTargetToken(a) || a.startsWith('@'));
-        if (who >= 0) { if (!onlyYou(args[who], 'give experience to')) return; args.splice(who, 1); }
+        let rcx: { you: boolean; others: string[] } = { you: true, others: [] };
+        if (who >= 0) { const got = reach(args[who], 'give experience to'); if (!got) return; rcx = got; args.splice(who, 1); }
         const setTo = args[0]?.toLowerCase() === 'set';
         const n = Number(setTo ? args[1] : args[0]);
         const levels = setTo || /^l(evels?)?$/i.test(args[1] ?? '');
         if (!Number.isFinite(n) || n < 0 || n > 100000) { err('Usage: /xp <amount> [levels]  or  /xp set <level>'); return; }
+        sendOthers(rcx, 'xp', { mode: setTo ? 'set' : levels ? 'levels' : 'points', n: Math.floor(n) });
+        toldOthers(rcx, 'Changed the experience of');
+        if (!rcx.you) return;
         if (setTo) { h.setXpLevel(Math.floor(n)); info(`Set your level to ${Math.floor(n)}`); return; }
         if (levels) { h.setXpLevel(h.getXp().level + Math.floor(n)); info(`Gave you ${Math.floor(n)} levels`); return; }
         h.addXp(Math.floor(n));
@@ -8564,6 +9366,9 @@ export default function App() {
     setSavedWorlds((prev) => prev.filter((w) => (world.id ? w.id !== world.id : w !== world)));
     if (world.id) { try { localStorage.removeItem(`vb-save-${world.id}`); } catch { /* storage blocked */ } }
     if (world.id) clearAdvancements(world.id);
+    // deleting a planet you own also removes its saved copy online (a world someone else owns stays for them)
+    const gone = savedWorldsRef.current.find((w) => w.id === world.id);
+    if (gone?.sharedId && (!gone.owner || gone.owner.toLowerCase() === currentUsername.toLowerCase())) void deleteWorldSnapshot(gone.sharedId);
   }
 
   const guestNow = (accountChecked || authWaitOver) && (!account || isGuestName(account.username));
@@ -8591,7 +9396,7 @@ export default function App() {
   }
 
   function handleSaveWorld(config: WorldConfig) {
-    if (savedWorlds.length >= planetLimit) { setHint(`You've reached your limit of ${planetLimit} planets (${myOg && myPerk !== myRank ? 'OG' : myStaff ? myStaff.toUpperCase() : RANK_NAMES[myPerk]}). Delete one to make a new one.`); return; }
+    if (savedWorlds.length >= planetLimit) { setHint(`You've reached your limit of ${planetLimit} planets (${myStaff && myPerk !== myRank ? myStaff.toUpperCase() : RANK_NAMES[myPerk]}). Delete one to make a new one.`); return; }
     if (!startGuard()) return;
     const made: WorldConfig = { ...config, creator: currentUsername || 'Guest', createdAt: Date.now(), lastPlayed: Date.now(), playSeconds: 0 };
     setSavedWorlds((prev) => [...prev, made]);
@@ -8640,6 +9445,8 @@ export default function App() {
     activityRef.current = typeof activity === 'string' ? activity : null;
     setGameMode('playing');
   }
+  // The phone's PLAY NOW button and the browser tests use this to start a quick, unsaved survival game
+  useEffect(() => { (window as unknown as { __vbPlayNow?: () => void }).__vbPlayNow = () => handlePlayNow(); });
   // While you play, tell everyone what (every 30 seconds; it stops counting you about a minute after you leave)
   useEffect(() => {
     if (gameMode !== 'playing') return;
@@ -8686,7 +9493,13 @@ export default function App() {
 
   function handleExitGame() {
     saveWorldNow(); // save before the world is thrown away
-    stopHosting(false); // everyone in your world is sent home
+    saveMpProgress(); // (your things in someone else's world)
+    migratingRef.current = null;
+    stopHosting(false); // your world stays open: another player keeps it running (or everyone goes home)
+    setNetRoles({});
+    setHandedOver(false);
+    setRemoteAc(null);
+    mpSaveKeyRef.current = null;
     onlineMgRef.current = null;
     arenaVariantRef.current = undefined;
     matchRef.current = null;
@@ -8726,8 +9539,15 @@ export default function App() {
 
   return (
     <AccountSummaryContext.Provider value={{ username: account?.username ?? '', signedIn: !!account && !isGuestName(account.username), isOwner: isOwnerAccount, isAdmin: !!admin, openAdmin: () => openPanel() }}>
-    <StandingContext.Provider value={{ rank: myPerk, rising, tier: myTier, isOwner: isOwnerAccount, standing, signedIn: !!account && !isGuestName(account.username), guest: (accountChecked || authWaitOver) && (!account || isGuestName(account.username)) }}>
+    <StandingContext.Provider value={{ nameTags: badgeTags({ owner: isOwnerAccount, rank: myRank, staff: myStaff, og: myOg, special: mySpecial }), rank: myPerk, rising, tier: myTier, isOwner: isOwnerAccount, standing, signedIn: !!account && !isGuestName(account.username), guest: (accountChecked || authWaitOver) && (!account || isGuestName(account.username)) }}>
       <DailyUiContext.Provider value={{ openDaily: () => setShowDaily(true) }}>
+      {outsideNotice && (
+        <div className="fixed top-3 left-1/2 -translate-x-1/2 z-[9999] max-w-[92vw] w-[520px] rounded-xl border border-[#ff9800]/50 bg-[#1c1408]/95 px-4 py-3 shadow-xl" data-testid="outside-script-notice" role="alert">
+          <div className="text-[#ffb74d] text-sm font-bold">An outside script is running in this page</div>
+          <div className="text-[#d9b98a] text-xs mt-1">{outsideNotice.map((f) => FLAG_LABELS[f as Flag] ?? f).join('. ')}. Worlds you join online are told about it, and the game may act oddly. If it is not yours, turn it off and reload.</div>
+          <button onClick={() => setOutsideNotice(null)} data-testid="outside-script-dismiss" className="mt-2 px-3 py-1 rounded-md bg-[#ff9800]/20 text-[#ffb74d] text-xs font-bold">Got it</button>
+        </div>
+      )}
       {/* Persistent soundtrack element — lives at the App level (not inside
           any view) so it keeps playing across sidebar navigation and while
           the game itself is running. */}
@@ -8803,8 +9623,9 @@ export default function App() {
           netStatus={netStatus}
           netError={netError}
         />
-        {!compactLayout && <ProfilePanel username={currentUsername} onPlayNow={handlePlayNow} onOpenLeaderboard={() => handleNavClick('leaderboard')} />}
+        {!compactLayout && <ProfilePanel username={currentUsername} onOpenLeaderboard={() => handleNavClick('leaderboard')} />}
         {showModal && <LoginOverlay onGuest={handleGuest} onClose={username ? () => setShowModal(false) : undefined} />}
+        {profileName && <ProfileModal name={profileName} me={account} onClose={() => setProfileName(null)} />}
       </div>
 
       <div
@@ -8818,6 +9639,22 @@ export default function App() {
           className={`w-full h-full ${showMenu ? 'hidden' : 'block'}`}
         />
         {!showMenu && <GameOverlay />}
+        {!showMenu && askOptimise && (
+          <div className="absolute inset-0 z-[70] flex items-center justify-center bg-black/50 vb-fade-in" data-testid="optimise-fps">
+            <div className="w-[360px] max-w-[92vw] rounded-2xl bg-[#121822] border border-[#243044] p-5 text-center vb-themed">
+              <h3 className="font-[var(--font-retro)] text-white text-sm mb-2">Optimise FPS?</h3>
+              <p className="text-[#8ea0b8] text-xs mb-4">VibeBlox is running slowly on this device. Switch to Low graphics to make it smoother? You can change it back in Settings &gt; Video.</p>
+              <div className="flex gap-2">
+                <button data-testid="optimise-yes" onClick={() => { setAskOptimise(false); setGraphicsQuality('low'); if (renderDistance > 6) setRenderDistance(6); pushMessage('Switched to Low graphics for a smoother game.', '#7cfc7c'); gameHandleRef.current?.relock(); }}
+                  className="flex-1 py-2.5 rounded-xl bg-[#00e676] text-[#0a0e14] text-sm font-bold">Yes</button>
+                <button data-testid="optimise-no" onClick={() => { setAskOptimise(false); gameHandleRef.current?.relock(); }}
+                  className="flex-1 py-2.5 rounded-xl bg-[#1a2230] border border-[#364860] text-white text-sm font-bold">No</button>
+              </div>
+              <button data-testid="optimise-never" onClick={() => { setAskOptimise(false); try { localStorage.setItem('vb-fps-never', '1'); } catch { /* storage blocked */ } gameHandleRef.current?.relock(); }}
+                className="mt-3 text-[#5a6b80] text-[11px] underline">Don't ask again</button>
+            </div>
+          </div>
+        )}
         {!showMenu && <GameHUD xp={xpState} inventory={inventory} offhand={offhand} armor={armor} health={health} hunger={hunger} selectedSlot={selectedSlot} mode={playMode} air={air} blighted={effectsList.some((e) => e.name === 'blight')} onPick={touchOn && !inventoryOpen && !menuOpen ? (i) => setSelectedSlot(i) : undefined} />}
         {!showMenu && touchOn && (
           <TouchControls
@@ -8825,10 +9662,12 @@ export default function App() {
             onMenu={() => openGameMenu()}
             onChat={() => openChat('')}
             creative={playMode === 'creative'}
+            onPlayers={netStatus === 'online' ? () => setShowPlayerList((v) => !v) : undefined}
+            playersOn={showPlayerList}
             paused={menuOpen || inventoryOpen || chatOpen || helpOpen || !!deathReason || !!trading || !!cmdBlock || !!disconnectReason || panelOpen}
           />
         )}
-        {!showMenu && touchOn && !menuOpen && <RotateHint />}
+        {!showMenu && touchOn && <RotateHint />}
         {!showMenu && touchOn && (inventoryOpen || chatOpen) && (
           <button data-testid="touch-close"
             onClick={() => { if (chatOpen) closeChat(false); else { const c = getBinds().inventory; document.dispatchEvent(new KeyboardEvent('keydown', { code: c, key: c, bubbles: true })); document.dispatchEvent(new KeyboardEvent('keyup', { code: c, key: c, bubbles: true })); } }}
@@ -8909,6 +9748,9 @@ export default function App() {
             history={chatHistory}
             onSubmit={submitChat}
             restricted={!ownsWorld}
+            channels={chatChannels}
+            channel={chatChannel}
+            onChannel={switchChannel}
           />
         )}
         {!showMenu && helpOpen && (
@@ -8924,6 +9766,7 @@ export default function App() {
             style={{ opacity: hurtFlash ? 1 : 0, background: 'radial-gradient(ellipse at center, rgba(0,0,0,0) 45%, rgba(200,0,0,0.55) 100%)' }}
           />
         )}
+        {!showMenu && burning && <BurnOverlay />}
         {!showMenu && advToasts.length > 0 && <AdvancementToasts toasts={advToasts} />}
         {!showMenu && scoped && (
           <div className="absolute inset-0 z-10 pointer-events-none" style={{ background: 'radial-gradient(circle at center, transparent 0, transparent 36vh, rgba(0,0,0,0.97) calc(36vh + 2px))' }}>
@@ -8963,7 +9806,7 @@ export default function App() {
         {!showMenu && <NowPlayingToast />}
         {!showMenu && <AttackIndicator getCharge={() => gameHandleRef.current?.getAttackCharge?.() ?? 1} />}
         {!showMenu && <LookingAtLabel getName={() => gameHandleRef.current?.getTargetName() ?? ''} paused={chatOpen || helpOpen || inventoryOpen} />}
-        {!showMenu && showPlayerList && netStatus === 'online' && <PlayerList players={onlinePlayers} myId={myNetIdRef.current} max={serverMax} tagOf={tagsFor} />}
+        {!showMenu && showPlayerList && netStatus === 'online' && <PlayerList players={onlinePlayers} myId={myNetIdRef.current} max={serverMax} tagOf={tagsFor} roles={netRoles} />}
         {!showMenu && disconnectReason !== null && <DisconnectedScreen reason={disconnectReason} onExit={leaveDisconnected} />}
         {!showMenu && deathReason !== null && (
           <DeathScreen reason={deathReason} onRespawn={handleRespawn} onExit={exitToHome} hardcore={hardcore} />
@@ -8979,10 +9822,10 @@ export default function App() {
             onOpenServer={() => setMenuPage('server')}
             onOpenAdvancements={() => setMenuPage('advancements')}
             onOpenSchematics={() => setMenuPage('schematics')}
-            showSchematics={ownsWorld}
-            showScripts={ownsWorld && serverSettings.scripts}
+            showSchematics={ownsWorld || roleLevel(myRole) >= 2}
+            showScripts={!isMinigame && (ownsWorld ? serverSettings.scripts && serverSettings.scriptPerm !== 'off' : canRunScripts(serverSettings.scriptPerm, serverSettings.scripts, myRole))}
             showMods={ownsWorld && serverSettings.mods}
-            showServer={ownsWorld}
+            showServer={ownsWorld || roleLevel(myRole) >= 1}
             showAdvancements={advAllowed}
             onBack={() => setMenuPage('main')}
             onExit={exitToHome}
@@ -9024,7 +9867,10 @@ export default function App() {
                 settings={serverSettings}
                 hardcore={hardcore}
                 online={!!mpRef.current?.connected}
-                isHost={!mpRef.current?.connected || hostId === myNetId}
+                isHost={!mpRef.current?.connected || (hostId === myNetId && !handedOver)}
+                role={!mpRef.current?.connected || (hostId === myNetId && !handedOver) ? 'owner' : myRole}
+                roles={netRoles}
+                onPromote={(n, to) => mpRef.current?.sendPromote(n, to)}
                 players={Object.entries(onlinePlayers).map(([id, name]) => ({ id: Number(id), name }))}
                 myId={myNetId}
                 hostId={hostId}
@@ -9037,7 +9883,7 @@ export default function App() {
                 onTime={(t) => { changeTime(t); }}
                 onWeather={(k) => { changeWeather(k); }}
                 anticheat={
-                  <AntiCheatPanel settings={acSettings} onChange={setAcSettings} alerts={cheatAlerts} hosting={!!hostingInfo}
+                  <AntiCheatPanel settings={hostingInfo ? acSettings : remoteAc ?? acSettings} onChange={(a) => { if (hostingInfo || !remoteAc) setAcSettings(a); else mpRef.current?.sendAnticheat(a); }} alerts={cheatAlerts} onDismiss={(a) => setCheatAlerts((prev) => prev.filter((x) => x !== a))} onClear={() => setCheatAlerts([])} hosting={!!hostingInfo || !!remoteAc}
                     onKick={(n) => { const id = (Object.entries(onlinePlayers) as Array<[string, string]>).find(([, nm]) => nm.toLowerCase() === n.toLowerCase())?.[0]; if (id) mpRef.current?.kick(Number(id)); }}
                     onBan={(n) => { const id = (Object.entries(onlinePlayers) as Array<[string, string]>).find(([, nm]) => nm.toLowerCase() === n.toLowerCase())?.[0]; if (id) mpRef.current?.ban(Number(id)); }} />
                 }

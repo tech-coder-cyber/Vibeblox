@@ -1,0 +1,149 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(https://gstatic.com) format('truetype');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url(https://gstatic.com) format('truetype');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url(https://gstatic.com) format('truetype');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url(https://gstatic.com) format('truetype');
+}
+@font-face {
+  font-family: 'Press Start 2P';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(https://gstatic.com) format('truetype');
+}
+@font-face {
+  font-family: 'Russo One';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(https://gstatic.com) format('truetype');
+}
+
+/* A stack of settings cards: even spacing, no extra gap above the first one */
+.vb-stack { display: flex; flex-direction: column; gap: 1.5rem; }
+.vb-stack > * { margin-top: 0 !important; }
+
+/* ---------------- Light mode ----------------
+   Settings > Video > Theme (or the sun button in the Admin panel) switches the menus to light colours.
+   Only things inside an element with the class "vb-themed" change; the game view never does. */
+html.vb-light .vb-themed { color-scheme: light; }
+html.vb-light .vb-themed .bg-\[\#05080c\], html.vb-light .vb-themed.bg-\[\#05080c\] { background-color: #e8ecf1 !important; }
+html.vb-light .vb-themed .bg-\[\#0a0e14\], html.vb-light .vb-themed.bg-\[\#0a0e14\] { background-color: #eef1f5 !important; }
+html.vb-light .vb-themed .bg-\[\#0d131b\], html.vb-light .vb-themed.bg-\[\#0d131b\],
+html.vb-light .vb-themed .bg-\[\#121822\], html.vb-light .vb-themed.bg-\[\#121822\] { background-color: #ffffff !important; }
+html.vb-light .vb-themed .bg-\[\#1a2230\], html.vb-light .vb-themed.bg-\[\#1a2230\] { background-color: #e4e9ef !important; }
+html.vb-light .vb-themed .bg-\[\#243044\], html.vb-light .vb-themed.bg-\[\#243044\],
+html.vb-light .vb-themed .bg-\[\#2a3444\], html.vb-light .vb-themed.bg-\[\#2a3444\] { background-color: #d5dce5 !important; }
+html.vb-light .vb-themed .bg-\[\#0a0e14\]\/95, html.vb-light .vb-themed.bg-\[\#0a0e14\]\/95 { background-color: rgba(244, 246, 249, 0.97) !important; }
+html.vb-light .vb-themed .border-\[\#243044\], html.vb-light .vb-themed.border-\[\#243044\] { border-color: #d3dae3 !important; }
+html.vb-light .vb-themed .border-\[\#1a2230\], html.vb-light .vb-themed.border-\[\#1a2230\] { border-color: #e2e7ed !important; }
+html.vb-light .vb-themed .border-\[\#364860\], html.vb-light .vb-themed.border-\[\#364860\],
+html.vb-light .vb-themed .border-\[\#3a4a60\], html.vb-light .vb-themed.border-\[\#3a4a60\] { border-color: #b7c2cf !important; }
+/* white text turns dark, except on coloured buttons and badges */
+html.vb-light .vb-themed .text-white:not([class*="bg-[#"]):not([class*="bg-gradient"]):not([class*="bg-red"]):not([class*="bg-black"]) { color: #141b26 !important; }
+html.vb-light .vb-themed :is(.bg-\[\#0a0e14\], .bg-\[\#0d131b\], .bg-\[\#121822\], .bg-\[\#1a2230\], .bg-\[\#05080c\], .bg-\[\#243044\]).text-white { color: #141b26 !important; }
+html.vb-light .vb-themed :is([class*="bg-[#ff"], [class*="bg-[#2e7d32"], [class*="bg-[#5865"], [class*="bg-gradient"], [class*="bg-red"]) .text-white { color: #ffffff !important; }
+html.vb-light .vb-themed .text-\[\#d6e2f0\], html.vb-light .vb-themed.text-\[\#d6e2f0\] { color: #1f2a38 !important; }
+html.vb-light .vb-themed .text-\[\#c8d2e0\], html.vb-light .vb-themed.text-\[\#c8d2e0\] { color: #2a3646 !important; }
+html.vb-light .vb-themed .text-\[\#8ea0b8\], html.vb-light .vb-themed.text-\[\#8ea0b8\] { color: #4b596a !important; }
+html.vb-light .vb-themed .text-\[\#5a6b80\], html.vb-light .vb-themed.text-\[\#5a6b80\] { color: #66727f !important; }
+html.vb-light .vb-themed .text-\[\#364860\], html.vb-light .vb-themed.text-\[\#364860\] { color: #8994a1 !important; }
+html.vb-light .vb-themed .text-\[\#00e676\], html.vb-light .vb-themed.text-\[\#00e676\] { color: #00994d !important; }
+html.vb-light .vb-themed .text-\[\#ffd23a\], html.vb-light .vb-themed.text-\[\#ffd23a\],
+html.vb-light .vb-themed .text-\[\#ffd700\], html.vb-light .vb-themed.text-\[\#ffd700\] { color: #b8860b !important; }
+html.vb-light .vb-themed .placeholder-\[\#364860\]::placeholder, html.vb-light .vb-themed.placeholder-\[\#364860\]::placeholder,
+html.vb-light .vb-themed .placeholder\:text-\[\#5a6b80\]::placeholder, html.vb-light .vb-themed.placeholder\:text-\[\#5a6b80\]::placeholder { color: #9aa5b1 !important; }
+html.vb-light .vb-themed .hover\:bg-\[\#1a2230\]:hover, html.vb-light .vb-themed.hover\:bg-\[\#1a2230\]:hover { background-color: #e4e9ef !important; }
+html.vb-light .vb-themed .hover\:text-white:hover, html.vb-light .vb-themed.hover\:text-white:hover { color: #000000 !important; }
+
+/* ---------------- vb-superdark ---------------- */
+html.vb-superdark .vb-themed { color-scheme: dark; }
+html.vb-superdark .vb-themed .bg-\[\#05080c\], html.vb-superdark .vb-themed.bg-\[\#05080c\] { background-color: #000000 !important; }
+html.vb-superdark .vb-themed .bg-\[\#0a0e14\], html.vb-superdark .vb-themed.bg-\[\#0a0e14\] { background-color: #000000 !important; }
+html.vb-superdark .vb-themed .bg-\[\#0d131b\], html.vb-superdark .vb-themed.bg-\[\#0d131b\] { background-color: #050505 !important; }
+html.vb-superdark .vb-themed .bg-\[\#121822\], html.vb-superdark .vb-themed.bg-\[\#121822\] { background-color: #0a0a0a !important; }
+html.vb-superdark .vb-themed .bg-\[\#1a2230\], html.vb-superdark .vb-themed.bg-\[\#1a2230\] { background-color: #141414 !important; }
+html.vb-superdark .vb-themed .bg-\[\#243044\], html.vb-superdark .vb-themed.bg-\[\#243044\] { background-color: #1f1f1f !important; }
+html.vb-superdark .vb-themed .bg-\[\#2a3444\], html.vb-superdark .vb-themed.bg-\[\#2a3444\] { background-color: #262626 !important; }
+html.vb-superdark .vb-themed .bg-\[\#0a0e14\]\/95, html.vb-superdark .vb-themed.bg-\[\#0a0e14\]\/95 { background-color: rgba(0,0,0,0.97) !important; }
+html.vb-superdark .vb-themed .bg-\[\#0a0e14\]\/80, html.vb-superdark .vb-themed.bg-\[\#0a0e14\]\/80 { background-color: rgba(0,0,0,0.85) !important; }
+html.vb-superdark .vb-themed .border-\[\#243044\], html.vb-superdark .vb-themed.border-\[\#243044\] { border-color: #1f1f1f !important; }
+html.vb-superdark .vb-themed .border-\[\#1a2230\], html.vb-superdark .vb-themed.border-\[\#1a2230\] { border-color: #141414 !important; }
+html.vb-superdark .vb-themed .border-\[\#364860\], html.vb-superdark .vb-themed.border-\[\#364860\] { border-color: #333333 !important; }
+html.vb-superdark .vb-themed .border-\[\#3a4a60\], html.vb-superdark .vb-themed.border-\[\#3a4a60\] { border-color: #333333 !important; }
+html.vb-superdark .vb-themed .text-\[\#8ea0b8\], html.vb-superdark .vb-themed.text-\[\#8ea0b8\] { color: #a0a0a0 !important; }
+html.vb-superdark .vb-themed .text-\[\#5a6b80\], html.vb-superdark .vb-themed.text-\[\#5a6b80\] { color: #6e6e6e !important; }
+html.vb-superdark .vb-themed .text-\[\#364860\], html.vb-superdark .vb-themed.text-\[\#364860\] { color: #4a4a4a !important; }
+html.vb-superdark .vb-themed .text-\[\#d6e2f0\], html.vb-superdark .vb-themed.text-\[\#d6e2f0\] { color: #e6e6e6 !important; }
+html.vb-superdark .vb-themed .text-\[\#c8d2e0\], html.vb-superdark .vb-themed.text-\[\#c8d2e0\] { color: #d8d8d8 !important; }
+
+/* ---------------- vb-gray ---------------- */
+html.vb-gray .vb-themed { color-scheme: dark; }
+html.vb-gray .vb-themed .bg-\[\#05080c\], html.vb-gray .vb-themed.bg-\[\#05080c\] { background-color: #1b1c1f !important; }
+html.vb-gray .vb-themed .bg-\[\#0a0e14\], html.vb-gray .vb-themed.bg-\[\#0a0e14\] { background-color: #232428 !important; }
+html.vb-gray .vb-themed .bg-\[\#0d131b\], html.vb-gray .vb-themed.bg-\[\#0d131b\] { background-color: #2b2d31 !important; }
+html.vb-gray .vb-themed .bg-\[\#121822\], html.vb-gray .vb-themed.bg-\[\#121822\] { background-color: #303338 !important; }
+html.vb-gray .vb-themed .bg-\[\#1a2230\], html.vb-gray .vb-themed.bg-\[\#1a2230\] { background-color: #3a3d43 !important; }
+html.vb-gray .vb-themed .bg-\[\#243044\], html.vb-gray .vb-themed.bg-\[\#243044\] { background-color: #464a52 !important; }
+html.vb-gray .vb-themed .bg-\[\#2a3444\], html.vb-gray .vb-themed.bg-\[\#2a3444\] { background-color: #4c5059 !important; }
+html.vb-gray .vb-themed .bg-\[\#0a0e14\]\/95, html.vb-gray .vb-themed.bg-\[\#0a0e14\]\/95 { background-color: rgba(35,36,40,0.97) !important; }
+html.vb-gray .vb-themed .bg-\[\#0a0e14\]\/80, html.vb-gray .vb-themed.bg-\[\#0a0e14\]\/80 { background-color: rgba(35,36,40,0.85) !important; }
+html.vb-gray .vb-themed .border-\[\#243044\], html.vb-gray .vb-themed.border-\[\#243044\] { border-color: #464a52 !important; }
+html.vb-gray .vb-themed .border-\[\#1a2230\], html.vb-gray .vb-themed.border-\[\#1a2230\] { border-color: #3a3d43 !important; }
+html.vb-gray .vb-themed .border-\[\#364860\], html.vb-gray .vb-themed.border-\[\#364860\] { border-color: #5c616b !important; }
+html.vb-gray .vb-themed .border-\[\#3a4a60\], html.vb-gray .vb-themed.border-\[\#3a4a60\] { border-color: #5c616b !important; }
+html.vb-gray .vb-themed .text-\[\#8ea0b8\], html.vb-gray .vb-themed.text-\[\#8ea0b8\] { color: #b4b8c0 !important; }
+html.vb-gray .vb-themed .text-\[\#5a6b80\], html.vb-gray .vb-themed.text-\[\#5a6b80\] { color: #8e939c !important; }
+html.vb-gray .vb-themed .text-\[\#364860\], html.vb-gray .vb-themed.text-\[\#364860\] { color: #6f747d !important; }
+html.vb-gray .vb-themed .text-\[\#d6e2f0\], html.vb-gray .vb-themed.text-\[\#d6e2f0\] { color: #eceef2 !important; }
+html.vb-gray .vb-themed .text-\[\#c8d2e0\], html.vb-gray .vb-themed.text-\[\#c8d2e0\] { color: #dcdfe5 !important; }
+
+html.vb-superdark .vb-themed .hover\:bg-\[\#1a2230\]:hover { background-color: #141414 !important; }
+html.vb-gray .vb-themed .hover\:bg-\[\#1a2230\]:hover { background-color: #3a3d43 !important; }
+
+/* ---------------- Phones ----------------
+   Short landscape screens (a phone turned sideways): everything sized in rem gets smaller, so menus fit. */
+@media (pointer: coarse) and (max-height: 500px), (max-height: 430px) and (max-width: 1000px) {
+  html { font-size: 12px; }
+}
+/* Menus scroll with a finger (and don't drag the whole page with them) */
+.vb-scroll, .overflow-y-auto { -webkit-overflow-scrolling: touch; touch-action: pan-y; }
+/* Pop-ups taller than the screen (EggWars, Bridge Duels, settings...): on a phone or a short window the pop-up used to be
+   centred and clipped at the top and bottom, so you could not scroll to the rest. Now the pop-up layer scrolls, and the
+   pop-up itself is still centred when it fits. */
+@media (max-width: 900px), (max-height: 700px) {
+  .fixed.inset-0.items-center { align-items: flex-start; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; touch-action: pan-y; overscroll-behavior: contain; }
+  .fixed.inset-0.items-center > * { margin-top: auto; margin-bottom: auto; flex-shrink: 0; }
+}
+/* Phone buttons a little smaller on short screens so they leave room to see */
+@media (max-height: 430px) {
+  .vb-touch-top > button { width: 2.25rem; height: 2.25rem; font-size: 9px; }
+}
+@keyframes vb-rotate-phone { 0%, 30% { transform: rotate(0deg); } 60%, 100% { transform: rotate(-90deg); } }
+.vb-rotate-phone { animation: vb-rotate-phone 1.8s ease-in-out infinite alternate; }

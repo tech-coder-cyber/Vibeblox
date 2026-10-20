@@ -1,17 +1,24 @@
+import { setBgInterval, clearBgInterval } from './bgTimer';
 // Browser-side multiplayer client for VibeBlox. Talks JSON over a WebSocket
 // to server/server.js. App.tsx wires these events into the game engine.
 
-export const PROTOCOL_VERSION = 15; // 15: turned heads, low trapdoors, block ids 2000+ (14: /title, fake ranks, rank badges (13: sleeping vote, whispers, admin panel (12: block ids up to 1399, items 1400+ (11: weather, host sets time/weather; 10: host, kick/ban, server settings))
+/** An item thrown on the ground that every player sees. d = a tool's wear/enchantments/name as JSON. */
+export type NetDrop = { n: string; item: number; count: number; x: number; y: number; z: number; vx: number; vy: number; vz: number; d?: string };
+export const PROTOCOL_VERSION = 17; // 17: world roles (admin / co-owner / owner), hosts hand their world over when they leave; 16: dropped items shared, host commands on other players (@a); 15: turned heads, low trapdoors, block ids 2000+ (14: /title, fake ranks, rank badges (13: sleeping vote, whispers, admin panel (12: block ids up to 1399, items 1400+ (11: weather, host sets time/weather; 10: host, kick/ban, server settings))
 
 export type NetBlock = [number, number, number, number]; // x, y, z, block id
 export type NetMove = [number, number, number, number, number, number, string, number, number]; // id, x, y, z, yaw, pitch, mode, held item, action bits
 export type NetLook = { skin: string; cape: string; /** A Champion's own skin (a small PNG as a data: URL), when skin is 'custom' */ custom?: string };
-export type NetWeather = 'clear' | 'rain' | 'snow';
+export type NetWeather = 'clear' | 'rain' | 'snow' | 'thunder';
 /** What shows in front of a signed-in player's name besides a fake rank: owner, paid rank, creator tier. */
-export type NetBadge = { owner?: boolean; rank?: string; tier?: string; og?: boolean; staff?: string | null };
+export type NetBadge = { owner?: boolean; rank?: string; tier?: string; staff?: string | null; og?: boolean; special?: string | null };
 export type NetPlayerInfo = { id: number; name: string; x: number; y: number; z: number; yaw: number; pitch: number; mode: string; look?: NetLook; badge?: NetBadge };
 
-export type ServerSettings = { difficulty: 'peaceful' | 'easy' | 'normal' | 'hard'; keepInventory: boolean; scripts: boolean; mods: boolean; commands: boolean; pvp?: boolean };
+export type ServerSettings = { difficulty: 'peaceful' | 'easy' | 'normal' | 'hard'; keepInventory: boolean; scripts: boolean; mods: boolean; commands: boolean; pvp?: boolean; /** who may run scripts: 'off' | 'all' | 'admin' | 'owner' */ scriptPerm?: 'off' | 'all' | 'admin' | 'owner' };
+/** Roles in a world (lowercase name -> 'owner' | 'coowner' | 'admin') */
+export type NetRoles = Record<string, string>;
+/** A world being handed to you when its host leaves (see HostRoom.handOff in hosting.ts) */
+export type NetHandoff = Record<string, unknown> & { seed: number; owner: string; name: string };
 /** An online EggWars / Bridge Duels world (see hosting.ts). */
 export type NetGame = { kind: 'eggwars' | 'bridge'; variant: number; teams: number; teamSize: number; winScore: number };
 export type NetMatch = {
@@ -40,6 +47,10 @@ export type Welcome = {
   maxPlayers?: number;
   /** The fake ranks of this world (see fakeranks.ts). */
   ranks?: unknown;
+  /** Roles in this world (player hosted worlds) */
+  roles?: NetRoles;
+  /** Items already lying on the ground */
+  drops?: NetDrop[];
 };
 
 export type MultiplayerEvents = {
@@ -52,6 +63,13 @@ export type MultiplayerEvents = {
   onLeave?: (id: number, name: string) => void;
   onLook?: (id: number, look: NetLook) => void;
   onChat?: (name: string, text: string) => void;
+  /** Another player threw an item (so everyone sees it and can pick it up). n = its shared id. */
+  onDrop?: (d: NetDrop) => void;
+  /** An item somebody threw was picked up (by someone else, or the server said yes/no to you). */
+  onDropGone?: (n: string) => void;
+  onPickupResult?: (n: string, ok: boolean) => void;
+  /** The host ran a command (/give, /clear, /effect, /xp, /tp) on you. */
+  onRemoteCmd?: (cmd: string, args: Record<string, unknown>, from: string) => void;
   /** The host ran /title on you. */
   onTitle?: (text: string, sub: string) => void;
   /** The host changed the fake ranks. */
@@ -70,10 +88,19 @@ export type MultiplayerEvents = {
   /** Online minigames: the score, eggs and teams; "everyone back to your island"; another player hit you; someone was hit. */
   onMatch?: (m: NetMatch) => void;
   onMatchReset?: (round: number) => void;
-  onHurt?: (h: { by: number; name: string; dmg: number; kx: number; kz: number }) => void;
+  onHurt?: (h: { by: number; name: string; dmg: number; kx: number; kz: number; breach?: number; kbm?: number }) => void;
   onHurtFx?: (id: number) => void;
   /** Round trip time to the server, in milliseconds (measured every 2 seconds). */
   onPing?: (ms: number) => void;
+  /** Roles changed (admin / co-owner); the owner is in the list too */
+  onRoles?: (roles: NetRoles) => void;
+  /** Co-owners: the anti-cheat settings, and its alerts */
+  onAnticheat?: (settings: { enabled: boolean; autoKick: boolean; kickAt: number }) => void;
+  onCheat?: (alert: Record<string, unknown>) => void;
+  /** The host left: you are now running the world (start a room with this) */
+  onBecomeHost?: (room: string, state: NetHandoff) => void;
+  /** The host left and someone else keeps the world: reconnect to this room */
+  onMigrate?: (room: string, host: string) => void;
   onClose?: (reason: string) => void;
 };
 
@@ -104,7 +131,7 @@ export class MultiplayerClient {
   private closedByUs = false;
   private reported = false;
   private connectTimer: ReturnType<typeof setTimeout> | null = null;
-  private pingTimer: ReturnType<typeof setInterval> | null = null;
+  private pingTimer: number | null = null; // (a background-proof timer: a hidden tab keeps its connection alive)
   private pings = new Map<number, number>();
   private pingN = 0;
   /** The last measured ping in ms (-1 until the first answer; old servers never answer). */
@@ -115,7 +142,7 @@ export class MultiplayerClient {
   private report(reason: string) {
     if (this.reported || this.closedByUs) return;
     this.reported = true;
-    if (this.pingTimer) { clearInterval(this.pingTimer); this.pingTimer = null; }
+    if (this.pingTimer) { clearBgInterval(this.pingTimer); this.pingTimer = null; }
     if (this.connectTimer) { clearTimeout(this.connectTimer); this.connectTimer = null; }
     try { this.ws?.close(); } catch { /* already closed */ }
     this.ws = null;
@@ -167,7 +194,7 @@ export class MultiplayerClient {
       case 'welcome':
         this.welcomed = true;
         if (this.connectTimer) { clearTimeout(this.connectTimer); this.connectTimer = null; }
-        if (!this.pingTimer) this.pingTimer = setInterval(() => this.ping(), 2000);
+        if (!this.pingTimer) this.pingTimer = setBgInterval(() => this.ping(), 2000);
         this.ping();
         e.onWelcome?.(m as unknown as Welcome);
         break;
@@ -179,9 +206,14 @@ export class MultiplayerClient {
       case 'leave': e.onLeave?.(m.id as number, m.name as string); break;
       case 'look': e.onLook?.(m.id as number, { skin: String(m.skin), cape: String(m.cape), ...(typeof m.custom === 'string' ? { custom: m.custom } : {}) }); break;
       case 'chat': e.onChat?.(m.name as string, m.text as string); break;
+      case 'drop': e.onDrop?.({ n: String(m.n), item: Number(m.item), count: Number(m.count), x: Number(m.x), y: Number(m.y), z: Number(m.z), vx: Number(m.vx), vy: Number(m.vy), vz: Number(m.vz), ...(typeof m.d === 'string' ? { d: m.d } : {}) }); break;
+      case 'gone': e.onDropGone?.(String(m.n)); break;
+      case 'pickupOk': e.onPickupResult?.(String(m.n), true); break;
+      case 'pickupNo': e.onPickupResult?.(String(m.n), false); break;
+      case 'rcmd': e.onRemoteCmd?.(String(m.cmd), (m.args && typeof m.args === 'object' ? m.args : {}) as Record<string, unknown>, String(m.from ?? 'The host')); break;
       case 'title': e.onTitle?.(String(m.text ?? ''), String(m.sub ?? '')); break;
       case 'ranks': e.onRanks?.(m.ranks); break;
-      case 'badge': e.onBadge?.(m.id as number, { owner: !!m.owner, rank: String(m.rank ?? 'none'), tier: String(m.tier ?? 'none'), og: m.og === true, staff: m.staff === 'helper' || m.staff === 'mod' ? m.staff : null }); break;
+      case 'badge': e.onBadge?.(m.id as number, { owner: !!m.owner, rank: String(m.rank ?? 'none'), tier: String(m.tier ?? 'none'), staff: m.staff === 'helper' || m.staff === 'mod' ? m.staff : null, og: m.og === true, special: m.special === 'youtube' ? 'youtube' : null }); break;
       case 'system': e.onSystem?.(m.text as string); break;
       case 'time': e.onTime?.(m.time as number); break;
       case 'whisper': e.onWhisper?.(String(m.from), String(m.text)); break;
@@ -191,9 +223,14 @@ export class MultiplayerClient {
       case 'adminPlayers': e.onAdminPlayers?.(m.list as Array<{ id: number; name: string; mode: string }>); break;
       case 'match': e.onMatch?.(m as unknown as NetMatch); break;
       case 'mgReset': e.onMatchReset?.(Number(m.round) || 0); break;
-      case 'hurt': if (typeof m.dmg === 'number') e.onHurt?.({ by: Number(m.by), name: String(m.name ?? 'Someone'), dmg: m.dmg, kx: Number(m.kx) || 0, kz: Number(m.kz) || 0 }); break;
+      case 'hurt': if (typeof m.dmg === 'number') e.onHurt?.({ by: Number(m.by), name: String(m.name ?? 'Someone'), dmg: m.dmg, kx: Number(m.kx) || 0, kz: Number(m.kz) || 0, breach: Number(m.breach) || undefined, kbm: Number(m.kbm) || undefined }); break;
       case 'hurtFx': e.onHurtFx?.(Number(m.id)); break;
-      case 'weather': if (m.kind === 'clear' || m.kind === 'rain' || m.kind === 'snow') e.onWeather?.(m.kind); break;
+      case 'roles': if (m.roles && typeof m.roles === 'object') e.onRoles?.(m.roles as NetRoles); break;
+      case 'acset': if (m.settings && typeof m.settings === 'object') e.onAnticheat?.(m.settings as { enabled: boolean; autoKick: boolean; kickAt: number }); break;
+      case 'cheat': if (m.alert && typeof m.alert === 'object') e.onCheat?.(m.alert as Record<string, unknown>); break;
+      case 'becomeHost': if (typeof m.room === 'string' && m.state && typeof m.state === 'object') e.onBecomeHost?.(m.room, m.state as NetHandoff); break;
+      case 'migrate': if (typeof m.room === 'string') e.onMigrate?.(m.room, String(m.host ?? 'another player')); break;
+      case 'weather': if (m.kind === 'clear' || m.kind === 'rain' || m.kind === 'snow' || m.kind === 'thunder') e.onWeather?.(m.kind); break;
       case 'pong': {
         const sent = this.pings.get(Number(m.n));
         if (sent !== undefined) { this.pings.delete(Number(m.n)); this.lastPing = Math.round(performance.now() - sent); e.onPing?.(this.lastPing); }
@@ -215,6 +252,9 @@ export class MultiplayerClient {
     this.send({ t: 'move', x, y, z, yaw, pitch, mode, held, act });
   }
 
+  /** Tell the world's host that this page runs an outside script (see integrity.ts). Only flags it knows are sent. */
+  sendIntegrity(flags: string[]) { this.send({ t: 'integrity', flags: flags.slice(0, 6).map((f) => String(f).slice(0, 30)) }); }
+
   sendBlocks(list: NetBlock[]) {
     for (let i = 0; i < list.length; i += 256) this.send({ t: 'blocks', list: list.slice(i, i + 256) });
   }
@@ -235,14 +275,28 @@ export class MultiplayerClient {
 
   /** Tell the server you got into / out of bed (the night passes when half the players sleep). */
   sendSleep(on: boolean) { this.send({ t: 'sleep', on }); }
+  /** You threw an item: everyone else sees it. */
+  sendDrop(d: NetDrop) { this.send({ t: 'drop', ...d }); }
+  /** You walked up to a thrown item: the server says whether you got it (pickupOk) or somebody else did (pickupNo). */
+  sendPickup(n: string) { this.send({ t: 'pickup', n }); }
+  /** Host only: run a command on another player ('*' = everyone else): give, clear, effect, xp, tp. */
+  sendRemoteCmd(to: string, cmd: string, args: Record<string, unknown>) { this.send({ t: 'rcmd', to, cmd, args }); }
   /** Host only: show a title on one player's screen (their name) or everyone's ('*'). */
   sendTitle(to: string, text: string, sub = '') { this.send({ t: 'title', to, text, sub }); }
   /** Host only: send the fake ranks list (it is kept with the world and everyone gets it). */
   sendRanks(ranks: unknown) { this.send({ t: 'ranks', ranks }); }
+  /** Give a player a role in this world ('none' takes it away) */
+  sendPromote(name: string, role: 'admin' | 'coowner' | 'none') { this.send({ t: 'promote', name, role }); }
+  /** World admins: kick, ban or unban by name */
+  sendMod(action: 'kick' | 'ban' | 'unban', name: string) { this.send({ t: 'mod', action, name }); }
+  /** Co-owners: change the anti-cheat settings */
+  sendAnticheat(settings: { enabled: boolean; autoKick: boolean; kickAt: number }) { this.send({ t: 'acset', settings }); }
   /** A private message to a player on this server. */
   sendWhisper(to: string, text: string) { this.send({ t: 'whisper', to, text }); }
   /** You hit another player: dmg before their armor, k = the direction they get knocked (unit vector on the ground). */
-  sendHit(id: number, dmg: number, kx: number, kz: number, bow = false) { this.send({ t: 'hit', id, dmg: Math.round(dmg * 10) / 10, kx: Math.round(kx * 100) / 100, kz: Math.round(kz * 100) / 100, ...(bow ? { bow: true } : {}) }); }
+  sendHit(id: number, dmg: number, kx: number, kz: number, bow = false, extra?: { breach?: number; kbm?: number }) {
+    this.send({ t: 'hit', id, dmg: Math.round(dmg * 10) / 10, kx: Math.round(kx * 100) / 100, kz: Math.round(kz * 100) / 100, ...(bow ? { bow: true } : {}), ...(extra?.breach ? { breach: Math.round(extra.breach * 100) / 100 } : {}), ...(extra?.kbm ? { kbm: Math.round(extra.kbm * 100) / 100 } : {}) });
+  }
   /** Online minigames: start (host), you died (by: who killed you), you broke a team's egg, you scored in a team's goal. */
   sendMatchStart() { this.send({ t: 'mgStart' }); }
   sendMatchDied(by: number | null) { this.send({ t: 'mgDied', ...(by !== null ? { by } : {}) }); }
@@ -269,7 +323,7 @@ export class MultiplayerClient {
 
   disconnect() {
     this.closedByUs = true;
-    if (this.pingTimer) { clearInterval(this.pingTimer); this.pingTimer = null; }
+    if (this.pingTimer) { clearBgInterval(this.pingTimer); this.pingTimer = null; }
     if (this.connectTimer) { clearTimeout(this.connectTimer); this.connectTimer = null; }
     this.ws?.close();
     this.ws = null;
