@@ -12,7 +12,7 @@
 // devtools are rejected, but anything client-side can be cheated by a determined player:
 // never let coins buy something with real value. Ranks bought with real money must be
 // granted by a server (Tebex webhook), not by this file.
-import { CAPES, SKINS, CUSTOM_SKIN_ID, isCustomSkinData, cleanLook, type PlayerLook } from './cosmetics';
+import { CAPES, SKINS, CUSTOM_SKIN_ID, CUSTOM_CAPE_ID, isCustomSkinData, cleanLook, type PlayerLook } from './cosmetics';
 import { portalStorage } from './adEconomy';
 
 // ---- Put your links here ----
@@ -52,6 +52,8 @@ export type Progress = {
   boosterClaimAt?: number;
   /** A Champion's own skin (PNG data URL); wearing it means currentSkin is 'custom' */
   customSkin?: string;
+  /** A Champion's / [YOUTUBE]'s own cape picture (64x32 PNG) */
+  customCape?: string;
   /** Lootboxes waiting to be opened (no limit), and streak freezes (each one saves your daily streak for one missed day) */
   lootboxes?: number;
   freezes?: number;
@@ -98,9 +100,10 @@ function sanitize(p: Partial<Progress>): Progress {
   if (!out.ownedCapes.includes('none')) out.ownedCapes.unshift('none');
   out.level = levelForXp(out.xp);
   if (isCustomSkinData(p.customSkin)) out.customSkin = p.customSkin;
-  const look = cleanLook({ skin: p.currentSkin, cape: p.currentCape, custom: out.customSkin });
+  if (isCustomSkinData(p.customCape)) out.customCape = p.customCape;
+  const look = cleanLook({ skin: p.currentSkin, cape: p.currentCape, custom: out.customSkin, capeData: out.customCape });
   out.currentSkin = look.skin === CUSTOM_SKIN_ID ? CUSTOM_SKIN_ID : out.ownedSkins.includes(look.skin) ? look.skin : 'classic';
-  out.currentCape = out.ownedCapes.includes(look.cape) ? look.cape : 'none';
+  out.currentCape = look.cape === CUSTOM_CAPE_ID ? CUSTOM_CAPE_ID : out.ownedCapes.includes(look.cape) ? look.cape : 'none';
   return out;
 }
 
@@ -132,14 +135,25 @@ export function onLevelUp(fn: (level: number, coins: number, lootboxes: number) 
 /** Re-read the save (e.g. once the CrazyGames SDK is ready and cloud data is available). */
 export function reloadProgress() { state = load(); for (const l of listeners) l(); }
 export function currentLook(): PlayerLook {
-  if (state.currentSkin === CUSTOM_SKIN_ID && state.customSkin) return { skin: CUSTOM_SKIN_ID, cape: state.currentCape, custom: state.customSkin };
-  return { skin: state.currentSkin === CUSTOM_SKIN_ID ? 'classic' : state.currentSkin, cape: state.currentCape };
+  const capeCustom = state.currentCape === CUSTOM_CAPE_ID && !!state.customCape;
+  const cape = capeCustom ? CUSTOM_CAPE_ID : state.currentCape === CUSTOM_CAPE_ID ? 'none' : state.currentCape;
+  const extra = capeCustom ? { capeData: state.customCape as string } : {};
+  if (state.currentSkin === CUSTOM_SKIN_ID && state.customSkin) return { skin: CUSTOM_SKIN_ID, cape, custom: state.customSkin, ...extra };
+  return { skin: state.currentSkin === CUSTOM_SKIN_ID ? 'classic' : state.currentSkin, cape, ...extra };
 }
 /** Saves (and wears) your own skin, or removes it with null. The shop only offers this to Champions. */
 export function setCustomSkin(png: string | null): boolean {
   if (png === null) { commit({ ...state, customSkin: undefined, currentSkin: state.currentSkin === CUSTOM_SKIN_ID ? 'classic' : state.currentSkin }); return true; }
   if (!isCustomSkinData(png)) return false;
   commit({ ...state, customSkin: png, currentSkin: CUSTOM_SKIN_ID });
+  return true;
+}
+
+/** Saves (and wears) your own cape, or removes it with null. The shop only offers this to Champions and [YOUTUBE]. */
+export function setCustomCape(png: string | null): boolean {
+  if (png === null) { commit({ ...state, customCape: undefined, currentCape: state.currentCape === CUSTOM_CAPE_ID ? 'none' : state.currentCape }); return true; }
+  if (!isCustomSkinData(png)) return false;
+  commit({ ...state, customCape: png, currentCape: CUSTOM_CAPE_ID });
   return true;
 }
 
@@ -348,6 +362,7 @@ export function buyCosmetic(kind: 'skin' | 'cape', id: string): BuyResult {
 }
 export function equipCosmetic(kind: 'skin' | 'cape', id: string): boolean {
   if (kind === 'skin' && id === CUSTOM_SKIN_ID) { if (!state.customSkin) return false; commit({ ...state, currentSkin: CUSTOM_SKIN_ID }); return true; }
+  if (kind === 'cape' && id === CUSTOM_CAPE_ID) { if (!state.customCape) return false; commit({ ...state, currentCape: CUSTOM_CAPE_ID }); return true; }
   const owned = kind === 'skin' ? state.ownedSkins : state.ownedCapes;
   if (!owned.includes(id)) return false;
   commit(kind === 'skin' ? { ...state, currentSkin: id } : { ...state, currentCape: id });
@@ -372,6 +387,7 @@ export function mergeAccountProgress(remote: unknown): boolean {
     ownedSkins: [...new Set([...state.ownedSkins, ...r.ownedSkins])],
     ownedCapes: [...new Set([...state.ownedCapes, ...r.ownedCapes])],
     customSkin: base.customSkin ?? state.customSkin ?? r.customSkin,
+    customCape: base.customCape ?? state.customCape ?? r.customCape,
     // claim limits can't be dodged by switching device: keep every claim either side knows about
     coinClaims: [...new Set([...(state.coinClaims ?? []), ...(r.coinClaims ?? [])])].sort((a, b) => a - b).slice(-COIN_CLAIMS_PER_HOUR),
     boosterClaimAt: Math.max(state.boosterClaimAt ?? 0, r.boosterClaimAt ?? 0) || undefined,

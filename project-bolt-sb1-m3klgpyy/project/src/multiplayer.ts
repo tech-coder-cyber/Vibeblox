@@ -1,3 +1,4 @@
+import { setBgInterval, clearBgInterval } from './bgTimer';
 // Browser-side multiplayer client for VibeBlox. Talks JSON over a WebSocket
 // to server/server.js. App.tsx wires these events into the game engine.
 
@@ -7,7 +8,7 @@ export const PROTOCOL_VERSION = 17; // 17: world roles (admin / co-owner / owner
 
 export type NetBlock = [number, number, number, number]; // x, y, z, block id
 export type NetMove = [number, number, number, number, number, number, string, number, number]; // id, x, y, z, yaw, pitch, mode, held item, action bits
-export type NetLook = { skin: string; cape: string; /** A Champion's own skin (a small PNG as a data: URL), when skin is 'custom' */ custom?: string };
+export type NetLook = { skin: string; cape: string; /** A Champion's own skin (a small PNG as a data: URL), when skin is 'custom' */ custom?: string; /** A Champion's own cape (a small PNG), when cape is 'custom' */ capeData?: string };
 export type NetWeather = 'clear' | 'rain' | 'snow' | 'thunder';
 /** What shows in front of a signed-in player's name besides a fake rank: owner, paid rank, creator tier. */
 export type NetBadge = { owner?: boolean; rank?: string; tier?: string; staff?: string | null; og?: boolean; special?: string | null };
@@ -87,7 +88,7 @@ export type MultiplayerEvents = {
   /** Online minigames: the score, eggs and teams; "everyone back to your island"; another player hit you; someone was hit. */
   onMatch?: (m: NetMatch) => void;
   onMatchReset?: (round: number) => void;
-  onHurt?: (h: { by: number; name: string; dmg: number; kx: number; kz: number }) => void;
+  onHurt?: (h: { by: number; name: string; dmg: number; kx: number; kz: number; breach?: number; kbm?: number }) => void;
   onHurtFx?: (id: number) => void;
   /** Round trip time to the server, in milliseconds (measured every 2 seconds). */
   onPing?: (ms: number) => void;
@@ -130,7 +131,7 @@ export class MultiplayerClient {
   private closedByUs = false;
   private reported = false;
   private connectTimer: ReturnType<typeof setTimeout> | null = null;
-  private pingTimer: ReturnType<typeof setInterval> | null = null;
+  private pingTimer: number | null = null; // (a background-proof timer: a hidden tab keeps its connection alive)
   private pings = new Map<number, number>();
   private pingN = 0;
   /** The last measured ping in ms (-1 until the first answer; old servers never answer). */
@@ -141,7 +142,7 @@ export class MultiplayerClient {
   private report(reason: string) {
     if (this.reported || this.closedByUs) return;
     this.reported = true;
-    if (this.pingTimer) { clearInterval(this.pingTimer); this.pingTimer = null; }
+    if (this.pingTimer) { clearBgInterval(this.pingTimer); this.pingTimer = null; }
     if (this.connectTimer) { clearTimeout(this.connectTimer); this.connectTimer = null; }
     try { this.ws?.close(); } catch { /* already closed */ }
     this.ws = null;
@@ -193,7 +194,7 @@ export class MultiplayerClient {
       case 'welcome':
         this.welcomed = true;
         if (this.connectTimer) { clearTimeout(this.connectTimer); this.connectTimer = null; }
-        if (!this.pingTimer) this.pingTimer = setInterval(() => this.ping(), 2000);
+        if (!this.pingTimer) this.pingTimer = setBgInterval(() => this.ping(), 2000);
         this.ping();
         e.onWelcome?.(m as unknown as Welcome);
         break;
@@ -203,7 +204,7 @@ export class MultiplayerClient {
       case 'host': e.onHost?.(m.id as number); break;
       case 'settings': e.onSettings?.(m.settings as ServerSettings); break;
       case 'leave': e.onLeave?.(m.id as number, m.name as string); break;
-      case 'look': e.onLook?.(m.id as number, { skin: String(m.skin), cape: String(m.cape), ...(typeof m.custom === 'string' ? { custom: m.custom } : {}) }); break;
+      case 'look': e.onLook?.(m.id as number, { skin: String(m.skin), cape: String(m.cape), ...(typeof m.custom === 'string' ? { custom: m.custom } : {}), ...(typeof m.capeData === 'string' ? { capeData: m.capeData } : {}) }); break;
       case 'chat': e.onChat?.(m.name as string, m.text as string); break;
       case 'drop': e.onDrop?.({ n: String(m.n), item: Number(m.item), count: Number(m.count), x: Number(m.x), y: Number(m.y), z: Number(m.z), vx: Number(m.vx), vy: Number(m.vy), vz: Number(m.vz), ...(typeof m.d === 'string' ? { d: m.d } : {}) }); break;
       case 'gone': e.onDropGone?.(String(m.n)); break;
@@ -222,7 +223,7 @@ export class MultiplayerClient {
       case 'adminPlayers': e.onAdminPlayers?.(m.list as Array<{ id: number; name: string; mode: string }>); break;
       case 'match': e.onMatch?.(m as unknown as NetMatch); break;
       case 'mgReset': e.onMatchReset?.(Number(m.round) || 0); break;
-      case 'hurt': if (typeof m.dmg === 'number') e.onHurt?.({ by: Number(m.by), name: String(m.name ?? 'Someone'), dmg: m.dmg, kx: Number(m.kx) || 0, kz: Number(m.kz) || 0 }); break;
+      case 'hurt': if (typeof m.dmg === 'number') e.onHurt?.({ by: Number(m.by), name: String(m.name ?? 'Someone'), dmg: m.dmg, kx: Number(m.kx) || 0, kz: Number(m.kz) || 0, breach: Number(m.breach) || undefined, kbm: Number(m.kbm) || undefined }); break;
       case 'hurtFx': e.onHurtFx?.(Number(m.id)); break;
       case 'roles': if (m.roles && typeof m.roles === 'object') e.onRoles?.(m.roles as NetRoles); break;
       case 'acset': if (m.settings && typeof m.settings === 'object') e.onAnticheat?.(m.settings as { enabled: boolean; autoKick: boolean; kickAt: number }); break;
@@ -269,8 +270,10 @@ export class MultiplayerClient {
 
   /** Tell everyone your skin and cape (send once after joining, and whenever it changes). */
   sendLook(look: NetLook) {
-    this.send({ t: 'look', skin: look.skin, cape: look.cape, ...(look.skin === 'custom' && look.custom ? { custom: look.custom } : {}) });
+    this.send({ t: 'look', skin: look.skin, cape: look.cape, ...(look.skin === 'custom' && look.custom ? { custom: look.custom } : {}), ...(look.cape === 'custom' && look.capeData ? { capeData: look.capeData } : {}) });
   }
+  /** Ask the room to look your rank up again (after /undercover): everyone's name tag for you updates. */
+  sendRefreshBadge() { this.send({ t: 'badge' }); }
 
   /** Tell the server you got into / out of bed (the night passes when half the players sleep). */
   sendSleep(on: boolean) { this.send({ t: 'sleep', on }); }
@@ -293,7 +296,9 @@ export class MultiplayerClient {
   /** A private message to a player on this server. */
   sendWhisper(to: string, text: string) { this.send({ t: 'whisper', to, text }); }
   /** You hit another player: dmg before their armor, k = the direction they get knocked (unit vector on the ground). */
-  sendHit(id: number, dmg: number, kx: number, kz: number, bow = false) { this.send({ t: 'hit', id, dmg: Math.round(dmg * 10) / 10, kx: Math.round(kx * 100) / 100, kz: Math.round(kz * 100) / 100, ...(bow ? { bow: true } : {}) }); }
+  sendHit(id: number, dmg: number, kx: number, kz: number, bow = false, extra?: { breach?: number; kbm?: number }) {
+    this.send({ t: 'hit', id, dmg: Math.round(dmg * 10) / 10, kx: Math.round(kx * 100) / 100, kz: Math.round(kz * 100) / 100, ...(bow ? { bow: true } : {}), ...(extra?.breach ? { breach: Math.round(extra.breach * 100) / 100 } : {}), ...(extra?.kbm ? { kbm: Math.round(extra.kbm * 100) / 100 } : {}) });
+  }
   /** Online minigames: start (host), you died (by: who killed you), you broke a team's egg, you scored in a team's goal. */
   sendMatchStart() { this.send({ t: 'mgStart' }); }
   sendMatchDied(by: number | null) { this.send({ t: 'mgDied', ...(by !== null ? { by } : {}) }); }
@@ -320,7 +325,7 @@ export class MultiplayerClient {
 
   disconnect() {
     this.closedByUs = true;
-    if (this.pingTimer) { clearInterval(this.pingTimer); this.pingTimer = null; }
+    if (this.pingTimer) { clearBgInterval(this.pingTimer); this.pingTimer = null; }
     if (this.connectTimer) { clearTimeout(this.connectTimer); this.connectTimer = null; }
     this.ws?.close();
     this.ws = null;

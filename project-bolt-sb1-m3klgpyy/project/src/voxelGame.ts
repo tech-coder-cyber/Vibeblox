@@ -1,7 +1,8 @@
+import { setBgInterval, clearBgInterval } from './bgTimer';
 import { DEFAULT_SHADERS, cleanShaders, NEUTRAL_GRADE, type ShaderPrefs } from './shaderPrefs';
 import { loadVideo, cleanVideo, type VideoPrefs } from './videoPrefs';
 import type { NetDrop } from './multiplayer';
-import { SKINS, CAPES, cleanLook, DEFAULT_LOOK, type PlayerLook } from './cosmetics';
+import { SKINS, CAPES, cleanLook, DEFAULT_LOOK, CUSTOM_CAPE_ID, type PlayerLook } from './cosmetics';
 import * as THREE from 'three';
 import { drawFancy, stripFancy, parseFancy } from './fancycore';
 import { RANK_TAGS, type RankId } from './ranks';
@@ -414,6 +415,42 @@ function loadCustomSkin(dataUrl: string): Promise<SkinCanvases | null> {
   return p;
 }
 
+// ---- A Champion's / [YOUTUBE]'s own cape (a standard 64x32 Minecraft cape picture) ----
+const customCapeCache = new Map<string, HTMLCanvasElement>();
+const customCapeLoading = new Map<string, Promise<HTMLCanvasElement | null>>();
+/** The outside of the cape is the 10x16 area at (1,1) of the picture. */
+function customCapeFromImage(img: CanvasImageSource): HTMLCanvasElement {
+  const c = makeCanvas(10, 16);
+  const ctx = c.getContext('2d')!;
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(img, 1, 1, 10, 16, 0, 0, 10, 16);
+  RAW_SKIN_CANVASES.add(c);
+  return c;
+}
+function loadCustomCape(dataUrl: string): Promise<HTMLCanvasElement | null> {
+  const hit = customCapeCache.get(dataUrl);
+  if (hit) return Promise.resolve(hit);
+  const pending = customCapeLoading.get(dataUrl);
+  if (pending) return pending;
+  if (typeof Image === 'undefined') return Promise.resolve(null);
+  const p = new Promise<HTMLCanvasElement | null>((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        if (img.width < 22 || img.height < 17 || img.width > 512 || img.height > 512) { resolve(null); return; }
+        const c = customCapeFromImage(img);
+        if (customCapeCache.size > 24) customCapeCache.clear();
+        customCapeCache.set(dataUrl, c);
+        resolve(c);
+      } catch { resolve(null); }
+    };
+    img.onerror = () => resolve(null);
+    img.src = dataUrl;
+  }).finally(() => { customCapeLoading.delete(dataUrl); });
+  customCapeLoading.set(dataUrl, p);
+  return p;
+}
+
 /** Point a model material at a new base texture (respecting the 16/32 setting). */
 function setModelTexture(model: MobModel, m: THREE.Material | undefined, base: HTMLCanvasElement) {
   const i = model.materials.indexOf(m as THREE.MeshLambertMaterial);
@@ -456,8 +493,20 @@ export function applyPlayerLook(model: MobModel, look: Partial<PlayerLook>) {
       }
     } else paint(playerSkinCanvases(L.skin));
   }
-  if (L.cape !== 'none' && (!prev || prev.cape !== L.cape)) setModelTexture(model, parts.cape, capeCanvas(L.cape));
-  parts.capePivot.visible = L.cape !== 'none';
+  let capeShown = L.cape !== 'none';
+  if (L.cape === CUSTOM_CAPE_ID && L.capeData) {
+    const url = L.capeData;
+    const ready = customCapeCache.get(url);
+    if (ready) { if (!prev || prev.cape !== L.cape || prev.capeData !== url) setModelTexture(model, parts.cape, ready); }
+    else {
+      capeShown = false; // until the picture is decoded
+      void loadCustomCape(url).then((c) => {
+        const now = model.root.userData.look as PlayerLook | undefined;
+        if (c && now && now.cape === CUSTOM_CAPE_ID && now.capeData === url) { setModelTexture(model, parts.cape, c); parts.capePivot.visible = true; } // still wearing it
+      });
+    }
+  } else if (L.cape !== 'none' && (!prev || prev.cape !== L.cape)) setModelTexture(model, parts.cape, capeCanvas(L.cape));
+  parts.capePivot.visible = capeShown;
   model.root.userData.look = L;
 }
 
@@ -493,7 +542,13 @@ export function drawLookPreview(canvas: HTMLCanvasElement, look: Partial<PlayerL
   put(c.body, -4, 8, 8, 12);
   put(c.arms, -8, 8, 4, 12); put(c.arms, 4, 8, 4, 12);
   put(view === 'front' ? c.face : c.side, -4, 0, 8, 8);
-  if (view === 'back' && L.cape !== 'none') put(capeCanvas(L.cape), -5, 8, 10, 16);
+  if (view === 'back' && L.cape !== 'none') {
+    if (L.cape === CUSTOM_CAPE_ID && L.capeData) {
+      const ready = customCapeCache.get(L.capeData);
+      if (ready) put(ready, -5, 8, 10, 16);
+      else { const url = L.capeData; void loadCustomCape(url).then((done) => { if (done) drawLookPreview(canvas, look, view); }); } // draw again once it is decoded
+    } else put(capeCanvas(L.cape), -5, 8, 10, 16);
+  }
 }
 
 /** Re-skin a mob/player model with the current texture resolution (used when you switch mid-game). */
@@ -593,6 +648,27 @@ const AXE_MAP = [
   'Ss..............',
   '................',
 ];
+
+// A spear: a long shaft from the bottom left, a leaf-shaped head at the top right (and a wrap where they meet)
+const SPEAR_MAP = ((): string[] => {
+  const g: string[][] = Array.from({ length: 16 }, () => Array(16).fill('.'));
+  for (let i = 0; i <= 11; i++) { g[15 - i][i] = 'S'; if (i + 1 < 16) g[15 - i][i + 1] = 's'; }
+  const put = (x: number, y: number, c: string) => { g[y][x] = c; };
+  for (const [x, y] of [[15, 0], [14, 1], [13, 2], [12, 3], [11, 4], [14, 0], [13, 1], [12, 2], [11, 3]]) put(x, y, 'h');
+  for (const [x, y] of [[15, 1], [14, 2], [13, 3], [12, 4], [10, 5], [11, 5], [10, 4], [15, 2], [14, 3], [13, 4]]) put(x, y, 'H');
+  for (const [x, y] of [[9, 6], [10, 6], [8, 7]]) put(x, y, 'g');
+  return g.map((r) => r.join(''));
+})();
+// A mace: a spiked iron ball on a short handle
+const MACE_MAP = ((): string[] => {
+  const g: string[][] = Array.from({ length: 16 }, () => Array(16).fill('.'));
+  for (let i = 0; i <= 9; i++) { g[15 - i][i] = 'S'; g[15 - i][i + 1] = 's'; }
+  for (let y = 2; y <= 7; y++) for (let x = 8; x <= 13; x++) g[y][x] = (x === 8 || y === 7 || x === 13) ? 'H' : 'h';
+  for (const [x, y] of [[7, 4], [7, 5], [14, 4], [14, 5], [10, 1], [11, 1], [10, 8], [11, 8], [7, 2], [14, 2], [7, 7], [14, 7], [8, 1], [13, 1]]) g[y][x] = 'g';
+  for (const [x, y] of [[10, 4], [11, 4], [10, 5], [11, 5]]) g[y][x] = 'H';
+  return g.map((r) => r.join(''));
+})();
+const MACE_PALETTE: Record<string, string> = { h: '#aab0ba', H: '#5b616b', s: STICK_LIGHT, S: STICK_DARK, g: '#d8dde6' };
 
 function drawPixelMap(map: string[], palette: Record<string, string>): HTMLCanvasElement {
   // 16x16 like Minecraft, up to 64x64 for detailed art (guns, uploaded pictures); the 3D model stays the same size
@@ -1094,7 +1170,16 @@ function buildMobModel(kind: MobKind | 'player', variant = 0): MobModel {
       ctx.fillStyle = '#ffffff'; ctx.fillRect(1, 2, 2, 1); ctx.fillRect(5, 2, 2, 1);
       ctx.fillStyle = '#2b2b2b'; ctx.fillRect(2, 2, 1, 1); ctx.fillRect(5, 2, 1, 1);
     });
+    // The angry face: glaring red eyes under slanted brows, and bared teeth
+    const angryFace = mobTex('#cfcac3', ['#bdb8b0'], 0.2, (ctx) => {
+      ctx.fillStyle = '#e02a1a'; ctx.fillRect(1, 2, 2, 1); ctx.fillRect(5, 2, 2, 1);
+      ctx.fillStyle = '#1a1a1a'; ctx.fillRect(2, 2, 1, 1); ctx.fillRect(5, 2, 1, 1);
+      ctx.fillStyle = '#3a3a3a'; ctx.fillRect(0, 1, 2, 1); ctx.fillRect(6, 1, 2, 1); ctx.fillRect(2, 1, 1, 1); ctx.fillRect(5, 1, 1, 1); ctx.fillRect(3, 2, 1, 1); ctx.fillRect(4, 2, 1, 1); // a scowl: brows slant down to the middle
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(1, 5, 1, 1); ctx.fillRect(3, 5, 1, 1); ctx.fillRect(4, 5, 1, 1); ctx.fillRect(6, 5, 1, 1); // bared teeth
+      ctx.fillStyle = '#7a1a1a'; ctx.fillRect(1, 4, 6, 1);
+    });
     head = box(root, [6, 6, 5], [0, 12.5, -5], [0, 0, -2.5], headMats(fur(), face));
+    root.userData.wolfFace = { mesh: head.children[0], calm: (head.children[0] as THREE.Mesh).material instanceof Array ? ((head.children[0] as THREE.Mesh).material as THREE.Material[])[5] : null, angry: mat(angryFace) };
     box(head, [3, 3, 3], [0, 0, 0], [0, -1, -6.5], mat(mobTex('#e6e2dc', ['#d3cfc8'], 0.15, (ctx) => { ctx.fillStyle = '#222222'; ctx.fillRect(3, 0, 2, 2); })));
     const earM = mat(mobTex('#b3aea6', ['#a39e96'], 0.2));
     box(head, [2, 2, 1], [0, 0, 0], [-2, 4, -1.5], earM);
@@ -2621,16 +2706,16 @@ function drawTorchIcon(): HTMLCanvasElement {
   ctx.fillStyle = '#ffd23a'; ctx.fillRect(6, 2, 4, 4); ctx.fillStyle = '#ff8a1a'; ctx.fillRect(7, 4, 2, 2); ctx.fillStyle = '#fff6b0'; ctx.fillRect(7, 2, 1, 2);
   return c;
 }
-function drawBedSide(): HTMLCanvasElement {
+function drawBedSide(color = '#c8322a'): HTMLCanvasElement {
   const c = makeCanvas(16, 16), ctx = c.getContext('2d')!;
-  ctx.fillStyle = '#c8322a'; ctx.fillRect(0, 7, 16, 4);
+  ctx.fillStyle = color; ctx.fillRect(0, 7, 16, 4);
   ctx.fillStyle = '#8a5a2b'; ctx.fillRect(0, 11, 16, 2); ctx.fillRect(0, 13, 2, 3); ctx.fillRect(14, 13, 2, 3);
   return c;
 }
-function drawBedTop(head: boolean): HTMLCanvasElement {
+function drawBedTop(head: boolean, color = '#c8322a', edge = '#a82418'): HTMLCanvasElement {
   const c = makeCanvas(16, 16), ctx = c.getContext('2d')!;
-  ctx.fillStyle = '#c8322a'; ctx.fillRect(0, 0, 16, 16);
-  ctx.fillStyle = '#a82418'; ctx.fillRect(0, 0, 16, 1); ctx.fillRect(0, 15, 16, 1);
+  ctx.fillStyle = color; ctx.fillRect(0, 0, 16, 16);
+  ctx.fillStyle = edge; ctx.fillRect(0, 0, 16, 1); ctx.fillRect(0, 15, 16, 1);
   if (head) { ctx.fillStyle = '#f2f2f2'; ctx.fillRect(2, 2, 12, 6); ctx.fillStyle = '#d8d8d8'; ctx.fillRect(2, 7, 12, 1); }
   return c;
 }
@@ -2667,10 +2752,10 @@ function drawFlintIcon(): HTMLCanvasElement {
   setPx(ctx, 7, 6, '#9a9aa4');
   return c;
 }
-function drawBedIcon(): HTMLCanvasElement {
+function drawBedIcon(color = '#c8322a'): HTMLCanvasElement {
   const c = makeCanvas(16, 16), ctx = c.getContext('2d')!;
   ctx.fillStyle = '#8a5a2b'; ctx.fillRect(1, 9, 14, 2); ctx.fillRect(1, 11, 1, 3); ctx.fillRect(14, 11, 1, 3);
-  ctx.fillStyle = '#c8322a'; ctx.fillRect(1, 6, 14, 3);
+  ctx.fillStyle = color; ctx.fillRect(1, 6, 14, 3);
   ctx.fillStyle = '#f2f2f2'; ctx.fillRect(1, 4, 4, 3);
   return c;
 }
@@ -2757,6 +2842,13 @@ function faceCanvases(): Record<string, HTMLCanvasElement> {
     faceCanvasCache.infernium = g;
   }
   for (const cc of CONCRETE) faceCanvasCache[`concrete${cc.id}`] = drawConcreteCanvas(cc.color);
+  DYE_COLORS.forEach((d, i) => {
+    if (i === BED_RED) return;
+    const edge = shadeColor(d.wool, -0.18);
+    faceCanvasCache![`bedSide_${d.key}`] = drawBedSide(d.wool);
+    faceCanvasCache![`bedFoot_${d.key}`] = drawBedTop(false, d.wool, edge);
+    faceCanvasCache![`bedHead_${d.key}`] = drawBedTop(true, d.wool, edge);
+  });
   const st = faceCanvasCache.stone;
   faceCanvasCache.coalOre = oreCanvas(st, '#3a3a3a', '#141414');
   faceCanvasCache.ironOre = oreCanvas(st, '#d8af93', '#9c7458');
@@ -2908,8 +3000,9 @@ function itemCanvasBase(id: number): HTMLCanvasElement | null {
   if (id === ITEM_BRIDGE_EGG) return drawBridgeEggIcon();
   if (id >= BLOCK_TORCH_WALL && id < BLOCK_TORCH_CEILING) return drawTorchIcon();
   if (isEgg(id)) return drawEggCanvas(TEAM_COLORS[id - BLOCK_EGG].color);
+  if (id >= ITEM_BED_DYED_FIRST && id < ITEM_BED_DYED_FIRST + 12 && id !== ITEM_BED_DYED_FIRST + BED_RED) return drawBedIcon(DYE_COLORS[id - ITEM_BED_DYED_FIRST].wool);
   const tool = TOOLS[id];
-  if (tool) return drawPixelMap(tool.kind === 'pickaxe' ? PICKAXE_MAP : tool.kind === 'sword' ? SWORD_MAP : tool.kind === 'hoe' ? HOE_MAP : AXE_MAP, TOOL_PALETTES[tool.material]);
+  if (tool) return drawPixelMap(tool.kind === 'pickaxe' ? PICKAXE_MAP : tool.kind === 'sword' ? SWORD_MAP : tool.kind === 'hoe' ? HOE_MAP : tool.kind === 'spear' ? SPEAR_MAP : tool.kind === 'mace' ? MACE_MAP : AXE_MAP, tool.kind === 'mace' ? MACE_PALETTE : TOOL_PALETTES[tool.material]);
   switch (id) {
     case ITEM_STICK: return drawStickCanvas();
     case ITEM_COAL: return drawLumpCanvas();
@@ -3326,8 +3419,8 @@ export const LIGHT_MARGIN = 14; // light reaches this far into a chunk from its 
 // ---------------- Phase 2 blocks: ids 1000-1199 (built-in blocks used to stop at 99) ----------------
 // A placeable block is any id below 100 (built-in 0-59, mods 60-99) or 1000-1399. Items are 100-999
 // (mods use 200-999) and 1400 and up for newer built-in items.
-export const MAX_BLOCK_ID = 2300; // (stairs and slabs live at 2000 and up, see STAIR_FIRST)
-export function isBlockId(id: number): boolean { return (id >= 0 && id < 100) || (id >= 1000 && id < 1400) || (id >= STAIR_FIRST && id < STAIR_END) || isHeadDiag(id) || isTrapdoorLow(id); }
+export const MAX_BLOCK_ID = 2400; // (stairs and slabs live at 2000 and up, see STAIR_FIRST; dyed beds at 2300)
+export function isBlockId(id: number): boolean { return (id >= 0 && id < 100) || (id >= 1000 && id < 1400) || (id >= STAIR_FIRST && id < STAIR_END) || isHeadDiag(id) || isTrapdoorLow(id) || isDyedBed(id); }
 export const BLOCK_GRAVEL = 1000;
 export const BLOCK_GRANITE = 1001;
 export const BLOCK_DIORITE = 1002;
@@ -3504,7 +3597,7 @@ export function terracottaForDye(key: string): number | null {
 // Facing blocks keep their direction in their id (north, east, south, west = 0-3), so pasting a turned or mirrored
 // building has to change those ids too. Everything not listed here looks the same from every side.
 function mapFacing(b: number, f: (d: number) => number): number {
-  if (b >= 1040 && b <= 1047) { const base = b >= 1044 ? 1044 : 1040; return base + f(b - base); } // beds
+  if (isBed(b)) return makeBed(bedColor(b), bedIsHead(b), f(bedDir(b))); // beds (all colors)
   if (b >= BLOCK_DOOR_N && b < BLOCK_DOOR_TOP) return BLOCK_DOOR_N + f(b - BLOCK_DOOR_N); // wooden door (bottom half)
   if (b >= 1050 && b <= 1053) return 1050 + f(b - 1050); // iron door (bottom half)
   if (isStairBlock(b)) { const k = (b - STAIR_FIRST) % STAIR_STRIDE; return b - k + f(k >> 1) * 2 + (k & 1); }
@@ -3639,7 +3732,22 @@ export const ITEM_IRON_DOOR = 185;
 export function isLog(b: number): boolean { return b === BLOCK_WOOD || (b >= 1010 && b <= 1013) || b === BLOCK_CINDER_LOG; }
 export function isPlanks(b: number): boolean { return b === ITEM_PLANKS || (b >= 1020 && b <= 1023) || b === BLOCK_CINDER_PLANKS; }
 export function isLeaves(b: number): boolean { return b === BLOCK_LEAVES || (b >= 1030 && b <= 1033) || b === BLOCK_CINDER_LEAVES; }
-export function isBed(b: number): boolean { return b >= 1040 && b <= 1047; }
+// Beds come in the 12 dye colors. The red bed is the original (1040-1047); the others are 2300-2395:
+// BLOCK_BED_DYED + color*8 + (head ? 4 : 0) + direction, color = index in DYE_COLORS.
+export const BLOCK_BED_DYED = 2300;
+export const BED_RED = 3;
+export const isDyedBed = (b: number): boolean => b >= BLOCK_BED_DYED && b < BLOCK_BED_DYED + 96;
+export function isBed(b: number): boolean { return (b >= 1040 && b <= 1047) || isDyedBed(b); }
+export const bedColor = (b: number): number => (isDyedBed(b) ? Math.floor((b - BLOCK_BED_DYED) / 8) : BED_RED);
+export const bedIsHead = (b: number): boolean => (isDyedBed(b) ? (b - BLOCK_BED_DYED) % 8 >= 4 : b >= BLOCK_BED_HEAD);
+export const bedDir = (b: number): number => (isDyedBed(b) ? (b - BLOCK_BED_DYED) % 4 : (b - (b >= BLOCK_BED_HEAD ? BLOCK_BED_HEAD : BLOCK_BED_FOOT)) % 4);
+export const makeBed = (color: number, head: boolean, dir: number): number =>
+  color === BED_RED ? (head ? BLOCK_BED_HEAD : BLOCK_BED_FOOT) + dir : BLOCK_BED_DYED + color * 8 + (head ? 4 : 0) + dir;
+/** The carried items: the red bed is ITEM_BED, the other colors are ITEM_BED_DYED_FIRST + color. */
+export const ITEM_BED_DYED_FIRST = 1800;
+export const bedItem = (color: number): number => (color === BED_RED ? ITEM_BED : ITEM_BED_DYED_FIRST + color);
+export const isBedItem = (id: number): boolean => id === ITEM_BED || (id >= ITEM_BED_DYED_FIRST && id < ITEM_BED_DYED_FIRST + 12 && id !== ITEM_BED_DYED_FIRST + BED_RED);
+export const bedItemColor = (id: number): number => (id === ITEM_BED ? BED_RED : id - ITEM_BED_DYED_FIRST);
 export function isIronDoor(b: number): boolean { return b >= 1050 && b <= 1055; }
 /** Any kind of planks counts as planks in recipes (logs stay specific, so each log makes its own planks). */
 export function craftId(id: number): number { return isPlanks(id) ? ITEM_PLANKS : id; }
@@ -3899,17 +4007,18 @@ export function shapeBoxes(b: number, at: (dx: number, dy: number, dz: number) =
 // tier = how tough a block it can mine (see requiredTier): 1 stone & coal,
 // 2 iron/gold/diamond/emerald ores, 3 obsidian. speed multiplies mining
 // speed on the blocks that tool is for. Gold is fast but weak, like Minecraft.
-export type ToolKind = 'pickaxe' | 'axe' | 'sword' | 'hoe';
+export type ToolKind = 'pickaxe' | 'axe' | 'sword' | 'hoe' | 'spear' | 'mace';
 export type ToolInfo = { kind: ToolKind; material: 'wood' | 'stone' | 'iron' | 'gold' | 'diamond' | 'emerald' | 'infernium'; tier: number; speed: number; damage: number };
 const TOOL_MATERIALS = {
-  // axes hit harder than swords but swing slower (see toolCooldown)
-  wood: { tier: 1, speed: 2, damage: { pickaxe: 2, axe: 7, sword: 4, hoe: 1 } },
-  stone: { tier: 2, speed: 4, damage: { pickaxe: 3, axe: 8, sword: 5, hoe: 1 } },
-  iron: { tier: 3, speed: 6, damage: { pickaxe: 4, axe: 9, sword: 6, hoe: 1 } },
-  gold: { tier: 1, speed: 12, damage: { pickaxe: 2, axe: 7, sword: 4, hoe: 1 } },
-  diamond: { tier: 4, speed: 8, damage: { pickaxe: 5, axe: 10, sword: 7, hoe: 1 } },
-  emerald: { tier: 5, speed: 10, damage: { pickaxe: 6, axe: 11, sword: 8, hoe: 1 } },
-  infernium: { tier: 6, speed: 13, damage: { pickaxe: 7, axe: 13, sword: 10, hoe: 2 } }, // from the Nether
+  // There is no attack cooldown any more (Indev 31), so axes are one point behind the sword of the same material;
+  // the sword can block, the spear reaches further and pierces, the mace smashes (see MACE below)
+  wood: { tier: 1, speed: 2, damage: { pickaxe: 2, axe: 3, sword: 4, hoe: 1, spear: 3, mace: 6 } },
+  stone: { tier: 2, speed: 4, damage: { pickaxe: 3, axe: 4, sword: 5, hoe: 1, spear: 4, mace: 6 } },
+  iron: { tier: 3, speed: 6, damage: { pickaxe: 4, axe: 5, sword: 6, hoe: 1, spear: 5, mace: 6 } },
+  gold: { tier: 1, speed: 12, damage: { pickaxe: 2, axe: 3, sword: 4, hoe: 1, spear: 3, mace: 6 } },
+  diamond: { tier: 4, speed: 8, damage: { pickaxe: 5, axe: 6, sword: 7, hoe: 1, spear: 6, mace: 6 } },
+  emerald: { tier: 5, speed: 10, damage: { pickaxe: 6, axe: 7, sword: 8, hoe: 1, spear: 7, mace: 6 } },
+  infernium: { tier: 6, speed: 13, damage: { pickaxe: 7, axe: 9, sword: 10, hoe: 2, spear: 9, mace: 6 } }, // from the Nether
 } as const;
 const toolOf = (kind: ToolKind, material: ToolInfo['material']): ToolInfo =>
   ({ kind, material, tier: TOOL_MATERIALS[material].tier, speed: TOOL_MATERIALS[material].speed, damage: TOOL_MATERIALS[material].damage[kind] });
@@ -3923,18 +4032,45 @@ export const TOOLS: Record<number, ToolInfo> = {
   [ITEM_INFERNIUM_PICKAXE]: toolOf('pickaxe', 'infernium'), [ITEM_INFERNIUM_SWORD]: toolOf('sword', 'infernium'), [ITEM_INFERNIUM_AXE]: toolOf('axe', 'infernium'),
   [ITEM_WOOD_HOE]: toolOf('hoe', 'wood'), [ITEM_STONE_HOE]: toolOf('hoe', 'stone'), [ITEM_IRON_HOE]: toolOf('hoe', 'iron'), [ITEM_DIAMOND_HOE]: toolOf('hoe', 'diamond'), [ITEM_INFERNIUM_HOE]: toolOf('hoe', 'infernium'),
 };
-/** Seconds before your next hit is at full strength: swords 0.5, axes 1 (hitting sooner does less damage, like Minecraft Java). */
-export function toolCooldown(id: number | null): number {
-  const t = id !== null ? TOOLS[id] : undefined;
-  return t?.kind === 'axe' ? 1 : t?.kind === 'sword' ? 0.5 : t ? 0.5 : 0.25;
+
+// ---------------- Spears and the mace (Indev 31) ----------------
+/** Spears: one per tool material, in this order, from ITEM_SPEAR_FIRST. */
+export const SPEAR_MATERIALS = ['wood', 'stone', 'iron', 'gold', 'diamond', 'emerald', 'infernium'] as const;
+export const ITEM_SPEAR_FIRST = 1790; // 1790-1796
+export const ITEM_MACE = 1797;
+export const spearId = (material: ToolInfo['material']) => ITEM_SPEAR_FIRST + SPEAR_MATERIALS.indexOf(material as typeof SPEAR_MATERIALS[number]);
+export const isSpear = (id: number | null | undefined) => id !== null && id !== undefined && id >= ITEM_SPEAR_FIRST && id < ITEM_SPEAR_FIRST + SPEAR_MATERIALS.length;
+export const isMace = (id: number | null | undefined) => id === ITEM_MACE;
+SPEAR_MATERIALS.forEach((m) => { TOOLS[spearId(m)] = toolOf('spear', m); });
+TOOLS[ITEM_MACE] = { ...toolOf('mace', 'iron'), tier: 0, speed: 1 }; // (a mace digs like a hand)
+export const MACE_DURABILITY = 500;
+/** The smash: how far you must fall, and the damage the fall adds (Minecraft's numbers: 4 per block for the first 3, 2 for the next 5, then 1). */
+export const MACE_SMASH_MIN_FALL = 1.5;
+export const MACE_SMASH_RADIUS = 2.5;
+export function maceFallBonus(fall: number): number {
+  if (fall < MACE_SMASH_MIN_FALL) return 0;
+  return 4 * Math.min(fall, 3) + 2 * Math.max(0, Math.min(fall, 8) - 3) + Math.max(0, fall - 8);
 }
-/** The tooltip lines for a tool or weapon: its base damage in hearts and how fast it swings. */
+/** Spear moves: the jab reaches 4.3 blocks, the charged thrust 5.5 and goes through everything in a line. */
+export const SPEAR_JAB_REACH = 4.3;
+export const SPEAR_CHARGE_REACH = 5.5;
+export const SPEAR_CHARGE_TIME = 1.0; // seconds of holding right-click for a full charge
+export const SPEAR_MIN_CHARGE = 0.25; // a shorter hold is just a poke
+/** Lunge: how hard it launches you forward (blocks per second) at each level. */
+export const lungeSpeed = (level: number) => 18 + 9 * Math.max(1, level);
+
+/** There is no attack cooldown any more, so every weapon is "fully charged" all the time. Kept so old scripts and tests still work. */
+export function toolCooldown(_id: number | null): number { return 0; }
+/** The tooltip lines for a tool or weapon: its base damage in hearts, and what makes it special. */
 export function toolLore(id: number): string[] | null {
   const t = TOOLS[id];
   if (!t) return null;
   const hearts = Math.round((t.damage / 2) * 10) / 10;
-  const cd = toolCooldown(id);
-  return [`+${hearts} Attack Damage`, `Attack Speed: ${cd === 1 ? '1 second' : `${cd} seconds`} per hit`];
+  const out = [`+${hearts} Attack Damage`, 'No attack cooldown'];
+  if (t.kind === 'spear') out.push('Left-click: jab (reach 4.3).', 'Hold right-click, let go: charge attack that pierces.', 'No critical hits or sprint knockback.');
+  if (t.kind === 'mace') out.push('Fall 1.5+ blocks, then hit: a smash attack.', 'The farther you fall, the harder it hits. No fall damage after a smash.');
+  if (t.kind === 'sword') out.push('Hold right-click to block.');
+  return out;
 }
 export const TIER_NAMES = ['', 'wooden', 'stone', 'iron', 'diamond', 'emerald', 'infernium'];
 
@@ -4107,6 +4243,7 @@ function newBlockKind(b: number): 'cube' | 'see' | 'pass' | null {
   return null;
 }
 for (let b = 0; b < MAX_BLOCK_ID; b++) {
+  if (isDyedBed(b)) { BLOCK_FLAGS[b] = 1; continue; } // a dyed bed: solid, not a whole cube
   if (isHeadDiag(b)) { BLOCK_FLAGS[b] = 1; continue; } // a turned head: solid, see-through
   if (isTrapdoorLow(b)) { BLOCK_FLAGS[b] = b < BLOCK_TRAPDOOR_LOW + 4 ? 1 : 0; continue; } // closed: solid; open: you walk through
   if (b >= STAIR_FIRST) { BLOCK_FLAGS[b] = isStepBlock(b) ? 1 : 0; continue; } // see-through (not a whole cube), but solid
@@ -4159,6 +4296,8 @@ export function cleanStack(st: unknown): ItemStack | null {
   if (typeof o.name === 'string' && o.name.trim()) out.name = o.name.trim().slice(0, 64);
   return out;
 }
+/** Extras that ride along with a hit on another player: Breach (the share of armor ignored) and a knockback multiplier. */
+export type HitExtra = { breach?: number; kbm?: number };
 export function itemDisplayName(st: ItemStack): string { return st.name ?? ITEM_INFO[st.id]?.name ?? 'Unknown'; }
 export function enchLevel(st: ItemStack | null | undefined, key: string): number { return st?.ench?.[key] ?? 0; }
 
@@ -4168,6 +4307,7 @@ const ARMOR_DURABILITY_BASE = [11, 16, 15, 13]; // helmet, chestplate, leggings,
 const ARMOR_DURABILITY_FACTOR: Record<string, number> = { leather: 5, iron: 15, gold: 7, diamond: 33, emerald: 25 };
 /** How many uses an item has before it breaks (0 = it never wears out). */
 export function maxDurability(id: number): number {
+  if (id === ITEM_MACE) return MACE_DURABILITY;
   const t = TOOLS[id];
   if (t) return TOOL_DURABILITY[t.material] ?? 0;
   if (id === ITEM_ELYTRA) return ELYTRA_DURABILITY;
@@ -4181,7 +4321,7 @@ export function maxDurability(id: number): number {
 }
 
 // ---------------- Enchantments ----------------
-export type EnchantTarget = 'sword' | 'axe' | 'pickaxe' | 'hoe' | 'helmet' | 'chestplate' | 'leggings' | 'boots' | 'bow' | 'shears' | 'rod' | 'elytra';
+export type EnchantTarget = 'sword' | 'axe' | 'pickaxe' | 'hoe' | 'helmet' | 'chestplate' | 'leggings' | 'boots' | 'bow' | 'shears' | 'rod' | 'elytra' | 'spear' | 'mace';
 export type EnchantDef = {
   key: string; name: string; max: number; weight: number;
   /** The lowest enchanting power that can give level `l`. */
@@ -4194,15 +4334,21 @@ export type EnchantDef = {
   treasure?: boolean;
 };
 const ARMOR_TARGETS: EnchantTarget[] = ['helmet', 'chestplate', 'leggings', 'boots'];
-const DURABLE_TARGETS: EnchantTarget[] = ['sword', 'axe', 'pickaxe', 'hoe', 'bow', 'rod', ...ARMOR_TARGETS, 'elytra'];
-/** Mending only mends what you wear: armor and the elytra (never swords, tools or bows). */
-const WORN_TARGETS: EnchantTarget[] = [...ARMOR_TARGETS, 'elytra'];
+const DURABLE_TARGETS: EnchantTarget[] = ['sword', 'axe', 'pickaxe', 'hoe', 'bow', 'rod', 'spear', 'mace', ...ARMOR_TARGETS, 'elytra'];
+/** Mending mends what you wear (armor and the elytra); a mace or spear in your hand is mended too. Swords, tools and bows are not. */
+const WORN_TARGETS: EnchantTarget[] = [...ARMOR_TARGETS, 'elytra', 'spear', 'mace'];
 export const ENCHANTMENTS: EnchantDef[] = [
-  { key: 'sharpness', name: 'Sharpness', max: 5, weight: 10, minPower: (l) => 1 + 11 * (l - 1), table: ['sword'], anvil: ['axe'], group: 'damage' },
-  { key: 'smite', name: 'Smite', max: 5, weight: 5, minPower: (l) => 5 + 8 * (l - 1), table: ['sword'], anvil: ['axe'], group: 'damage' },
-  { key: 'knockback', name: 'Knockback', max: 2, weight: 5, minPower: (l) => 5 + 20 * (l - 1), table: ['sword'] },
-  { key: 'fire_aspect', name: 'Fire Aspect', max: 2, weight: 2, minPower: (l) => 10 + 20 * (l - 1), table: ['sword'] },
-  { key: 'looting', name: 'Looting', max: 3, weight: 2, minPower: (l) => 15 + 9 * (l - 1), table: ['sword'] },
+  // The five damage enchantments are one group: an item carries only one of them. (The mace takes every one except Sharpness.)
+  { key: 'sharpness', name: 'Sharpness', max: 5, weight: 10, minPower: (l) => 1 + 11 * (l - 1), table: ['sword', 'spear'], anvil: ['axe'], group: 'damage' },
+  { key: 'smite', name: 'Smite', max: 5, weight: 5, minPower: (l) => 5 + 8 * (l - 1), table: ['sword', 'spear', 'mace'], anvil: ['axe'], group: 'damage' },
+  { key: 'bane_of_arthropods', name: 'Bane of Arthropods', max: 5, weight: 5, minPower: (l) => 5 + 8 * (l - 1), table: ['sword', 'spear', 'mace'], anvil: ['axe'], group: 'damage' },
+  { key: 'density', name: 'Density', max: 5, weight: 5, minPower: (l) => 5 + 8 * (l - 1), table: ['mace'], group: 'damage' },
+  { key: 'breach', name: 'Breach', max: 4, weight: 2, minPower: (l) => 15 + 9 * (l - 1), table: ['mace'], group: 'damage' },
+  { key: 'wind_burst', name: 'Wind Burst', max: 3, weight: 2, minPower: (l) => 15 + 9 * (l - 1), table: ['mace'] },
+  { key: 'lunge', name: 'Lunge', max: 3, weight: 5, minPower: (l) => 5 + 8 * (l - 1), table: ['spear'], anvil: ['mace'] },
+  { key: 'knockback', name: 'Knockback', max: 2, weight: 5, minPower: (l) => 5 + 20 * (l - 1), table: ['sword', 'spear'] },
+  { key: 'fire_aspect', name: 'Fire Aspect', max: 2, weight: 2, minPower: (l) => 10 + 20 * (l - 1), table: ['sword', 'spear', 'mace'] },
+  { key: 'looting', name: 'Looting', max: 3, weight: 2, minPower: (l) => 15 + 9 * (l - 1), table: ['sword', 'spear'] },
   { key: 'efficiency', name: 'Efficiency', max: 5, weight: 10, minPower: (l) => 1 + 10 * (l - 1), table: ['pickaxe', 'axe', 'hoe'], anvil: ['shears'] },
   { key: 'fortune', name: 'Fortune', max: 3, weight: 2, minPower: (l) => 15 + 9 * (l - 1), table: ['pickaxe'], anvil: ['axe', 'hoe'], group: 'harvest' },
   { key: 'silk_touch', name: 'Silk Touch', max: 1, weight: 1, minPower: () => 15, table: ['pickaxe', 'axe', 'hoe'], group: 'harvest' },
@@ -4219,7 +4365,18 @@ export const ENCHANTMENTS: EnchantDef[] = [
   { key: 'lure', name: 'Lure', max: 3, weight: 2, minPower: (l) => 15 + 9 * (l - 1), table: ['rod'] },
   { key: 'unbreaking', name: 'Unbreaking', max: 3, weight: 5, minPower: (l) => 5 + 8 * (l - 1), table: DURABLE_TARGETS, anvil: ['shears'] },
   { key: 'mending', name: 'Mending', max: 1, weight: 2, minPower: () => 25, table: WORN_TARGETS, treasure: true, group: 'infmend' },
+  // The item vanishes when you die (instead of dropping where you fell). Found as a book, never from the table.
+  { key: 'curse_of_vanishing', name: 'Curse of Vanishing', max: 1, weight: 1, minPower: () => 25, table: [...DURABLE_TARGETS, 'shears'], treasure: true },
 ];
+/** Short descriptions for the enchantment tooltips. */
+export const ENCHANT_INFO: Record<string, string> = {
+  density: 'Mace: +0.5 damage per block fallen, per level.',
+  breach: 'Mace: ignores 15% of the target\'s armor per level (up to 60%).',
+  wind_burst: 'Mace: a smash attack throws you back into the air.',
+  lunge: 'Spear or mace: launches you forward (and boosts an elytra glide). Costs durability.',
+  bane_of_arthropods: 'More damage to spiders.',
+  curse_of_vanishing: 'The item disappears when you die.',
+};
 export function enchantsConflict(a: string, b: string): boolean {
   if (a === b) return false;
   const ga = ENCHANTMENTS.find((d) => d.key === a)?.group, gb = ENCHANTMENTS.find((d) => d.key === b)?.group;
@@ -4251,6 +4408,7 @@ export function enchantLabel(key: string, level: number): string {
 }
 /** How well a material takes enchantments (higher = better and more of them), like Minecraft. */
 export function enchantability(id: number): number {
+  if (id === ITEM_MACE) return 15;
   const t = TOOLS[id];
   if (t) return ({ wood: 15, stone: 5, iron: 14, gold: 22, diamond: 10, emerald: 12, infernium: 15 } as Record<string, number>)[t.material] ?? 1;
   if (id === ITEM_ELYTRA) return 12;
@@ -4452,6 +4610,7 @@ export const ITEM_INFO: Record<number, { name: string; color: string; hidden?: b
   [1020]: { name: 'Spruce Planks', color: '#73532f' }, [1021]: { name: 'Birch Planks', color: '#d4c48a' }, [1022]: { name: 'Dark Oak Planks', color: '#4a3220' }, [1023]: { name: 'Acacia Planks', color: '#b85e2e' },
   [1030]: { name: 'Spruce Leaves', color: '#3b5e3b' }, [1031]: { name: 'Birch Leaves', color: '#6f9a48' }, [1032]: { name: 'Dark Oak Leaves', color: '#2f5a24' }, [1033]: { name: 'Acacia Leaves', color: '#5c8a2e' },
   ...Object.fromEntries([1040, 1041, 1042, 1043, 1044, 1045, 1046, 1047].map((b) => [b, { name: 'Bed Block', color: '#c8322a', hidden: true }])),
+  ...Object.fromEntries(Array.from({ length: 96 }, (_, i) => [BLOCK_BED_DYED + i, { name: 'Bed Block', color: '#c8322a', hidden: true }])),
   ...Object.fromEntries([1050, 1051, 1052, 1053, 1054, 1055].map((b) => [b, { name: 'Iron Door Block', color: '#c8ccd2', hidden: true }])),
   [ITEM_FLINT]: { name: 'Flint', color: '#3a3a3e' },
   [ITEM_WAND]: { name: 'Selection Wand', color: '#d8a83a', lore: ['Left-click a block: position 1. Right-click: position 2.', 'Then /fill <block> fills the box.'] },
@@ -4498,6 +4657,10 @@ DYE_COLORS.forEach((d, i) => {
   ITEM_INFO[dyeId(i)] = { name: `${d.name} Dye`, color: d.color };
   ITEM_INFO[woolId(i)] = { name: `${d.name} Wool`, color: d.wool };
 });
+SPEAR_MATERIALS.forEach((m) => { ITEM_INFO[spearId(m)] = { name: `${m.charAt(0).toUpperCase()}${m.slice(1)} Spear`, color: TOOL_PALETTES[m].h }; });
+ITEM_INFO[ITEM_MACE] = { name: 'Mace', color: '#8a8f98' };
+ITEM_INFO[ITEM_BED].name = 'Red Bed';
+DYE_COLORS.forEach((d, i) => { if (i !== BED_RED) ITEM_INFO[ITEM_BED_DYED_FIRST + i] = { name: `${d.name} Bed`, color: d.wool, lore: ['Sleep through the night and set your spawn point.', 'Craft a bed with any dye to change its color.'] }; });
 {
   const hide = (base: number, n: number, name: string, color: string) => { for (let k = 0; k < n; k++) ITEM_INFO[base + k] = { name, color, hidden: true }; };
   hide(BLOCK_ANVIL, 2, 'Anvil', '#4a4a4a');
@@ -4952,6 +5115,35 @@ for (const [mat, label, hoe] of [
 ] as Array<[number, string, number]>) {
   RECIPES.push({ id: `${label.toLowerCase()}_hoe`, name: `${label} Hoe`, pattern: [mat, mat, null, ITEM_STICK, null, ITEM_STICK], width: 2, height: 3, output: { id: hoe, count: 1 }, needsTable: true });
 }
+// Dyed beds: a bed and a dye (any order, any bed color)
+DYE_COLORS.forEach((d, i) => {
+  if (i === BED_RED) return;
+  RECIPES.push({ id: `bed_${d.key}`, name: `${d.name} Bed`, pattern: [dyeId(i), ITEM_BED], width: 1, height: 2, output: { id: bedItem(i), count: 1 }, needsTable: false });
+});
+const bedDyeCache = new Map<string, Recipe>();
+/** A bed of any color plus a dye of another color makes the bed that color (so you can change a bed's color again and again). */
+function matchBedDyeing(grid: (number | null)[]): Recipe | null {
+  const cells = grid.filter((c): c is number => c !== null && c !== undefined);
+  if (cells.length !== 2) return null;
+  const bed = cells.find(isBedItem), dye = cells.find(isDye);
+  if (bed === undefined || dye === undefined) return null;
+  const color = dye - ITEM_DYE_FIRST;
+  if (color === bedItemColor(bed)) return null;
+  const key = `${bed}:${dye}`;
+  let r = bedDyeCache.get(key);
+  if (!r) { r = { id: `bed_dye_${key}`, name: `${DYE_COLORS[color].name} Bed`, pattern: [bed, dye], width: 2, height: 1, output: { id: bedItem(color), count: 1 }, needsTable: false, shapeless: true }; bedDyeCache.set(key, r); }
+  return r;
+}
+// Spears (a head on two sticks) and the mace (a heavy head on a blaze rod)
+for (const [mat, material] of [
+  [ITEM_PLANKS, 'wood'], [BLOCK_STONE, 'stone'], [ITEM_IRON_INGOT, 'iron'], [ITEM_GOLD_INGOT, 'gold'],
+  [ITEM_DIAMOND, 'diamond'], [ITEM_EMERALD, 'emerald'], [ITEM_INFERNIUM_INGOT, 'infernium'],
+] as Array<[number, ToolInfo['material']]>) {
+  RECIPES.push({ id: `${material}_spear`, name: `${material.charAt(0).toUpperCase()}${material.slice(1)} Spear`, pattern: [mat, ITEM_STICK, ITEM_STICK], width: 1, height: 3, output: { id: spearId(material), count: 1 }, needsTable: true });
+}
+RECIPES.push(
+  { id: 'mace', name: 'Mace', pattern: [BLOCK_IRON_BLOCK, ITEM_DIAMOND, BLOCK_IRON_BLOCK, null, ITEM_BLAZE_ROD, null, null, ITEM_BLAZE_ROD, null], width: 3, height: 3, output: { id: ITEM_MACE, count: 1 }, needsTable: true },
+);
 RECIPES.push(
   { id: 'furnace', name: 'Furnace', pattern: [BLOCK_STONE, BLOCK_STONE, BLOCK_STONE, BLOCK_STONE, null, BLOCK_STONE, BLOCK_STONE, BLOCK_STONE, BLOCK_STONE], width: 3, height: 3, output: { id: BLOCK_FURNACE, count: 1 }, needsTable: true },
   { id: 'door', name: 'Door', pattern: [ITEM_PLANKS, ITEM_PLANKS, ITEM_PLANKS, ITEM_PLANKS, ITEM_PLANKS, ITEM_PLANKS], width: 2, height: 3, output: { id: ITEM_DOOR, count: 3 }, needsTable: true },
@@ -5143,7 +5335,7 @@ export function setExperimental(on: boolean) {
 }
 
 export function matchRecipe(grid: (number | null)[], size: number, hasTable: boolean): Recipe | null {
-  return matchRecipeWith(grid, size, hasTable, false) ?? matchRecipeWith(grid, size, hasTable, true);
+  return matchRecipeWith(grid, size, hasTable, false) ?? matchRecipeWith(grid, size, hasTable, true) ?? matchBedDyeing(grid);
 }
 function matchRecipeWith(grid: (number | null)[], size: number, hasTable: boolean, anyPlanks: boolean): Recipe | null {
   for (const recipe of RECIPES) {
@@ -5644,6 +5836,7 @@ const NEW_FACE_KEYS: string[] = [
   'mDiamond', 'mGold', 'mCoal', 'mEmerald', 'mLapis', 'mInfernium', 'brewBase', 'brewRod',
   'spawner', ...TERRA_DYED.map((t) => `tc_${t.key}`),
   'enderChestTop', 'enderChestSide', 'cobweb', 'cinderLog', 'cinderLogTop', 'cinderPlanks', 'cinderLeaves', 'allium', 'orangeTulip', 'pinkTulip', 'oxeyeDaisy',
+  ...DYE_COLORS.flatMap((d, i) => (i === BED_RED ? [] : [`bedSide_${d.key}`, `bedFoot_${d.key}`, `bedHead_${d.key}`])),
 ];
 const MINERAL_TEX: Record<number, string> = {}; // filled right below (the block ids are defined above)
 MINERAL_TEX[BLOCK_DIAMOND_BLOCK] = 'mDiamond'; MINERAL_TEX[BLOCK_GOLD_BLOCK] = 'mGold'; MINERAL_TEX[BLOCK_COAL_BLOCK] = 'mCoal';
@@ -5665,6 +5858,7 @@ function matIndexFor(block: number, f: number): number {
   if (isHeadDiag(block)) return NF(`head${headKind(block)}${f === 2 ? 'top' : f === [5, 0, 4, 1][headFacing(block)] ? 'face' : 'side'}`);
   if (block >= STAIR_FIRST && block < STAIR_END) { const base = stepBase(block); return matIndexFor(base ?? BLOCK_STONE, f); }
   const top = f === 2, bottom = f === 3;
+  if (isDyedBed(block)) { const k = DYE_COLORS[bedColor(block)].key; return top ? NF(bedIsHead(block) ? `bedHead_${k}` : `bedFoot_${k}`) : bottom ? 63 : NF(`bedSide_${k}`); }
   if (block >= 1094 && block <= LAST_BUILTIN_BLOCK) {
     if (block <= 1097) return NF(`concrete${block}`);
     if (isWool(block)) return NF(`wool${block - BLOCK_WOOL_FIRST}`);
@@ -5765,7 +5959,7 @@ function matIndexFor(block: number, f: number): number {
       if (block >= 1010 && block <= 1013) return top || bottom ? 59 + (block - 1010) : 55 + (block - 1010);
       if (block >= 1020 && block <= 1023) return 63 + (block - 1020);
       if (block >= 1030 && block <= 1033) return 67 + (block - 1030);
-      if (isBed(block)) return top ? (block >= BLOCK_BED_HEAD ? 73 : 72) : bottom ? 63 : 71;
+      if (isBed(block)) return top ? (bedIsHead(block) ? 73 : 72) : bottom ? 63 : 71;
       if (block >= 1050 && block <= 1053) return 74;
       if (block === 1054 || block === 1055) return 75;
       if (isDoorBottom(block)) return 42;
@@ -8293,6 +8487,11 @@ export type GameHandle = {
   getFps: () => number;
   closeInventory: () => void;
   onPlayerHurt: (cb: (amount: number) => void) => void;
+  /** Fires when you catch fire or the flames go out (the screen shows burning flames at the bottom). */
+  onBurning: (cb: (on: boolean) => void) => void;
+  isBurning: () => boolean;
+  ignite: (seconds?: number) => void;
+  extinguish: () => void;
   setSfxVolume: (v: number) => void;
   /** Quality of life: the outline on the block you aim at, and F2 screenshots (a PNG data URL). */
   setBlockOutline: (on: boolean) => void;
@@ -8398,8 +8597,8 @@ export type GameHandle = {
   onMatchEvent: (cb: ((e: MatchEvent) => void) | null) => void;
   /** Player vs player: who you may hit (null: nobody), what happens when you do, getting hit, and someone else getting hit. */
   setPvp: (enemy: ((id: number) => boolean) | null) => void;
-  onPvpHit: (cb: ((id: number, dmg: number, kx: number, kz: number, bow?: boolean) => void) | null) => void;
-  hurtByPlayer: (dmg: number, kx: number, kz: number, name: string, by: number) => void;
+  onPvpHit: (cb: ((id: number, dmg: number, kx: number, kz: number, bow?: boolean, extra?: HitExtra) => void) | null) => void;
+  hurtByPlayer: (dmg: number, kx: number, kz: number, name: string, by: number, extra?: HitExtra) => void;
   remoteHurtFx: (id: number) => void;
   getMinigame: () => MinigameView | null;
   /** EggWars: the name of the map style in play (Meadow, Frost, Desert, Nether or Skylands). */
@@ -9485,7 +9684,7 @@ export function createVoxelGame(
     [BLOCK_LEAVES]: 0.2,
     [BLOCK_GRAVEL]: 0.6, [BLOCK_GRANITE]: 1.5, [BLOCK_DIORITE]: 1.5, [BLOCK_ANDESITE]: 1.5, [BLOCK_TNT]: 0, [BLOCK_CACTUS]: 0.4, [BLOCK_DEAD_BUSH]: 0, [BLOCK_TORCH]: 0,
     ...Object.fromEntries([1010, 1011, 1012, 1013].map((b) => [b, 0.75])), ...Object.fromEntries([1020, 1021, 1022, 1023].map((b) => [b, 0.75])),
-    ...Object.fromEntries([1030, 1031, 1032, 1033].map((b) => [b, 0.2])), ...Object.fromEntries([1040, 1041, 1042, 1043, 1044, 1045, 1046, 1047].map((b) => [b, 0.2])),
+    ...Object.fromEntries([1030, 1031, 1032, 1033].map((b) => [b, 0.2])), ...Object.fromEntries([1040, 1041, 1042, 1043, 1044, 1045, 1046, 1047].map((b) => [b, 0.2])), ...Object.fromEntries(Array.from({ length: 96 }, (_, i) => [BLOCK_BED_DYED + i, 0.2])),
     ...Object.fromEntries([1050, 1051, 1052, 1053, 1054, 1055].map((b) => [b, 5])),
     [BLOCK_GRASS]: 0.5,
     [BLOCK_DIRT]: 0.5,
@@ -9575,7 +9774,7 @@ export function createVoxelGame(
     // (Blocks your pickaxe is too weak for can't be broken at all, so no tier check needed here)
     if (isWheat(block)) return ITEM_SEEDS;
     if (isDoor(block)) return isIronDoor(block) ? ITEM_IRON_DOOR : ITEM_DOOR;
-    if (isBed(block)) return ITEM_BED;
+    if (isBed(block)) return bedItem(bedColor(block));
     if (isTrapdoor(block)) return BLOCK_TRAPDOOR;
     if (isFenceGate(block)) return BLOCK_FENCE_GATE;
     if (isWire(block)) return ITEM_REDSTONE;
@@ -9796,6 +9995,9 @@ export function createVoxelGame(
   // First-person pose for swords and tools, and for blocking with a sword (right-click and hold)
   const TOOL_FP = { scale: 1.15, x: 0.5, y: -0.15, z: -0.95, rx: -0.2, ry: -0.2, rz: 0.32 };
   const BLOCK_FP = { x: 0.22, y: -0.28, z: -0.85, rx: 0.1, ry: -0.9, rz: 1.2 };
+  // A spear is held out ahead of you, the point away from the camera (thrusts drive it forward; charging draws it back)
+  const SPEAR_FP = { scale: 1.25, x: 0.45, y: -0.34, z: -0.95, rx: -0.85, ry: -0.2, rz: 0.55 };
+  let spearChLerp = 0;
   // Swords are held like in Minecraft: the handle at the bottom right, the blade across the lower-right
   // quadrant of the screen, tilted diagonally up and forward into the world so you read it as a 3D blade
   // (not a flat sticker) — the extra yaw (ry) reveals the flat of the blade and the pitch (rx) tips the tip
@@ -9923,6 +10125,10 @@ export function createVoxelGame(
       m.scale.setScalar(SWORD_FP.scale);
       heldBase.set(SWORD_FP.x, SWORD_FP.y, SWORD_FP.z);
       m.rotation.set(SWORD_FP.rx, SWORD_FP.ry, SWORD_FP.rz);
+    } else if (isSpear(heldItem)) {
+      m.scale.setScalar(SPEAR_FP.scale);
+      heldBase.set(SPEAR_FP.x, SPEAR_FP.y, SPEAR_FP.z);
+      m.rotation.set(SPEAR_FP.rx, SPEAR_FP.ry, SPEAR_FP.rz);
     } else if (TOOLS[heldItem]) {
       // Tools: big and almost facing you, handle at the bottom, blade toward the top right
       m.scale.setScalar(TOOL_FP.scale);
@@ -9947,6 +10153,7 @@ export function createVoxelGame(
     data?: ItemStack; // a tool's wear, enchantments and name
     net?: string; // online: the id every player knows this thrown item by (the server decides who gets it)
     pending?: number; // online: seconds left waiting for the server to say whether we got it
+    burn?: number; // seconds spent in lava
   };
   const droppedItems: DroppedItem[] = [];
   let dropThrownCb: ((d: NetDrop) => void) | null = null;
@@ -10069,8 +10276,24 @@ export function createVoxelGame(
         }
       } else {
         // Simple physics: gravity, wall stops, ground friction. In water things sink slowly, and bubble columns carry them.
-        const dWet = isWater(world.getWorldBlock(Math.floor(d.pos.x), Math.floor(d.pos.y), Math.floor(d.pos.z)));
-        if (dWet) {
+        const dBlock = world.getWorldBlock(Math.floor(d.pos.x), Math.floor(d.pos.y), Math.floor(d.pos.z));
+        const dLava = isLava(dBlock);
+        if (dLava) {
+          // Lava burns up what falls in (infernium is fireproof and just floats there)
+          if (!isInfernium(d.id) && !isInfernium(d.data?.id)) {
+            d.burn = (d.burn ?? 0) + delta;
+            if (d.burn > 0.35) {
+              spawnParticles(d.pos.clone(), ['#ff9a1a', '#ffd23a', '#3a3a3a'], 8, 1.6, 0.1, 0.6, true);
+              playSfx('burn', d.pos);
+              removeDropped(i);
+              continue;
+            }
+          }
+          d.vel.y *= Math.exp(-4 * delta); d.vel.x *= Math.exp(-4 * delta); d.vel.z *= Math.exp(-4 * delta);
+          d.vel.y += (isInfernium(d.id) ? 2.5 : -2) * delta;
+        }
+        const dWet = isWater(dBlock);
+        if (dLava) { /* handled above */ } else if (dWet) {
           const dc = bubbleColumn(d.pos.x, d.pos.y, d.pos.z);
           d.vel.y *= Math.exp(-3 * delta); d.vel.x *= Math.exp(-3 * delta); d.vel.z *= Math.exp(-3 * delta);
           if (dc === 'up') d.vel.y = Math.min(d.vel.y + 30 * delta, 3.5);
@@ -10331,7 +10554,7 @@ export function createVoxelGame(
     }
   }
 
-  function playSfx(name: 'hurt' | 'pickup' | 'eat' | 'bow' | 'arrowHit' | 'hiss' | 'explode' | 'land' | 'splash' | 'teleport' | 'throw' | 'gunshot' | 'reload' | 'click' | 'ding' | 'pop' | 'fireball' | 'xp' | 'levelup' | 'itembreak' | 'enchant' | 'anvil' | 'switch' | 'shear' | 'glass', pos: THREE.Vector3 | null) {
+  function playSfx(name: 'hurt' | 'pickup' | 'eat' | 'bow' | 'arrowHit' | 'hiss' | 'explode' | 'land' | 'splash' | 'teleport' | 'throw' | 'gunshot' | 'reload' | 'click' | 'ding' | 'pop' | 'fireball' | 'xp' | 'levelup' | 'itembreak' | 'enchant' | 'anvil' | 'switch' | 'shear' | 'glass' | 'hurtBig' | 'burn' | 'crit' | 'smash' | 'lunge' | 'windburst' | 'ignite', pos: THREE.Vector3 | null) {
     switch (name) {
       case 'xp': tone(pos, 'sine', 1500 + Math.random() * 500, 1800 + Math.random() * 600, 0.08, 0.12); break;
       case 'levelup': for (let i = 0; i < 3; i++) tone(pos, 'triangle', 660 * (1 + i * 0.26), 880 * (1 + i * 0.26), 0.25, 0.18, i * 0.09); break;
@@ -10341,7 +10564,36 @@ export function createVoxelGame(
       case 'shear': for (let i = 0; i < 2; i++) noiseHit(pos, 'highpass', 4200, 2800, 0.07, 0.5, i * 0.09); tone(pos, 'square', 1500, 900, 0.05, 0.12); break;
       case 'glass': noiseHit(pos, 'highpass', 3600, 1800, 0.25, 0.7); tone(pos, 'triangle', 2400, 1600, 0.2, 0.2); tone(pos, 'sine', 3100, 2200, 0.15, 0.12, 0.04); break;
       case 'switch': tone(pos, 'square', 1000, 700, 0.04, 0.25); noiseHit(pos, 'bandpass', 2000, 1500, 0.03, 0.3); break;
-      case 'hurt': tone(pos, 'square', 280, 160, 0.18, 0.3); noiseHit(pos, 'lowpass', 900, 400, 0.12, 0.3); break;
+      // Taking damage: a dull body thump, a crunch of impact, a sharp crack, and a short pained "oof" (a falling voice with a buzzy overtone)
+      case 'hurt':
+        tone(pos, 'sine', 150, 55, 0.16, 0.5);
+        noiseHit(pos, 'lowpass', 1400, 250, 0.14, 0.55);
+        noiseHit(pos, 'bandpass', 2400, 900, 0.05, 0.3);
+        tone(pos, 'sawtooth', 340, 170, 0.22, 0.2, 0.02, 12);
+        tone(pos, 'square', 520, 250, 0.14, 0.08, 0.03);
+        break;
+      case 'hurtBig': // a heavy hit: deeper, longer, with a second thud behind it
+        tone(pos, 'sine', 120, 40, 0.28, 0.65);
+        noiseHit(pos, 'lowpass', 1800, 150, 0.25, 0.7);
+        noiseHit(pos, 'bandpass', 2000, 700, 0.08, 0.4);
+        tone(pos, 'sawtooth', 290, 120, 0.34, 0.24, 0.02, 10);
+        tone(pos, 'sine', 90, 45, 0.2, 0.4, 0.12);
+        break;
+      case 'burn': // fire: a hiss and a crackle with a short cry
+        noiseHit(pos, 'highpass', 3000, 1800, 0.18, 0.5);
+        for (let i = 0; i < 3; i++) noiseHit(pos, 'bandpass', 2600 + i * 300, 1500, 0.04, 0.45, i * 0.05, 4);
+        tone(pos, 'sawtooth', 400, 210, 0.2, 0.16, 0.02, 16);
+        break;
+      case 'ignite': noiseHit(pos, 'bandpass', 1400, 3200, 0.3, 0.5); tone(pos, 'sine', 180, 520, 0.25, 0.18); break;
+      case 'crit': // a bright "tick" over the hit
+        tone(pos, 'triangle', 1900, 2600, 0.09, 0.25); tone(pos, 'sine', 2800, 3600, 0.07, 0.15, 0.02); noiseHit(pos, 'highpass', 4500, 3000, 0.05, 0.3);
+        break;
+      case 'smash': // the mace coming down: a boom, a crack and a ring
+        tone(pos, 'sine', 110, 28, 0.55, 0.9); noiseHit(pos, 'lowpass', 2600, 90, 0.5, 1.0);
+        tone(pos, 'triangle', 700, 300, 0.4, 0.3, 0.02); noiseHit(pos, 'bandpass', 2600, 1200, 0.1, 0.5);
+        break;
+      case 'lunge': noiseHit(pos, 'bandpass', 700, 2400, 0.28, 0.6); tone(pos, 'sine', 200, 640, 0.22, 0.2); break;
+      case 'windburst': noiseHit(pos, 'bandpass', 500, 2600, 0.5, 0.8); tone(pos, 'sine', 150, 700, 0.45, 0.3); tone(pos, 'triangle', 320, 90, 0.3, 0.2, 0.12); break;
       case 'pickup': tone(pos, 'sine', 700, 1300, 0.09, 0.22); break;
       case 'eat': for (let i = 0; i < 3; i++) noiseHit(pos, 'bandpass', 1800, 1200, 0.07, 0.5, i * 0.14, 2); break;
       case 'bow': noiseHit(pos, 'bandpass', 1400, 600, 0.18, 0.5); tone(pos, 'triangle', 520, 180, 0.14, 0.3); break;
@@ -10465,6 +10717,8 @@ export function createVoxelGame(
   // =================================================================
   const playerKnock = new THREE.Vector3();
   let playerHurtCooldown = 0;
+  let burnTimer = 0, burnTick = 0, burnSparkT = 0; // burning: seconds of fire left on you, time to the next point of damage
+  let burnCallback: ((on: boolean) => void) | null = null;
   let regenTimer = 0;
   let peacefulHealTimer = 0;
   let digSoundTimer = 0;
@@ -10564,6 +10818,7 @@ export function createVoxelGame(
     const at = playerFeet().add(new THREE.Vector3(0, 1, 0));
     const all: ItemStack[] = [...slots, ...armor, offhand].filter((st): st is ItemStack => !!st);
     for (const st of all) {
+      if (enchLevel(st, 'curse_of_vanishing') > 0) { spawnParticles(at.clone(), ['#7a3aff', '#2a1a4a'], 6, 1.2, 0.08, 0.7, true); continue; } // cursed items vanish
       const a = Math.random() * Math.PI * 2, sp = 2 + Math.random() * 3.5;
       spawnDroppedItem(st.id, st.count, at.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.6, 0, (Math.random() - 0.5) * 0.6)),
         new THREE.Vector3(Math.cos(a) * sp, 3 + Math.random() * 3, Math.sin(a) * sp), 1.5, st);
@@ -10585,6 +10840,7 @@ export function createVoxelGame(
     playerKnock.set(0, 0, 0);
     if (mg) { arenaPlayerDied(reason); engineEvent('playerDeath', { cause: reason }); return; } // minigames: straight back (or out)
     dead = true;
+    extinguishSelf();
     tradeOpen = false;
     for (const k of Object.keys(keys)) keys[k] = false;
     if (!rules.keepInventory && (mode === 'survival' || mode === 'adventure')) {
@@ -10599,6 +10855,7 @@ export function createVoxelGame(
   function respawn() {
     if (!dead) return;
     dead = false;
+    extinguishSelf();
     if (rules.hardcore) setGameMode('spectator'); // hardcore: one life, then you can only watch
     if (dimension !== 'overworld') switchDimension('overworld', spawnX + 0.5, 40, spawnZ + 0.5);
     engineEvent('playerRespawn', {});
@@ -10623,7 +10880,50 @@ export function createVoxelGame(
     safeLock();
   }
 
-  function hurtPlayer(amount: number, from: THREE.Vector3 | null, knock = 6, cause = 'Unknown'): boolean {
+  /** Infernium (ingot, ore, block, tools, spears) shrugs off lava and fire: it never burns, and the hand that holds it is safe too. */
+  const isInfernium = (id: number | null | undefined): boolean =>
+    id !== null && id !== undefined && (id === ITEM_INFERNIUM_INGOT || id === BLOCK_INFERNIUM_ORE || id === BLOCK_INFERNIUM_BLOCK || TOOLS[id]?.material === 'infernium');
+  const fireProofNow = () => effectLevel('fire_resistance') > 0 || isInfernium(heldItem);
+  const FIRE_CAUSE = /lava|campfire|fire|burn|blaze|magma/;
+  function playerInWater(): boolean {
+    const x = Math.floor(camera.position.x), z = Math.floor(camera.position.z), fy = camera.position.y - PLAYER_EYE;
+    return isWater(world.getWorldBlock(x, Math.floor(fy + 0.3), z)) || isWater(world.getWorldBlock(x, Math.floor(camera.position.y), z));
+  }
+  /** Sets you on fire for a few seconds (it keeps burning after you leave the lava or flames). Water puts it out. */
+  function igniteSelf(seconds: number) {
+    if (!canBeAttacked() || fireProofNow() || playerInWater()) return;
+    const wasOn = burnTimer > 0;
+    burnTimer = Math.max(burnTimer, seconds);
+    if (!wasOn) { burnTick = 0.35; playSfx('ignite', null); burnCallback?.(true); }
+  }
+  function extinguishSelf(sound = false) {
+    if (burnTimer <= 0) return;
+    burnTimer = 0; burnTick = 0;
+    if (sound) playSfx('hiss', null);
+    burnCallback?.(false);
+  }
+  function updateBurning(dt: number) {
+    if (burnTimer <= 0) return;
+    if (!canBeAttacked()) { extinguishSelf(); return; }
+    if (fireProofNow()) { extinguishSelf(); return; }
+    if (playerInWater()) { extinguishSelf(true); return; }
+    burnTimer -= dt;
+    burnTick -= dt;
+    burnSparkT -= dt;
+    if (burnSparkT <= 0) {
+      burnSparkT = 0.09;
+      const p = new THREE.Vector3(camera.position.x + (Math.random() - 0.5) * 0.7, camera.position.y - PLAYER_EYE + 0.2 + Math.random() * 1.4, camera.position.z + (Math.random() - 0.5) * 0.7);
+      spawnParticles(p, ['#ff9a1a', '#ffd23a', '#ff5a10'], 1, 0.6, 0.09, 0.5, true);
+    }
+    if (burnTick <= 0) {
+      burnTick = 1;
+      playerHurtCooldown = 0;
+      hurtPlayer(1, null, 0, 'Burning');
+    }
+    if (burnTimer <= 0) { burnTimer = 0; burnTick = 0; burnCallback?.(false); } // burnt out: the flames on the screen go too
+  }
+
+  function hurtPlayer(amount: number, from: THREE.Vector3 | null, knock = 6, cause = 'Unknown', breach = 0): boolean {
     if (!canBeAttacked() || amount <= 0 || playerHurtCooldown > 0) return false;
     playerHurtCooldown = 0.5; // brief invulnerability, like Minecraft
     lastDamageCause = cause;
@@ -10632,7 +10932,7 @@ export function createVoxelGame(
     if (from) amount *= DIFFICULTY_DAMAGE[rules.difficulty]; // monsters hit harder on hard, softer on easy
     // Armor soaks up damage (Minecraft's formula): 20 points = 80% less. Resistance adds 20% per level.
     // Fire Resistance makes lava, fire and magma harmless
-    if (effectLevel('fire_resistance') > 0 && /lava|campfire|fire|burn|blaze|magma/.test(cause.toLowerCase())) { playerHurtCooldown = 0; return false; }
+    if (fireProofNow() && FIRE_CAUSE.test(cause.toLowerCase())) { playerHurtCooldown = 0; return false; }
     if (cause !== 'Starvation' && cause !== '/kill command' && cause !== 'Falling out of the world' && cause !== 'Blight' && cause !== 'Poison' && cause !== 'Potion') {
       if (cause !== 'Fall damage' && cause !== 'Drowning' && cause !== 'Suffocation') wearArmor(amount);
       // Protection on any piece, and Feather Falling on boots for falls (up to 80% less, like Minecraft)
@@ -10647,7 +10947,7 @@ export function createVoxelGame(
       }
       if (cause === 'Fall damage') epf += 3 * enchLevel(armor[3], 'feather_falling');
       amount *= 1 - Math.min(20, epf) * 0.04;
-      amount *= 1 - Math.min(20, armorPoints()) / 25;
+      amount *= 1 - Math.min(20, armorPoints() * (1 - Math.max(0, Math.min(0.6, breach)))) / 25; // Breach (mace): part of the armor does not count
       amount *= Math.max(0, 1 - 0.2 * effectLevel('resistance'));
       amount = Math.max(1, Math.round(amount));
     }
@@ -10660,7 +10960,13 @@ export function createVoxelGame(
       playerKnock.set(dir.x * knock, 0, dir.z * knock);
       velocityY = Math.max(velocityY, 5);
     }
-    playSfx('hurt', null);
+    {
+      const lcause = cause.toLowerCase();
+      if (cause === 'Burning' || /lava|campfire|magma/.test(lcause)) playSfx('burn', null);
+      else playSfx(amount >= 6 ? 'hurtBig' : 'hurt', null);
+      // Lava, flames and fireballs set you alight
+      if (cause !== 'Burning' && FIRE_CAUSE.test(lcause)) igniteSelf(/lava/.test(lcause) ? 8 : /campfire|magma/.test(lcause) ? (/magma/.test(lcause) ? 0 : 4) : 5);
+    }
     hurtCallback?.(amount);
     return true;
   }
@@ -11684,7 +11990,7 @@ export function createVoxelGame(
 
   // ---------------- Player vs player ----------------
   let pvpEnemy: ((id: number) => boolean) | null = null;
-  let pvpCallback: ((id: number, dmg: number, kx: number, kz: number, bow?: boolean) => void) | null = null;
+  let pvpCallback: ((id: number, dmg: number, kx: number, kz: number, bow?: boolean, extra?: HitExtra) => void) | null = null;
   let lastAttacker: { id: number; name: string; at: number } | null = null;
   const pvpDir = new THREE.Vector3();
   /** Ray (origin + t * dir) against a box: the distance to it, or null if it misses. */
@@ -11699,12 +12005,26 @@ export function createVoxelGame(
     }
     return tmin;
   }
-  /** Left-click on another player you may fight: the room passes the hit on, and they take it in their own game. */
+  /** Sends one hit on another player (the room passes it on, and they take it in their own game). Returns whether it was sent. */
+  function strikeRemote(id: number, rp: RemotePlayer, s: Strike): boolean {
+    camera.getWorldDirection(pvpDir);
+    const flat = Math.hypot(pvpDir.x, pvpDir.z) || 1;
+    pvpCallback?.(id, s.dmg, pvpDir.x / flat, pvpDir.z / flat, false, { breach: s.breach || undefined, kbm: s.sprintKb ? 1.8 : s.smash ? 1.5 : undefined });
+    const at = rp.pos.clone().add(new THREE.Vector3(0, 1.2, 0));
+    if (!s.crit) spawnParticles(at, s.smash ? ['#d8d8d8', '#ffffff'] : ['#b01818', '#7a0e0e'], s.smash ? 10 : 5, 2, 0.08, 0.4);
+    playSfx('arrowHit', at);
+    rp.hurtFlash = 0.35;
+    afterStrike(s, at);
+    engineEvent('playerHit', { target: { id, type: 'player' }, damage: s.dmg });
+    return true;
+  }
+  /** Left-click on another player you may fight. */
   function attackRemoteInSight(): boolean {
     if (!pvpEnemy || mode === 'spectator' || dead) return false;
     if (mg && mg.online && mg.phase !== 'playing') return false;
     camera.getWorldDirection(pvpDir);
-    const reach = mode === 'creative' ? 5 : 3.4;
+    const spear = isSpear(heldItem);
+    const reach = mode === 'creative' ? 5 : spear ? SPEAR_JAB_REACH : 3.4;
     let best: { id: number; rp: RemotePlayer; t: number } | null = null;
     for (const [id, rp] of remotePlayers) {
       if (rp.mode === 'spectator' || !pvpEnemy(id)) continue;
@@ -11713,27 +12033,25 @@ export function createVoxelGame(
     }
     if (!best) return false;
     if (rayWallDistance(camera.position.x, camera.position.y, camera.position.z, pvpDir.x, pvpDir.y, pvpDir.z, best.t) < best.t) return false; // a block is in the way
-    const falling = velocityY < -1 && !wasGrounded;
-    const dmg = weaponDamage() * attackScale(attackStrength()) * (falling ? 1.5 : 1);
+    const st = slots[selectedSlot];
+    const s = prepareStrike();
+    const lunge = spear ? enchLevel(st, 'lunge') : 0;
     attackSince = 0;
-    const flat = Math.hypot(pvpDir.x, pvpDir.z) || 1;
-    pvpCallback?.(best.id, dmg, pvpDir.x / flat, pvpDir.z / flat);
-    const at = best.rp.pos.clone().add(new THREE.Vector3(0, 1.2, 0));
-    spawnParticles(at, falling ? ['#ffffff', '#c8c8c8'] : ['#b01818', '#7a0e0e'], falling ? 10 : 5, 2, 0.08, 0.4);
-    playSfx('arrowHit', at);
-    best.rp.hurtFlash = 0.35;
-    const tool = heldTool();
-    if (tool) wearHeld(tool.kind === 'sword' ? 1 : 2);
-    engineEvent('playerHit', { target: { id: best.id, type: 'player' }, damage: dmg });
+    strikeRemote(best.id, best.rp, s);
+    const w = weaponWear();
+    if (w) wearHeld(w);
+    if (lunge) doLunge(lunge);
     return true;
   }
-  function hurtByPlayer(dmg: number, kx: number, kz: number, name: string, by: number) {
+  function hurtByPlayer(dmg: number, kx: number, kz: number, name: string, by: number, extra?: HitExtra) {
     if (mg && mg.online && mg.phase !== 'playing') return;
     lastAttacker = { id: by, name, at: performance.now() };
-    if (!hurtPlayer(dmg, null, 0, name)) return;
+    const blocked = blockLerp > 0.5 && swordBlocking; // blocking with a sword works against players too: half the damage, a lot less push
+    if (!hurtPlayer(blocked ? dmg * 0.5 : dmg, null, 0, name, extra?.breach)) return;
     const len = Math.hypot(kx, kz) || 1;
-    playerKnock.set((kx / len) * 7, 0, (kz / len) * 7);
-    velocityY = Math.max(velocityY, 5.5);
+    const kbm = Math.max(1, Math.min(2.5, extra?.kbm ?? 1)) * (blocked ? 0.4 : 1);
+    playerKnock.set((kx / len) * 7 * kbm, 0, (kz / len) * 7 * kbm);
+    velocityY = Math.max(velocityY, blocked ? 2 : 5.5);
   }
 
   /** Can you break this block here? Only blocks someone placed, and other teams' eggs. */
@@ -12441,14 +12759,144 @@ export function createVoxelGame(
   }
 
   const UNDEAD = new Set<MobKind>(['zombie', 'skeleton', 'cinderbone', 'hollow_tyrant']);
-  // Attack cooldown (like Java): a hit before the weapon has recharged does much less damage
-  const attackStrength = () => Math.min(1, attackSince / toolCooldown(heldItem));
-  const attackScale = (s: number) => 0.2 + 0.8 * s * s;
+  const ARTHROPODS = new Set<MobKind>(['spider']);
+  // There is no attack cooldown (Indev 31): every hit lands at full strength. (These stay so scripts and old saves still work.)
+  const attackStrength = () => 1;
+  const attackScale = (_s: number) => 1;
   function weaponDamage(target?: Mob): number {
-    const sharp = enchLevel(slots[selectedSlot], 'sharpness');
-    const smite = target && UNDEAD.has(target.kind) ? enchLevel(slots[selectedSlot], 'smite') : 0; // Smite hurts the undead
-    const dmg = (heldTool()?.damage ?? 1) + (sharp ? 0.5 * sharp + 0.5 : 0) + 2.5 * smite; // bare hands do 1
+    const st = slots[selectedSlot];
+    const sharp = enchLevel(st, 'sharpness');
+    const smite = target && UNDEAD.has(target.kind) ? enchLevel(st, 'smite') : 0; // Smite hurts the undead
+    const bane = target && ARTHROPODS.has(target.kind) ? enchLevel(st, 'bane_of_arthropods') : 0; // Bane of Arthropods, spiders
+    const dmg = (heldTool()?.damage ?? 1) + (sharp ? 0.5 * sharp + 0.5 : 0) + 2.5 * smite + 2.5 * bane; // bare hands do 1
     return Math.max(0.5, dmg + 3 * effectLevel('strength') - 4 * effectLevel('weakness')); // Strength adds 3, Weakness takes 4 off every hit
+  }
+
+  // ---- How a hit works (Indev 31) ----
+  // Critical hit: falling (jumped, not touching the ground), not sprinting, not in water, a web or a boat: +50%. Spears never crit.
+  // Sprint hit: hitting while sprinting knocks the target back harder and stops your sprint. Spears don't do that either.
+  // Mace smash: fall 1.5+ blocks and hit: the fall adds damage, shakes everything within 2.5 blocks, and wipes your fall damage.
+  function critNow(): boolean {
+    return mode !== 'spectator' && !wasGrounded && velocityY < -0.5 && !sprintingNow && !gliding && !isFlying && !riding && !inWeb
+      && !playerInFluid() && !isSpear(heldItem) && effectLevel('blindness') === 0;
+  }
+  /** How far you have fallen with a mace in your hand (0 when you are not falling). */
+  function maceFall(): number {
+    if (!isMace(heldItem) || mode === 'spectator' || wasGrounded || velocityY >= 0 || gliding || isFlying || riding) return 0;
+    return Math.max(0, fallPeakY - camera.position.y);
+  }
+  type Strike = { dmg: number; crit: boolean; smash: boolean; fall: number; breach: number; sprintKb: boolean; wind: number };
+  function prepareStrike(target?: Mob, power = 1): Strike {
+    const st = slots[selectedSlot];
+    let dmg = weaponDamage(target) * power;
+    const fall = maceFall();
+    const smash = fall >= MACE_SMASH_MIN_FALL;
+    const crit = !smash && critNow();
+    if (smash) dmg += maceFallBonus(fall) + 0.5 * enchLevel(st, 'density') * fall; // Density: +0.5 per block fallen, per level
+    else if (crit) dmg *= 1.5;
+    const breach = isMace(heldItem) ? Math.min(0.6, 0.15 * enchLevel(st, 'breach')) : 0; // Breach: 15% of the armor ignored per level, up to 60%
+    const sprintKb = sprintingNow && !isSpear(heldItem) && !smash && mode !== 'spectator';
+    return { dmg, crit, smash, fall, breach, sprintKb, wind: smash ? enchLevel(st, 'wind_burst') : 0 };
+  }
+  let windSafe = false; // after a Wind Burst launch the first landing does not hurt
+  function windBurst(level: number) {
+    const h = [0, 6.5, 10.5, 14.5][Math.max(0, Math.min(3, level))];
+    if (h <= 0) return;
+    velocityY = Math.sqrt(2 * Math.abs(GRAVITY) * dimGravity() * h);
+    wasGrounded = false;
+    fallPeakY = camera.position.y;
+    windSafe = true;
+    playSfx('windburst', null);
+    spawnParticles(playerFeet().add(new THREE.Vector3(0, 0.2, 0)), ['#ffffff', '#cfe9ff', '#9bd0ff'], 22, 4, 0.1, 0.7);
+  }
+  /** What happens around a hit: the crit sparkle, the sprint stop, the mace shockwave. */
+  function afterStrike(s: Strike, at: THREE.Vector3, victim?: Mob) {
+    if (s.crit) { spawnParticles(at, ['#ffffff', '#ffe9a0', '#ffd23a'], 12, 3, 0.07, 0.4); playSfx('crit', at); }
+    if (s.sprintKb) sprintTurnLock = true; // the sprint stops; press forward + sprint again to run
+    if (!s.smash) return;
+    fallPeakY = camera.position.y; // the fall is wiped: no fall damage for what you fell so far
+    playSfx('smash', at);
+    spawnParticles(at, ['#d8d8d8', '#9a9a9a', '#ffffff', '#ffd23a'], 26, 5, 0.12, 0.6);
+    for (const o of mobs) { // the shockwave: everything within 2.5 blocks of the target is thrown back
+      if (o === victim || o.deathTime >= 0 || o.shop || o.pos.distanceTo(at) > MACE_SMASH_RADIUS + 0.9) continue;
+      const dx = o.pos.x - at.x, dz = o.pos.z - at.z, len = Math.hypot(dx, dz) || 1;
+      const k = o.kind === 'iron_golem' ? 1.6 : o.kind === 'hollow_tyrant' ? 1 : 9;
+      o.knock.set((dx / len) * k, 0, (dz / len) * k);
+      if (o.kind !== 'iron_golem' && o.kind !== 'hollow_tyrant') { o.velY = 4.5; o.onGround = false; }
+    }
+    if (s.wind) windBurst(s.wind);
+  }
+
+  // ---- Lunge (spear and mace) ----
+  let lungeCd = 0;
+  /** Launches you forward (or, in an elytra glide, boosts you like a firework). Costs 1 durability. Returns whether it happened. */
+  function doLunge(level: number): boolean {
+    if (level <= 0 || lungeCd > 0 || mode === 'spectator' || dead || riding || sleeping) return false;
+    const d = new THREE.Vector3(); camera.getWorldDirection(d);
+    lungeCd = 0.6;
+    if (gliding) {
+      fireworkBoost = Math.max(fireworkBoost, 0.6 + 0.3 * level);
+      spawnParticles(camera.position.clone().addScaledVector(d, -0.8), ['#9be7ff', '#ffffff'], 10, 3, 0.1, 0.5);
+    } else {
+      const f = lungeSpeed(level), flat = Math.hypot(d.x, d.z) || 1;
+      playerKnock.set((d.x / flat) * f, 0, (d.z / flat) * f);
+      velocityY = Math.max(velocityY, wasGrounded ? 4 : 0) + Math.max(0, d.y) * 9; // a hop, more when you look up
+      wasGrounded = false;
+      spawnParticles(playerFeet().add(new THREE.Vector3(0, 0.3, 0)), ['#ffffff', '#d8e6f0'], 8, 2.5, 0.08, 0.4);
+    }
+    playSfx('lunge', null);
+    wearHeld(1);
+    engineEvent('lunge', { level, gliding });
+    return true;
+  }
+
+  // ---- Spear: left-click jabs, hold right-click and let go to thrust (the charge attack) ----
+  let spearCharging = false, spearCharge = 0;
+  function startSpearCharge() { if (isSpear(heldItem) && mode !== 'spectator' && !dead) { spearCharging = true; spearCharge = 0; } }
+  function cancelSpearCharge() { spearCharging = false; spearCharge = 0; }
+  function releaseSpear() {
+    if (!spearCharging) return;
+    const charged = spearCharge >= SPEAR_MIN_CHARGE;
+    const c = Math.min(1, spearCharge / SPEAR_CHARGE_TIME);
+    cancelSpearCharge();
+    if (!isSpear(heldItem) || dead || !engaged()) return;
+    if (!charged) return; // a quick tap of the button is not a charge attack (and a tap on a phone must not poke by accident)
+    punchPhase = PUNCH_DURATION;
+    spearThrust(c, true);
+  }
+  /** The thrust: goes through everything in a line (stopped only by solid blocks: cobwebs, grass and flowers do not stop it). */
+  function spearThrust(c: number, charged: boolean) {
+    const st = slots[selectedSlot];
+    const power = charged ? 1 + 1.4 * c : 1;
+    const reach = charged ? SPEAR_CHARGE_REACH : SPEAR_JAB_REACH;
+    const o = camera.position, dir = new THREE.Vector3(); camera.getWorldDirection(dir);
+    const maxT = Math.min(reach, rayWallDistance(o.x, o.y, o.z, dir.x, dir.y, dir.z, reach));
+    let hits = 0;
+    const kb = enchLevel(st, 'knockback'), fireAspect = enchLevel(st, 'fire_aspect');
+    for (const m of mobs.slice()) {
+      if (m.deathTime >= 0 || m.shop) continue;
+      const info = infoOf(m), hw = info.width / 2;
+      const t = rayHitBox(o, dir, m.pos.x - hw, m.pos.y, m.pos.z - hw, m.pos.x + hw, m.pos.y + info.height, m.pos.z + hw);
+      if (t === null || t > maxT) continue;
+      const s = prepareStrike(m, power);
+      if (hurtMob(m, s.dmg, camera.position, 7 + 6 * kb + (charged ? 4 * c : 0), false, true)) {
+        hits++;
+        afterStrike(s, m.pos.clone().add(new THREE.Vector3(0, 0.9, 0)), m);
+        if (fireAspect && m.deathTime < 0) igniteMob(m, 4 * fireAspect, true);
+      }
+      engineEvent('playerHit', { target: { id: m.id, type: m.kind }, damage: s.dmg });
+    }
+    if (pvpEnemy && mode !== 'spectator' && !(mg && mg.online && mg.phase !== 'playing')) {
+      for (const [id, rp] of remotePlayers) {
+        if (rp.mode === 'spectator' || !pvpEnemy(id)) continue;
+        const t = rayHitBox(o, dir, rp.pos.x - 0.38, rp.pos.y, rp.pos.z - 0.38, rp.pos.x + 0.38, rp.pos.y + 1.9, rp.pos.z + 0.38);
+        if (t === null || t > maxT) continue;
+        if (strikeRemote(id, rp, prepareStrike(undefined, power))) hits++;
+      }
+    }
+    if (hits > 0) wearHeld(1);
+    engineEvent('spearThrust', { charge: c, charged, hits });
+    if (charged) doLunge(enchLevel(st, 'lunge'));
   }
 
   // ---- Wear and tear ----
@@ -12547,7 +12995,9 @@ export function createVoxelGame(
   }
   /** Mending: an orb repairs worn armor / an elytra with Mending (2 durability per point); what is left over is yours. */
   function collectXp(value: number) {
-    const worn: ItemStack[] = armor.filter((st): st is ItemStack => !!st && enchLevel(st, 'mending') > 0 && (st.damage ?? 0) > 0);
+    // Mending mends what you wear and what you hold (either hand)
+    const held = slots[selectedSlot];
+    const worn: ItemStack[] = [...armor, held, offhand].filter((st): st is ItemStack => !!st && enchLevel(st, 'mending') > 0 && (st.damage ?? 0) > 0);
     let rest = value;
     if (worn.length) {
       const st = worn[Math.floor(Math.random() * worn.length)];
@@ -12921,19 +13371,35 @@ export function createVoxelGame(
     return best;
   }
 
+  /** Is a cobweb on the line between your eyes and the mob? (It takes the hit; a spear goes through it.) */
+  function cobwebInTheWay(m: Mob): boolean {
+    const o = camera.position, c = m.pos.clone(); c.y += infoOf(m).height * 0.5;
+    const d = c.clone().sub(o), len = d.length();
+    if (len < 0.2) return false;
+    d.divideScalar(len);
+    for (let t = 0.2; t < len; t += 0.1) if (world.getWorldBlock(Math.floor(o.x + d.x * t), Math.floor(o.y + d.y * t), Math.floor(o.z + d.z * t)) === BLOCK_COBWEB) return true;
+    return false;
+  }
+  /** Wear for one hit: swords, spears and maces lose 1, tools used as weapons lose 2. */
+  function weaponWear(): number { const t = heldTool(); return !t ? 0 : t.kind === 'sword' || t.kind === 'spear' || t.kind === 'mace' ? 1 : 2; }
   function attackMobInSight(): boolean {
-    const m = mobInSight(3.5);
+    const spear = isSpear(heldItem);
+    const m = mobInSight(spear ? SPEAR_JAB_REACH : 3.5);
     if (!m) return false;
-    const kb = enchLevel(slots[selectedSlot], 'knockback');
-    const fireAspect = enchLevel(slots[selectedSlot], 'fire_aspect');
-    const dmg = weaponDamage(m) * attackScale(attackStrength());
+    if (!spear && cobwebInTheWay(m)) return false; // a cobweb in front of you takes the hit (cut it free); spears pierce it
+    const st = slots[selectedSlot];
+    const s = prepareStrike(m);
+    const kb = enchLevel(st, 'knockback') + (s.sprintKb ? 1 : 0);
+    const fireAspect = enchLevel(st, 'fire_aspect'), lunge = spear ? enchLevel(st, 'lunge') : 0;
     attackSince = 0;
-    if (hurtMob(m, dmg, camera.position, 7 + 6 * kb, false, true)) {
-      const t = heldTool();
-      if (t) wearHeld(t.kind === 'sword' ? 1 : 2);
+    if (hurtMob(m, s.dmg, camera.position, 7 + 6 * kb, false, true)) {
+      afterStrike(s, m.pos.clone().add(new THREE.Vector3(0, 0.9, 0)), m);
       if (fireAspect && m.deathTime < 0) igniteMob(m, 4 * fireAspect, true);
+      const w = weaponWear();
+      if (w) wearHeld(w);
+      if (lunge) doLunge(lunge);
     }
-    engineEvent('playerHit', { target: { id: m.id, type: m.kind }, damage: dmg });
+    engineEvent('playerHit', { target: { id: m.id, type: m.kind }, damage: s.dmg });
     return true;
   }
 
@@ -13222,6 +13688,10 @@ export function createVoxelGame(
       }
     }
     m.attackAnim = Math.max(0, m.attackAnim - dt);
+    if (m.kind === 'wolf') { // a wolf that is after someone shows its teeth
+      const wf = m.model.root.userData.wolfFace as { mesh: THREE.Mesh; calm: THREE.Material | null; angry: THREE.Material } | undefined;
+      if (wf && wf.calm && Array.isArray(wf.mesh.material)) (wf.mesh.material as THREE.Material[])[5] = (!m.tame && (m.grudge > 0 || m.angry)) || m.attackAnim > 0 ? wf.angry : wf.calm;
+    }
     mobOpensDoors = m.kind === 'villager';
     mobWalksOnLava = m.kind === 'strider';
     if (m.kind === 'ghast') { updateGhast(m, dt); return; } // it flies, so it has its own movement
@@ -13697,6 +14167,7 @@ export function createVoxelGame(
 
   function updateMobs(dt: number) {
     playerHurtCooldown = Math.max(0, playerHurtCooldown - dt);
+    updateBurning(dt);
     mobSpawnTimer += dt;
     if (mobSpawnTimer >= 1.5) { mobSpawnTimer = 0; trySpawnMob(); }
     updateSpawners(dt);
@@ -13995,7 +14466,7 @@ export function createVoxelGame(
       const b = sleepBodyPos(sleeping);
       return { x: b.x, y: b.y, z: b.z, yaw: sleeping.lieYaw, pitch: 0, mode, held: 0, act: 16 };
     }
-    return { x: camera.position.x, y: camera.position.y - PLAYER_EYE, z: camera.position.z, yaw, pitch, mode, held: heldItem ?? 0, act: (punchPhase > 0 || isMining ? 1 : 0) | (gunAiming ? 2 : 0) | (bowDrawing ? 4 : 0) | (swordBlocking ? 8 : 0) | (crouchNow ? 32 : 0) | (swimming ? 64 : 0) | (gliding ? 128 : 0) };
+    return { x: camera.position.x, y: camera.position.y - PLAYER_EYE, z: camera.position.z, yaw, pitch, mode, held: heldItem ?? 0, act: (punchPhase > 0 || isMining ? 1 : 0) | (gunAiming ? 2 : 0) | (bowDrawing ? 4 : 0) | (swordBlocking ? 8 : 0) | (crouchNow ? 32 : 0) | (swimming ? 64 : 0) | (gliding ? 128 : 0) | (burnTimer > 0 ? 256 : 0) };
   }
 
   type RemotePlayer = {
@@ -14116,6 +14587,9 @@ export function createVoxelGame(
       const swim = !lying && !entityAnimOff && (rp.act & 64) !== 0;
       rp.swim = (rp.swim ?? 0) + ((swim ? 1 : 0) - (rp.swim ?? 0)) * Math.min(1, dt * 6);
       const glide = !lying && !entityAnimOff && (rp.act & 128) !== 0;
+      if ((rp.act & 256) !== 0 && Math.random() < dt * 14) { // burning: flames come off them
+        spawnParticles(new THREE.Vector3(rp.pos.x + (Math.random() - 0.5) * 0.6, rp.pos.y + 0.2 + Math.random() * 1.4, rp.pos.z + (Math.random() - 0.5) * 0.6), ['#ff9a1a', '#ffd23a', '#ff5a10'], 1, 0.6, 0.09, 0.5, true);
+      }
       rp.glide = (rp.glide ?? 0) + ((glide ? 1 : 0) - (rp.glide ?? 0)) * Math.min(1, dt * 7);
       m.root.rotation.x = lying ? Math.PI / 2 : -SWIM_LEAN * rp.swim - GLIDE_LEAN * rp.glide;
       m.head.rotation.x = lying ? 0 : rp.pitch + SWIM_LEAN * 0.85 * rp.swim + GLIDE_LEAN * 0.9 * rp.glide; // the head stays up, looking ahead
@@ -14971,7 +15445,7 @@ export function createVoxelGame(
     }
     // standing in the fire hurts
     const fx = Math.floor(camera.position.x), fy = Math.floor(camera.position.y - PLAYER_EYE + 0.05), fz = Math.floor(camera.position.z);
-    if (world.getWorldBlock(fx, fy, fz) === BLOCK_CAMPFIRE && canBeAttacked()) hurtPlayer(1, null, 0, 'Campfire');
+    if (world.getWorldBlock(fx, fy, fz) === BLOCK_CAMPFIRE && canBeAttacked()) { hurtPlayer(1, null, 0, 'Campfire'); igniteSelf(4); }
   }
 
   /** Something above a broken block that can't float (grass, crops, a door) breaks too. */
@@ -15160,7 +15634,7 @@ export function createVoxelGame(
   const BED_DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]]; // foot -> head: north, east, south, west
   let bedSpawn: { x: number; y: number; z: number } | null = null;
   function bedPartner(x: number, y: number, z: number, b: number): [number, number, number] {
-    const head = b >= BLOCK_BED_HEAD, dir = (b - (head ? BLOCK_BED_HEAD : BLOCK_BED_FOOT)) % 4;
+    const head = bedIsHead(b), dir = bedDir(b);
     const [dx, dz] = BED_DIRS[dir];
     return head ? [x - dx, y, z - dz] : [x + dx, y, z + dz];
   }
@@ -15183,7 +15657,7 @@ export function createVoxelGame(
     const monster = mobs.some((m) => infoOf(m).hostile && m.deathTime < 0 && m.pos.distanceTo(new THREE.Vector3(x, y, z)) < 8);
     if (monster) { showHint('You may not rest now, there are monsters nearby'); return; }
     const b = world.getWorldBlock(x, y, z);
-    const isHead = b >= BLOCK_BED_HEAD, dir = (b - (isHead ? BLOCK_BED_HEAD : BLOCK_BED_FOOT)) % 4;
+    const isHead = bedIsHead(b), dir = bedDir(b);
     const [ddx, ddz] = BED_DIRS[dir];
     const fx = isHead ? x - ddx : x, fz = isHead ? z - ddz : z, hx = fx + ddx, hz = fz + ddz;
     const top = y + 0.5625; // the mattress is 9/16 of a block tall
@@ -17918,7 +18392,7 @@ export function createVoxelGame(
     keys[e.code] = false;
   }
   /** Alt-tabbing away (or a dialog stealing focus) must not leave a key stuck down. */
-  function onWindowBlur() { for (const k of Object.keys(keys)) keys[k] = false; }
+  function onWindowBlur() { for (const k of Object.keys(keys)) keys[k] = false; cancelSpearCharge(); }
 
   function onMouseMove(e: MouseEvent) {
     if (touchMode || !isLocked || sleeping) return; // (touch: looking comes from touchLook)
@@ -17934,6 +18408,10 @@ export function createVoxelGame(
     if (isLocked && touchMode) document.exitPointerLock(); // a lock asked for before touch mode came on: let it go
   }
 
+  /** Blocks that right-click opens or uses (a sword, spear or mace does not start its own action on them). */
+  function isUseBlock(b: number): boolean {
+    return b === BLOCK_CHEST || b === BLOCK_ENDER_CHEST || b === BLOCK_CRAFTING_TABLE || b === BLOCK_FURNACE || isDoor(b) || isOpenable(b) || b === BLOCK_ENCHANTING_TABLE || isAnvil(b) || isLever(b) || isButton(b) || isRepeater(b) || isItemFrame(b) || isComparator(b) || isCommandBlock(b) || isBed(b) || b === BLOCK_BREWING_STAND;
+  }
   function onMouseDown(e: MouseEvent) {
     if (chatOpen || dead || sleeping || tradeOpen) return;
     if (!engaged()) {
@@ -17973,8 +18451,17 @@ export function createVoxelGame(
       if (heldItem !== null && TOOLS[heldItem]?.kind === 'sword' && mode !== 'spectator') {
         const h = raycastBlock();
         const b = h ? world.getWorldBlock(h.x, h.y, h.z) : BLOCK_AIR;
-        const usable = b === BLOCK_CHEST || b === BLOCK_ENDER_CHEST || b === BLOCK_CRAFTING_TABLE || b === BLOCK_FURNACE || isDoor(b) || isOpenable(b) || b === BLOCK_ENCHANTING_TABLE || isAnvil(b) || isLever(b) || isButton(b) || isRepeater(b) || isItemFrame(b) || isComparator(b) || isCommandBlock(b);
-        if (!usable) { swordBlocking = true; return; } // hold right-click to block
+        if (!isUseBlock(b)) { swordBlocking = true; return; } // hold right-click to block
+      }
+      if (heldItem !== null && (isSpear(heldItem) || isMace(heldItem)) && mode !== 'spectator') {
+        const h = raycastBlock();
+        const b = h ? world.getWorldBlock(h.x, h.y, h.z) : BLOCK_AIR;
+        if (!isUseBlock(b)) {
+          if (isSpear(heldItem)) { startSpearCharge(); return; } // hold right-click to charge, let go to thrust
+          const lv = enchLevel(slots[selectedSlot], 'lunge');
+          if (lv > 0) { punchPhase = PUNCH_DURATION; doLunge(lv); } // a mace with Lunge: right-click launches you
+          return;
+        }
       }
       placeBlock();
     }
@@ -18101,7 +18588,7 @@ export function createVoxelGame(
       return;
     }
     // Beds take two blocks: the foot where you click, the head further away from you
-    if (heldItem === ITEM_BED) {
+    if (heldItem !== null && isBedItem(heldItem)) {
       const [fx, fy, fz] = target === BLOCK_TALL_GRASS ? [hit.x, hit.y, hit.z] : [hit.placeX, hit.placeY, hit.placeZ];
       const lx = -Math.sin(yaw), lz = -Math.cos(yaw);
       const dir = Math.abs(lz) >= Math.abs(lx) ? (lz < 0 ? 0 : 2) : (lx > 0 ? 1 : 3);
@@ -18109,11 +18596,12 @@ export function createVoxelGame(
       const hx = fx + ddx, hz = fz + ddz;
       if (!isReplaceable(world.getWorldBlock(fx, fy, fz)) || !isReplaceable(world.getWorldBlock(hx, fy, hz))) { showHint('A bed needs two blocks of space'); return; }
       if (!isSolid(world.getWorldBlock(fx, fy - 1, fz)) || !isSolid(world.getWorldBlock(hx, fy - 1, hz))) { showHint('A bed needs solid ground under it'); return; }
-      setBlockAndNotify(fx, fy, fz, BLOCK_BED_FOOT + dir);
-      setBlockAndNotify(hx, fy, hz, BLOCK_BED_HEAD + dir);
+      const bc = bedItemColor(heldItem);
+      setBlockAndNotify(fx, fy, fz, makeBed(bc, false, dir));
+      setBlockAndNotify(hx, fy, hz, makeBed(bc, true, dir));
       rebuildAround(fx, fz); rebuildAround(hx, hz);
       playBlockSound(ITEM_PLANKS, new THREE.Vector3(fx + 0.5, fy + 0.5, fz + 0.5), 'place');
-      blockEventCallback?.('place', fx, fy, fz, BLOCK_BED_FOOT + dir);
+      blockEventCallback?.('place', fx, fy, fz, makeBed(bc, false, dir));
       consumeHeld(1);
       punchPhase = PUNCH_DURATION;
       return;
@@ -18217,6 +18705,7 @@ export function createVoxelGame(
 
   function onMouseUp(e: MouseEvent) {
     if (e.button === 2 && bowDrawing) releaseBow();
+    if (e.button === 2 && spearCharging) releaseSpear();
     if (e.button === 2) { swordBlocking = false; eatHold = false; }
     if (e.button === 2 && spyglassZoom) { spyglassZoom = false; scriptZoom = 1; engineEvent('zoomChange', { zoom: 1 }); }
     if (e.button === 0 && leftUseDown) {
@@ -18259,8 +18748,16 @@ export function createVoxelGame(
   const clock = new THREE.Clock();
   let rafId: number;
 
+  // While the tab is hidden the browser stops requestAnimationFrame, which would freeze the world (and you, for everyone online).
+  // A background-proof timer keeps the simulation going at 20 steps a second; it draws nothing until the tab is back.
   function animate() {
     rafId = requestAnimationFrame(animate);
+    if (typeof document !== 'undefined' && document.hidden) return; // (the background timer is running the game now)
+    frame();
+  }
+  const bgFrameId = setBgInterval(() => { if (typeof document !== 'undefined' && document.hidden) frame(); }, 50);
+
+  function frame() {
     if (frameInterval > 0) { // frame cap: skip this tick if it is too soon (the time keeps adding up, so nothing slows down)
       const nowMs = performance.now();
       if (nowMs - lastFrameAt < frameInterval - 2) return;
@@ -18278,6 +18775,11 @@ export function createVoxelGame(
 
     if (bowDrawing) bowDrawElapsed += delta;
     attackSince += delta;
+    lungeCd = Math.max(0, lungeCd - delta);
+    if (spearCharging) {
+      if (!isSpear(heldItem) || dead || !engaged() || mode === 'spectator') cancelSpearCharge();
+      else spearCharge = Math.min(SPEAR_CHARGE_TIME + 0.5, spearCharge + delta);
+    }
     tickEating(delta);
     eatLerp += ((eatingItem !== null ? 1 : 0) - eatLerp) * Math.min(1, delta * 12);
     updateBoats(delta); // before you move: in a boat, you go where the boat goes
@@ -18290,7 +18792,7 @@ export function createVoxelGame(
     // Crouching (hold the crouch key, Left Alt by default) and blocking with a sword slow you down, and you can't run until you let go of both
     const crouching = down('crouch') && !noclip && !isFlying && !riding && !sleeping && !inventoryOpen && !arenaFrozen();
     crouchNow = crouching;
-    const slowedByHold = crouching || swordBlocking;
+    const slowedByHold = crouching || swordBlocking || spearCharging;
     // Whipping the camera round (about 120 degrees or more within a fraction of a second) while running stops the sprint,
     // until you let go of forward or sprint and start again
     {
@@ -18300,7 +18802,7 @@ export function createVoxelGame(
       if (!down('sprint') || !down('forward')) sprintTurnLock = false;
     }
     const sprintHeld = down('sprint') && down('forward') && !down('back') && !(canBeAttacked() && hunger <= 6) && !inFluidNow && !slowedByHold && !sprintTurnLock;
-    const walkSpeed = (sprintHeld ? SPRINT_SPEED : WALK_SPEED) * (crouching ? CROUCH_SLOW : 1) * (swordBlocking ? BLOCK_SLOW : 1) * (1 + 0.2 * effectLevel('speed')) * Math.max(0.2, 1 - 0.15 * effectLevel('slowness'));
+    const walkSpeed = (sprintHeld ? SPRINT_SPEED : WALK_SPEED) * (crouching ? CROUCH_SLOW : 1) * (swordBlocking ? BLOCK_SLOW : 1) * (spearCharging ? 0.65 : 1) * (1 + 0.2 * effectLevel('speed')) * Math.max(0.2, 1 - 0.15 * effectLevel('slowness'));
     // While flying, the crouch key (Left Alt) descends and the sprint key (Shift) flies faster
     const flySprint = isFlying && down('sprint');
     const onSoulSand = world.getWorldBlock(Math.floor(camera.position.x), Math.floor(camera.position.y - PLAYER_EYE - 0.1), Math.floor(camera.position.z)) === BLOCK_SOUL_SAND;
@@ -18362,9 +18864,13 @@ export function createVoxelGame(
       return false;
     }
     function canMoveTo(x: number, z: number): boolean {
+      // Every row the body passes through. (This used to test only the feet row and the head row: in mid-jump, with the feet
+      // at 5.7 and the head in row 7, the block in row 6 was never checked, and you could walk into the side of it.)
       const feetY = Math.floor(camera.position.y - PLAYER_EYE);
       const headY = Math.floor(camera.position.y - PLAYER_EYE + PLAYER_HEIGHT - 0.1);
-      return !footprintBlocked(x, z, feetY === headY ? [feetY] : [feetY, headY], camera.position.y - PLAYER_EYE);
+      const rows: number[] = [];
+      for (let y = feetY; y <= headY; y++) rows.push(y);
+      return !footprintBlocked(x, z, rows, camera.position.y - PLAYER_EYE);
     }
     // Crouching: you can't step off an edge. A move is only allowed if there is still a block under some part of your feet.
     function standsOnSomething(x: number, z: number): boolean {
@@ -18386,6 +18892,27 @@ export function createVoxelGame(
       return footprintBlocked(x, z, rows, eyeY - PLAYER_EYE);
     }
 
+    /**
+     * Moves sideways in steps of at most a quarter block, one axis at a time, so a fast push (a lunge, an explosion, a lag
+     * spike) can't hop over a thin wall, and sliding along a wall still works. `guard`: crouching on an edge stops you
+     * stepping off. `stuck`: wedged inside blocks, so let the player walk out. Returns which axes ran into something.
+     */
+    function moveHoriz(dx: number, dz: number, guard: boolean, stuck = false): { bx: boolean; bz: boolean } {
+      const n = Math.max(1, Math.ceil(Math.max(Math.abs(dx), Math.abs(dz)) / 0.25));
+      const sx = dx / n, sz = dz / n;
+      let bx = false, bz = false;
+      for (let i = 0; i < n && !(bx && bz); i++) {
+        if (sx !== 0 && !bx) {
+          const nx = camera.position.x + sx;
+          if (noclip || stuck || (canMoveTo(nx, camera.position.z) && (!guard || !edgeGuard || standsOnSomething(nx, camera.position.z)))) camera.position.x = nx; else bx = true;
+        }
+        if (sz !== 0 && !bz) {
+          const nz = camera.position.z + sz;
+          if (noclip || stuck || (canMoveTo(camera.position.x, nz) && (!guard || !edgeGuard || standsOnSomething(camera.position.x, nz)))) camera.position.z = nz; else bz = true;
+        }
+      }
+      return { bx, bz };
+    }
     sprintingNow = sprintHeld && !isFlying && moveVec.lengthSq() > 0;
     // If something ever wedges the player inside blocks, let them walk out
     const stuckInside = !noclip && bodyBlockedAt(camera.position.x, camera.position.y, camera.position.z);
@@ -18402,24 +18929,18 @@ export function createVoxelGame(
       slideVel.multiplyScalar(Math.max(0, 1 - (wasGrounded ? 12 : 1.2) * delta)); // off the ice: friction (or air) slows you
     }
     if (slideVel.lengthSq() > 0.0001 && !riding) {
-      const sx = camera.position.x + slideVel.x * delta, sz = camera.position.z + slideVel.z * delta;
-      if (noclip || (canMoveTo(sx, camera.position.z) && (!edgeGuard || standsOnSomething(sx, camera.position.z)))) camera.position.x = sx; else slideVel.x = 0;
-      if (noclip || (canMoveTo(camera.position.x, sz) && (!edgeGuard || standsOnSomething(camera.position.x, sz)))) camera.position.z = sz; else slideVel.z = 0;
+      const r = moveHoriz(slideVel.x * delta, slideVel.z * delta, true);
+      if (r.bx) slideVel.x = 0;
+      if (r.bz) slideVel.z = 0;
     }
     if (gliding) { moveVec.set(0, 0, 0); slideVel.set(0, 0, 0); playerKnock.set(0, 0, 0); }
     if (moveVec.lengthSq() > 0 && !riding) {
       moveVec.normalize().multiplyScalar(speed * delta);
-      const newX = camera.position.x + moveVec.x;
-      const newZ = camera.position.z + moveVec.z;
-      if (noclip || stuckInside || (canMoveTo(newX, camera.position.z) && (!edgeGuard || standsOnSomething(newX, camera.position.z)))) camera.position.x = newX;
-      if (noclip || stuckInside || (canMoveTo(camera.position.x, newZ) && (!edgeGuard || standsOnSomething(camera.position.x, newZ)))) camera.position.z = newZ;
+      moveHoriz(moveVec.x, moveVec.z, true, stuckInside);
     }
     // Knockback from mobs and explosions
     if (playerKnock.lengthSq() > 0.01) {
-      const kx = camera.position.x + playerKnock.x * delta;
-      const kz = camera.position.z + playerKnock.z * delta;
-      if (noclip || (canMoveTo(kx, camera.position.z) && (!edgeGuard || standsOnSomething(kx, camera.position.z)))) camera.position.x = kx;
-      if (noclip || (canMoveTo(camera.position.x, kz) && (!edgeGuard || standsOnSomething(camera.position.x, kz)))) camera.position.z = kz;
+      moveHoriz(playerKnock.x * delta, playerKnock.z * delta, true);
       playerKnock.multiplyScalar(Math.max(0, 1 - 6 * delta));
     }
 
@@ -18464,8 +18985,9 @@ export function createVoxelGame(
       if (fireworkBoost > 0) { fireworkBoost -= delta; if (Math.random() < 0.6) spawnParticles(camera.position.clone().addScaledVector(gl, -0.8).add(new THREE.Vector3(0, -0.8, 0)), ['#ffd23a', '#ff7a3a', '#ffffff'], 1, 0.6, 0.2, 0.5); }
       const gdx = glideV.x * 20 * delta, gdy = glideV.y * 20 * delta, gdz = glideV.z * 20 * delta;
       const hBefore = Math.hypot(glideV.x, glideV.z);
-      if (canMoveTo(camera.position.x + gdx, camera.position.z)) camera.position.x += gdx; else glideV.x = 0;
-      if (canMoveTo(camera.position.x, camera.position.z + gdz)) camera.position.z += gdz; else glideV.z = 0;
+      const gr = moveHoriz(gdx, gdz, false);
+      if (gr.bx) glideV.x = 0;
+      if (gr.bz) glideV.z = 0;
       const crash = (hBefore - Math.hypot(glideV.x, glideV.z)) * 10 - 3;
       if (crash > 0 && canBeAttacked()) hurtPlayer(Math.floor(crash), null, 0, 'Flew into a wall');
       let landed = false;
@@ -18518,7 +19040,7 @@ export function createVoxelGame(
       if (down('jump')) velocityY = Math.min(velocityY + 24 * delta, 3.2);
       velocityY = Math.max(velocityY, -3);
       fallPeakY = camera.position.y;
-      if (inFluidNow === 'lava' && canBeAttacked()) hurtPlayer(4, null, 0, 'Lava');
+      if (inFluidNow === 'lava' && canBeAttacked()) { hurtPlayer(4, null, 0, 'Lava'); igniteSelf(8); }
       if (inFluidNow === 'water') {
         const col = bubbleColumn(camera.position.x, camera.position.y - PLAYER_EYE + 0.2, camera.position.z);
         if (col === 'up') velocityY = Math.min(velocityY + 45 * delta, 7); // soul sand: shoots you up
@@ -18576,9 +19098,10 @@ export function createVoxelGame(
     } else if (isGrounded && !wasGrounded) {
       const fallDistance = (fallPeakY - nextY) * Math.min(1, dimGravity()); // low gravity: softer landings
       if (fallDistance > 1.2) playSfx('land', null);
-      if (fallDistance > 3.5 && !(mg && mg.kind === 'bridge')) { // no fall damage in Bridge Duels
+      if (fallDistance > 3.5 && !(mg && mg.kind === 'bridge') && !windSafe) { // no fall damage in Bridge Duels, nor after a Wind Burst
         if (mode === 'survival' || mode === 'adventure') hurtPlayer(Math.floor(fallDistance - 3.5), null, 0, 'Fall damage');
       }
+      windSafe = false;
     }
     wasGrounded = isGrounded;
 
@@ -18741,6 +19264,13 @@ export function createVoxelGame(
         const free = 1 - b * 0.6; // when blocking, the pose holds still (unchanged)
         heldMesh.position.set(B(SWORD_FP.x, SWORD_BLOCK_FP.x) - 0.2 * swordSw + hbx * free + idleX * free + 0.06 * eq, B(SWORD_FP.y, SWORD_BLOCK_FP.y) - 0.24 * swordSw + hby * free + idleY + spY - 0.6 * eq, B(SWORD_FP.z, SWORD_BLOCK_FP.z) - 0.12 * swordSw + 0.03 * sprintLerp);
         heldMesh.rotation.set(B(SWORD_FP.rx, SWORD_BLOCK_FP.rx) - 0.6 * swordSw - spR * free + 0.9 * eq, B(SWORD_FP.ry, SWORD_BLOCK_FP.ry) + 0.3 * swordSw, B(SWORD_FP.rz, SWORD_BLOCK_FP.rz) + 1.0 * swordSw + idleR * free);
+      } else if (heldItem !== null && isSpear(heldItem)) {
+        // The spear: a jab drives it straight forward; holding right-click draws it back toward the shoulder
+        const ch = spearCharging ? Math.min(1, spearCharge / SPEAR_CHARGE_TIME) : 0;
+        spearChLerp += (ch - spearChLerp) * Math.min(1, delta * 16);
+        const c2 = spearChLerp;
+        heldMesh.position.set(SPEAR_FP.x + hbx + idleX + 0.06 * eq + 0.05 * c2 - 0.04 * sw, SPEAR_FP.y + hby + idleY + spY - 0.6 * eq + 0.06 * c2 + 0.03 * sw, SPEAR_FP.z + 0.4 * c2 - 0.65 * sw);
+        heldMesh.rotation.set(SPEAR_FP.rx + 0.2 * c2 - spR + 0.9 * eq, SPEAR_FP.ry, SPEAR_FP.rz + idleR);
       } else if (heldItem !== null && TOOLS[heldItem]) {
         // Swing: wind back, then the blade arcs down toward the crosshair and recovers
         const b = blockLerp, B = (a: number, c: number) => a + (c - a) * b;
@@ -18975,6 +19505,7 @@ export function createVoxelGame(
       lastBobPos.copy(camera.position);
     }
     crouchLerp += ((crouchNow ? 1 : 0) - crouchLerp) * Math.min(1, delta * 14);
+    if (typeof document !== 'undefined' && document.hidden) return; // nobody is looking: no drawing
     const renderCam = updateViewCamera(delta);
     updateShaderFrame(delta);
     bobSaved.copy(camera.position);
@@ -19039,6 +19570,7 @@ export function createVoxelGame(
 
   function dispose() {
     cancelAnimationFrame(rafId);
+    clearBgInterval(bgFrameId);
     updateRainSound(0, false, true);
     scene.remove(rainLines); scene.remove(snowPts);
     for (const r of ripples) { scene.remove(r.mesh); r.mat.dispose(); }
@@ -19554,6 +20086,10 @@ export function createVoxelGame(
     getFps,
     closeInventory,
     onPlayerHurt: (cb: (amount: number) => void) => { hurtCallback = cb; },
+    onBurning: (cb: (on: boolean) => void) => { burnCallback = cb; },
+    isBurning: () => burnTimer > 0,
+    ignite: (seconds = 8) => igniteSelf(seconds),
+    extinguish: () => extinguishSelf(true),
     setSfxVolume,
     setBlockOutline: (on: boolean) => { outlineOn = on; if (!on) { outlineBox.visible = false; faceGlow.visible = false; } },
     takeScreenshot,

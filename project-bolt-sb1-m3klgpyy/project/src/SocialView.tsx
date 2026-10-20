@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Users, UserPlus, Send, UserMinus, Check, X, MessageCircle, LogOut, LogIn, Loader2, ShieldCheck, Pencil, Gamepad2, Star } from 'lucide-react';
+import { Users, UserPlus, Send, UserMinus, Check, X, MessageCircle, LogOut, LogIn, Loader2, ShieldCheck, Pencil, Gamepad2, Star, ArrowLeft } from 'lucide-react';
 import {
-  loadFriends, addFriend, acceptFriend, removeFriend, sendDM, loadConversation, DM_MAX, NAME_CHANGE_WAIT_MS,
+  loadFriends, addFriend, acceptFriend, removeFriend, sendDM, loadConversation, DM_MAX, NAME_CHANGE_WAIT_MS, lastOnlineLine,
   type Account, type Friend, type FriendState, type DM, type Standing, type Result,
 } from './social';
 import { t } from './i18n';
-import { creatorTier, CREATOR_PLAYS, CREATOR_NAMES } from './ranks';
+import { creatorTier, CREATOR_PLAYS, CREATOR_NAMES, badgeTags } from './ranks';
+import { FancyText } from './fancytext';
 import { openProfile } from './profileBus';
 
 type Props = {
@@ -37,6 +38,13 @@ const EMPTY: FriendState = { friends: [], incoming: [], outgoing: [] };
 function clock(iso: string): string {
   const d = new Date(iso);
   return Number.isFinite(d.getTime()) ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+}
+
+/** A friend's rank tags ([OWNER] [HELPER] [YOUTUBE] [OG] [Champion]...), wrapping onto more lines when there are many. */
+function Tags({ f, testid }: { f: Friend; testid?: string }) {
+  const tags = badgeTags(f.tags);
+  if (!tags.length) return null;
+  return <span className="flex flex-wrap gap-x-1.5 gap-y-0 font-bold leading-tight text-[12px] min-w-0" data-testid={testid ?? 'friend-tags'}>{tags.map((tg, i) => <FancyText key={i} text={tg} />)}</span>;
 }
 
 function Dot({ online }: { online: boolean }) {
@@ -180,8 +188,8 @@ export default function SocialView({ account, checking, isAdmin, onOpenPanel, un
   );
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden p-8 pb-6 min-w-0">
-      <div className="flex items-center justify-between mb-4 gap-4">
+    <div className="flex-1 flex flex-col overflow-hidden p-4 md:p-8 md:pb-6 min-w-0">
+      <div className="flex flex-wrap items-center justify-between mb-4 gap-3 md:gap-4">
         <div>
           <h1 className="font-[var(--font-display)] text-3xl text-white flex items-center gap-3"><Users className="w-7 h-7 text-[#00e676]" />Social</h1>
           <p className="text-[#8ea0b8] text-sm mt-1">
@@ -232,9 +240,9 @@ export default function SocialView({ account, checking, isAdmin, onOpenPanel, un
         <div className={`mb-3 rounded-lg px-4 py-2.5 text-sm border ${error || joinError ? 'bg-red-500/10 border-red-500/30 text-red-400' : 'bg-[#00e676]/10 border-[#00e676]/30 text-[#00e676]'}`}>{error || joinError || note}</div>
       )}
 
-      <div className="flex-1 min-h-0 flex gap-4">
+      <div className="flex-1 min-h-0 flex gap-4" data-testid="social-body">
         {/* ---- left: lists ---- */}
-        <div className={`${card} w-80 shrink-0 flex flex-col p-3 min-h-0`}>
+        <div className={`${card} w-full md:w-80 shrink-0 flex-col p-3 min-h-0 ${live ? 'hidden md:flex' : 'flex'}`} data-testid="social-list">
           <div className="flex gap-1 mb-3 p-1 bg-[#0a0e14] rounded-xl">
             {tabBtn('friends', `Friends${state.friends.length ? ` (${state.friends.length})` : ''}`, unreadTotal)}
             {tabBtn('requests', 'Requests', state.incoming.length)}
@@ -258,8 +266,9 @@ export default function SocialView({ account, checking, isAdmin, onOpenPanel, un
                   >
                     <span role="button" tabIndex={0} title="View profile" onClick={(e) => { e.stopPropagation(); openProfile(f.username); }} onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); openProfile(f.username); } }} data-testid={`profile-${f.username}`} className="w-9 h-9 rounded-full bg-[#1a2230] flex items-center justify-center text-white font-bold shrink-0 cursor-pointer hover:ring-2 hover:ring-[#00e676]/60">{f.username.charAt(0).toUpperCase()}</span>
                     <div className="min-w-0 flex-1">
+                      <Tags f={f} />
                       <div className="text-white text-sm font-semibold truncate">{f.username}</div>
-                      <div className="text-[11px] text-[#5a6b80] flex items-center gap-1.5 min-w-0"><Dot online={f.online} />{f.server ? <span className="text-[#00e676] truncate" data-testid="friend-playing">{f.worldName ? `Playing ${f.worldName}` : 'Playing online'}</span> : f.online ? 'Online' : 'Offline'}</div>
+                      <div className="text-[11px] text-[#5a6b80] flex items-center gap-1.5 min-w-0"><Dot online={f.online} />{f.server ? <span className="text-[#00e676] truncate" data-testid="friend-playing">{lastOnlineLine(f)}</span> : <span className="truncate" data-testid="friend-last-online">{lastOnlineLine(f)}</span>}</div>
                     </div>
                     {f.server && (
                       <span
@@ -319,7 +328,7 @@ export default function SocialView({ account, checking, isAdmin, onOpenPanel, un
         </div>
 
         {/* ---- right: conversation ---- */}
-        <div className={`${card} flex-1 flex flex-col min-w-0 min-h-0`}>
+        <div className={`${card} flex-1 flex-col min-w-0 min-h-0 ${live ? 'flex' : 'hidden md:flex'}`} data-testid="social-chat">
           {!live ? (
             <div className="flex-1 flex flex-col items-center justify-center text-[#5a6b80] text-center px-8">
               <MessageCircle className="w-12 h-12 mb-3 opacity-50" />
@@ -328,11 +337,13 @@ export default function SocialView({ account, checking, isAdmin, onOpenPanel, un
             </div>
           ) : (
             <>
-              <div className="flex items-center gap-3 px-5 py-3 border-b border-[#243044]">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 md:px-5 py-3 border-b border-[#243044]">
+                <button type="button" data-testid="social-back" onClick={() => setSelected(null)} className="md:hidden w-9 h-9 rounded-lg border border-[#243044] text-[#8ea0b8] flex items-center justify-center shrink-0" title="Back to friends"><ArrowLeft className="w-4 h-4" /></button>
                 <div className="w-9 h-9 rounded-full bg-[#1a2230] flex items-center justify-center text-white font-bold">{live.username.charAt(0).toUpperCase()}</div>
                 <div className="flex-1 min-w-0">
+                  <Tags f={live} testid="live-tags" />
                   <div className="text-white font-bold truncate">{live.username}</div>
-                  <div className="text-[11px] text-[#5a6b80] flex items-center gap-1.5"><Dot online={live.online} />{live.server ? <span className="text-[#00e676]">{live.worldName ? `Playing ${live.worldName}` : 'Playing online'}</span> : live.online ? 'Online' : 'Offline'}</div>
+                  <div className="text-[11px] text-[#5a6b80] flex items-center gap-1.5"><Dot online={live.online} />{live.server ? <span className="text-[#00e676]">{lastOnlineLine(live)}</span> : <span data-testid="live-last-online">{lastOnlineLine(live)}</span>}</div>
                 </div>
                 {live.server && (
                   <button
@@ -354,13 +365,13 @@ export default function SocialView({ account, checking, isAdmin, onOpenPanel, un
                   </button>
                 )}
               </div>
-              <div className="flex-1 overflow-y-auto px-5 py-4 space-y-2 min-h-0">
+              <div className="flex-1 overflow-y-auto px-3 md:px-5 py-4 space-y-2 min-h-0">
                 {!messages.length && <div className="text-center text-[#5a6b80] text-sm py-10">No messages yet. Say hi!</div>}
                 {messages.map((m) => {
                   const mine = m.from === me;
                   return (
                     <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-                      <div className={`max-w-[75%] rounded-2xl px-4 py-2 text-sm break-words ${mine ? 'bg-[#00e676] text-[#0a0e14] rounded-br-md' : 'bg-[#1a2230] text-white rounded-bl-md'}`}>
+                      <div className={`max-w-[85%] md:max-w-[75%] rounded-2xl px-4 py-2 text-sm break-words ${mine ? 'bg-[#00e676] text-[#0a0e14] rounded-br-md' : 'bg-[#1a2230] text-white rounded-bl-md'}`}>
                         {m.text}
                         <div className={`text-[10px] mt-0.5 ${mine ? 'text-[#0a0e14]/60' : 'text-[#5a6b80]'}`}>{clock(m.at)}</div>
                       </div>

@@ -27,6 +27,91 @@ const ENV_MAX = process.env.MAX_PLAYERS ? Number(process.env.MAX_PLAYERS) : null
 const CAPS = { none: 18, rising: 24, popular: 32, star: 48 };
 const TIER_PLAYS = { rising: 1_000, popular: 10_000, star: 100_000 };
 const tierOfPlays = (plays) => (plays >= TIER_PLAYS.star ? 'star' : plays >= TIER_PLAYS.popular ? 'popular' : plays >= TIER_PLAYS.rising ? 'rising' : 'none');
+/* PROFANITY_BEGIN */
+const PROFANITY_STRONG = [
+  'fuck', 'shit', 'bitch', 'cunt', 'twat', 'whore', 'slut', 'pussy', 'pussi', 'bollock', 'dildo', 'blowjob', 'handjob', 'jerkoff', 'asshole', 'arsehole',
+  'dickhead', 'cocksuck', 'retard', 'nigg', 'faggot', 'nazi', 'porn', 'molest', 'rapist', 'pedophile', 'paedophile', 'cumshot', 'orgasm',
+];
+const PROFANITY_EXACT = [
+  'cock', 'dick', 'cum', 'tit', 'anal', 'wank', 'wanker', 'wanking', 'fag', 'tranny', 'kike', 'spic', 'chink', 'gook', 'coon', 'paki', 'rape', 'pedo', 'kys',
+  'fck', 'fuk', 'fuq', 'fvck', 'fcuk', 'phuck', 'phuk', 'sht', 'shyt', 'btch', 'biatch', 'bytch', 'cnt', 'dik', 'pusy', 'jizz', 'ahole',
+];
+const PROFANITY_SAFE = [
+  'scunthorpe', 'shiitake', 'shiitakes', 'shitake', 'shitakes', 'shiite', 'shiites', 'snigger', 'sniggers', 'sniggering', 'sniggered', 'niggle', 'niggles', 'niggled', 'niggling',
+  'retardant', 'retardants', 'therapist', 'therapists', 'therapy',
+];
+const PROFANITY_LEET = { '0': 'o', '1': 'i', '3': 'e', '4': 'a', '5': 's', '7': 't', '8': 'b', '@': 'a', '$': 's', '!': 'i', '|': 'i', '+': 't', '€': 'e', '£': 'l', 'á': 'a', 'à': 'a', 'ä': 'a', 'é': 'e', 'è': 'e', 'í': 'i', 'ó': 'o', 'ö': 'o', 'ú': 'u', 'ü': 'u' };
+/** One letter of a bad word as a pattern: a single letter may be stretched (fuuuck); a doubled letter must stay doubled (niGGer is not Niger). */
+function profanityPattern(word) {
+  let out = '';
+  for (let i = 0; i < word.length;) {
+    let j = i;
+    while (j < word.length && word[j] === word[i]) j++;
+    out += word[i] + (j - i > 1 ? '{' + (j - i) + ',}' : '+');
+    i = j;
+  }
+  return out;
+}
+let profanityRules = null;
+function profanityBuild() {
+  if (profanityRules) return profanityRules;
+  const strong = new RegExp(PROFANITY_STRONG.map(profanityPattern).join('|'));
+  const exact = new RegExp('^(?:' + PROFANITY_EXACT.map(profanityPattern).join('|') + ')(?:s|es|ed|ing|er|ers)?$');
+  profanityRules = { strong, exact };
+  return profanityRules;
+}
+/** The letters of a chunk of text, look-alikes turned back into letters, everything else dropped. */
+const PROFANITY_EDGE = /^[.,;:!?'"()\[\]{}<>~*_\-\/\\]+|[.,;:!?'"()\[\]{}<>~*_\-\/\\]+$/g;
+function profanityLetters(chunk) {
+  let out = '';
+  for (const ch of chunk.replace(PROFANITY_EDGE, '').toLowerCase()) {
+    const c = PROFANITY_LEET[ch] || ch;
+    if (c >= 'a' && c <= 'z') out += c;
+  }
+  return out;
+}
+/** Is this one word (no spaces) a bad word? */
+function profanityWordIsBad(word) {
+  const letters = profanityLetters(word);
+  if (letters.length < 3) return false;
+  const squeezed = letters.replace(/(.)\1+/g, '$1');
+  const lower = word.toLowerCase().replace(/[^a-z]/g, '');
+  if (PROFANITY_SAFE.indexOf(lower) >= 0 || PROFANITY_SAFE.indexOf(letters) >= 0 || PROFANITY_SAFE.indexOf(squeezed) >= 0) return false;
+  const r = profanityBuild();
+  if (r.exact.test(letters)) return true;
+  if (r.strong.test(letters)) {
+    // a safe word hiding inside a longer word ("scunthorpes", "cocktails") is still safe
+    for (let i = 0; i < PROFANITY_SAFE.length; i++) if (PROFANITY_SAFE[i].length >= 5 && letters.indexOf(PROFANITY_SAFE[i]) >= 0 && !r.strong.test(letters.split(PROFANITY_SAFE[i]).join(''))) return false;
+    return true;
+  }
+  return false;
+}
+/** Hides every bad word in a message with * (same length). Everything else, including mild language, is left alone. */
+function filterProfanity(text) {
+  if (typeof text !== 'string' || text.length < 3) return text;
+  const parts = text.split(/(\s+)/); // words and the spaces between them
+  const bad = new Array(parts.length).fill(false);
+  for (let i = 0; i < parts.length; i += 2) if (parts[i] && profanityWordIsBad(parts[i])) bad[i] = true;
+  // letters spread out with spaces: "f u c k"
+  for (let i = 0; i < parts.length;) {
+    if (bad[i] || parts[i].length !== 1 || !/[a-z0-9@$!|+]/i.test(parts[i])) { i += 2; continue; }
+    let j = i, joined = '';
+    while (j < parts.length && parts[j].length === 1 && /[a-z0-9@$!|+]/i.test(parts[j])) { joined += parts[j]; j += 2; }
+    if (joined.length >= 4 && profanityWordIsBad(joined)) for (let k = i; k < j; k += 2) bad[k] = true;
+    i = Math.max(j, i + 2);
+  }
+  let changed = false;
+  for (let i = 0; i < parts.length; i += 2) {
+    if (!bad[i]) continue;
+    // keep punctuation around the word ("fuck!", "(shit)"), star the word itself
+    parts[i] = parts[i].replace(/^([.,;:!?'"()\[\]{}<>~_\-\/\\]*)(.*?)([.,;:!?'"()\[\]{}<>~_\-\/\\]*)$/s, (m, a, w, z) => a + '*'.repeat(Math.max(1, w.length)) + z);
+    changed = true;
+  }
+  return changed ? parts.join('') : text;
+}
+/** Does the message contain a bad word? */
+function hasProfanity(text) { return typeof text === 'string' && filterProfanity(text) !== text; }
+/* PROFANITY_END */
 const OWNER_NAME = 'master';
 let hostTier = 'none';
 const maxPlayers = () => (ENV_MAX && ENV_MAX > 0 ? ENV_MAX : CAPS[hostTier] || CAPS.none);
@@ -160,7 +245,7 @@ async function standingOf(name) {
   const r = await sb('/rest/v1/rpc/player_standing', null, { method: 'POST', body: JSON.stringify({ p_username: name }) });
   const row = Array.isArray(r) ? r[0] : null;
   const plays = row ? Number(row.plays) || 0 : 0;
-  const out = { plays, tier: tierOfPlays(plays), rising: !!(row && row.rising), rank: row && typeof row.rank === 'string' ? row.rank : 'none', staff: row && (row.staff === 'helper' || row.staff === 'mod') ? row.staff : null, until: Date.now() + 5 * 60_000 };
+  const out = { plays, tier: tierOfPlays(plays), rising: !!(row && row.rising), rank: row && typeof row.rank === 'string' ? row.rank : 'none', staff: row && (row.staff === 'helper' || row.staff === 'mod') ? row.staff : null, og: !!(row && row.og === true), special: row && row.special === 'youtube' ? 'youtube' : null, cosmetics: !!(row && (row.cosmetics === true || row.rank === 'champion' || row.special === 'youtube')), until: Date.now() + 5 * 60_000 };
   standingCache.set(key, out);
   if (standingCache.size > 300) standingCache.clear();
   return out;
@@ -176,7 +261,7 @@ async function sendBadge(p) {
   if (!p.verified) return;
   const st = await standingOf(p.name);
   if (p.conn.closed) return;
-  p.badge = { owner: p.name.toLowerCase() === OWNER_NAME, rank: st.rank, tier: p.name.toLowerCase() === OWNER_NAME ? 'star' : st.tier, staff: st.staff };
+  p.badge = { owner: p.name.toLowerCase() === OWNER_NAME, rank: st.rank, tier: p.name.toLowerCase() === OWNER_NAME ? 'star' : st.tier, staff: st.staff, og: st.og === true, special: st.special === 'youtube' ? 'youtube' : null };
   broadcast({ t: 'badge', id: p.id, ...p.badge });
 }
 
@@ -445,7 +530,7 @@ function handle(p, msg) {
       return;
     }
     case 'whisper': {
-      const text = typeof msg.text === 'string' ? msg.text.trim().slice(0, 256) : '';
+      const text = typeof msg.text === 'string' ? filterProfanity(msg.text.trim().slice(0, 256)) : '';
       const to = typeof msg.to === 'string' ? msg.to.toLowerCase() : '';
       if (!text || !to) return;
       const target = [...players.values()].find((o) => o.joined && o.name.toLowerCase() === to);
@@ -568,14 +653,17 @@ function handle(p, msg) {
       // Skin and cape names only (the game draws them); anything odd is ignored
       const ok = (v) => typeof v === 'string' && /^[a-z0-9_]{1,24}$/.test(v);
       if (!ok(msg.skin) || !ok(msg.cape)) return;
-      if (msg.skin === 'custom') {
-        // A custom skin is a small PNG. Only signed-in Champions (and the owner) may wear one.
-        const png = typeof msg.custom === 'string' && msg.custom.length <= 12000 && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(msg.custom) ? msg.custom : null;
-        if (!png || !p.verified) return;
+      const isPng = (v) => typeof v === 'string' && v.length <= 12000 && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(v);
+      const skinPng = msg.skin === 'custom' && isPng(msg.custom) ? msg.custom : null;
+      const capePng = msg.cape === 'custom' && isPng(msg.capeData) ? msg.capeData : null;
+      if ((msg.skin === 'custom' && !skinPng) || (msg.cape === 'custom' && !capePng)) return;
+      if (skinPng || capePng) {
+        // A custom skin or cape is a small PNG. Only signed-in Champions, [YOUTUBE] and the owner may wear one.
+        if (!p.verified) return;
         standingOf(p.name).then((st) => {
-          if (p.conn.closed || st.rank !== 'champion') return;
-          p.look = { skin: 'custom', cape: msg.cape, custom: png };
-          broadcast({ t: 'look', id: p.id, skin: 'custom', cape: msg.cape, custom: png }, p.id);
+          if (p.conn.closed || !(st.cosmetics || st.rank === 'champion' || p.name.toLowerCase() === OWNER_NAME)) return;
+          p.look = { skin: msg.skin, cape: msg.cape, ...(skinPng ? { custom: skinPng } : {}), ...(capePng ? { capeData: capePng } : {}) };
+          broadcast({ t: 'look', id: p.id, ...p.look }, p.id);
         });
         return;
       }
@@ -600,11 +688,14 @@ function handle(p, msg) {
       }
       return;
     }
+    case 'badge': // a player turned /undercover on or off: look their rank up again (at most every 5 seconds)
+      if (p.verified && Date.now() - (p.badgeAt || 0) > 5000) { p.badgeAt = Date.now(); standingCache.delete(p.name.toLowerCase()); void sendBadge(p); }
+      return;
     case 'ping': // the game shows your ping: just echo it straight back
       if (Number.isFinite(msg.n)) p.conn.send({ t: 'pong', n: msg.n });
       return;
     case 'chat': {
-      const text = typeof msg.text === 'string' ? msg.text.trim().slice(0, 256) : '';
+      const text = typeof msg.text === 'string' ? filterProfanity(msg.text.trim().slice(0, 256)) : '';
       if (!text) return;
       if (mutes.has(p.name.toLowerCase())) return p.conn.send({ t: 'system', text: 'You are muted.' });
       broadcast({ t: 'chat', id: p.id, name: p.name, text });

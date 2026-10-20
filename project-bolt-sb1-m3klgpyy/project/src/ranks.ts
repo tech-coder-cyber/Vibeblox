@@ -67,12 +67,14 @@ export const SPECIAL_LABELS: Record<SpecialId, string> = { youtube: 'YOUTUBE' };
 export const isSpecialId = (v: unknown): v is SpecialId => v === 'youtube';
 
 /**
- * The rank whose perks you get. OG players, [YOUTUBE] and staff (HELPER, MOD) get Elite's perks (a bigger planet limit,
- * more script time, no ads); a paid rank that is better than Elite still counts. The name tag shows the real rank, not this one.
+ * The rank whose perks you get. OG players and staff (HELPER, MOD) get Elite's perks (a bigger planet limit, more script time,
+ * no ads); [YOUTUBE] gets Champion's perks (15 planets, the biggest script budget, your own skin and cape); a paid rank that is
+ * better than that still counts. The name tag shows the real rank, not this one.
  */
 export function perkRank(rank: RankId, extra: { staff?: string | null; og?: boolean; special?: string | null } | null | undefined): RankId {
   if (rank === 'champion') return rank;
-  return extra && (isStaffId(extra.staff) || extra.og || isSpecialId(extra.special)) ? 'elite' : rank;
+  if (extra && isSpecialId(extra.special)) return 'champion'; // [YOUTUBE] has everything Champion has
+  return extra && (isStaffId(extra.staff) || extra.og) ? 'elite' : rank;
 }
 export const RANK_TAGS: Record<RankId, string> = {
   none: '',
@@ -80,16 +82,17 @@ export const RANK_TAGS: Record<RankId, string> = {
   elite: '\\light_purple\\[Elite]\\reset\\',
   champion: '\\gold\\\\shiny\\[Champion]\\reset\\',
 };
-export type Badge = { owner?: boolean; rank?: RankId | string; tier?: CreatorTier | string; staff?: StaffId | string | null; og?: boolean; special?: SpecialId | string | null };
+export type Badge = { owner?: boolean; rank?: RankId | string; tier?: CreatorTier | string; staff?: StaffId | string | null; og?: boolean; special?: SpecialId | string | null; /** /undercover is on: [YOUTUBE], [OG] and the paid rank are hidden (staff tags and the owner tag never are) */ undercover?: boolean };
 export function badgeTags(b: Badge | null | undefined): string[] {
   if (!b) return [];
   const out: string[] = [];
   if (b.owner) out.push(OWNER_TAG);
   if (isStaffId(b.staff)) out.push(STAFF_TAGS[b.staff]);
-  if (isSpecialId(b.special)) out.push(SPECIAL_TAGS[b.special]);
-  if (b.og) out.push(OG_TAG);
+  const hide = b.undercover === true && !b.owner;
+  if (!hide && isSpecialId(b.special)) out.push(SPECIAL_TAGS[b.special]);
+  if (!hide && b.og) out.push(OG_TAG);
   const r = b.rank as RankId;
-  if (r && RANK_TAGS[r]) out.push(RANK_TAGS[r]);
+  if (!hide && r && RANK_TAGS[r]) out.push(RANK_TAGS[r]);
   const t = b.tier as CreatorTier;
   if (t && CREATOR_TAGS[t]) out.push(CREATOR_TAGS[t]);
   return out;
@@ -112,5 +115,9 @@ export function scriptBudgetMs(rank: RankId, tier: CreatorTier | boolean): numbe
   return Math.round(base * TIER_BUDGET_FACTOR[t]);
 }
 
-/** Only Champions may upload their own skin. */
+/** Only Champions (and [YOUTUBE], who has Champion's perks) may upload their own skin. */
 export const canUploadSkin = (rank: RankId) => rank === 'champion';
+/** ...and their own cape. */
+export const canUploadCape = canUploadSkin;
+/** [YOUTUBE] may hide their rank tags with /undercover. Nobody else can: not even staff. */
+export const canGoUndercover = (special: string | null | undefined) => isSpecialId(special);

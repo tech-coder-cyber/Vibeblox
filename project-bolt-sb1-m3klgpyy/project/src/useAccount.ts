@@ -1,7 +1,7 @@
 // Keeps track of who is signed in. The sign-in library loads in the background; if it can't (offline, blocked),
 // the game simply behaves as if nobody is signed in.
 import { useEffect, useRef, useState } from 'react';
-import { configureSocial, loadAccount, checkAdmin, isOwnerName, changeUsername, type Account } from './social';
+import { configureSocial, loadAccount, checkAdmin, fetchAdminPerms, isOwnerName, changeUsername, setUndercover, ADMIN_PERMS, type Account, type AdminPerm, type Result } from './social';
 
 type Session = { access_token: string; user: { id: string; email?: string; user_metadata?: { username?: string } } };
 
@@ -10,6 +10,8 @@ export function useAccount() {
   /** true once we know whether someone is signed in (so the sign-in window isn't shown by mistake) */
   const [checked, setChecked] = useState(false);
   const [admin, setAdmin] = useState(false);
+  /** What this admin may do (everything for the owner and for a full-access admin) */
+  const [adminPerms, setAdminPerms] = useState<readonly AdminPerm[]>(ADMIN_PERMS);
   const tokenRef = useRef<string | null>(null);
   const accountRef = useRef<Account | null>(null);
 
@@ -27,6 +29,7 @@ export function useAccount() {
             accountRef.current = null;
             setAccount(null);
             setAdmin(false);
+            setAdminPerms(ADMIN_PERMS);
             setChecked(true);
             if (failed) return;
             return;
@@ -47,7 +50,8 @@ export function useAccount() {
           setChecked(true);
           // the owner ("Master") can always open /panel; the database checks every action it takes
           const isAdmin = isOwnerName(acc.username) || await checkAdmin().catch(() => false);
-          if (!dead) setAdmin(isAdmin);
+          const perms = isAdmin && !isOwnerName(acc.username) ? await fetchAdminPerms().catch(() => null) : null;
+          if (!dead) { setAdmin(isAdmin); setAdminPerms(perms ?? ADMIN_PERMS); } // an older database can't say: full access, like before
         });
       })
       .catch(() => { if (!dead) setChecked(true); });
@@ -75,5 +79,16 @@ export function useAccount() {
     return r;
   }
 
-  return { account, admin, checked, signOut, rename, tokenRef };
+  /** [YOUTUBE] only: /undercover. Hides (or shows) your rank tags from everyone. */
+  async function undercover(on: boolean): Promise<Result<{ on: boolean }>> {
+    const r = await setUndercover(on);
+    if (r.ok && accountRef.current) {
+      const next = { ...accountRef.current, undercover: r.on };
+      accountRef.current = next;
+      setAccount(next);
+    }
+    return r;
+  }
+
+  return { account, admin, adminPerms, checked, signOut, rename, undercover, tokenRef };
 }

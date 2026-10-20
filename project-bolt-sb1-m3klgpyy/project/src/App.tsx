@@ -1,15 +1,17 @@
+import { setBgInterval, clearBgInterval } from './bgTimer';
 import { useState, useEffect, useRef, useMemo, useCallback, useSyncExternalStore, createContext, useContext, type FormEvent, type ChangeEvent, type MouseEvent as ReactMouseEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
 import { ADVANCEMENT_TABS, rewardText, advancementsFor, checkItems, checkEvent, loadAdvancements, saveAdvancements, clearAdvancements, type Advancement, type AdvancementTab } from './advancements';
-import { SKINS, CAPES, CUSTOM_SKIN_ID, isCustomSkinData, type PlayerLook } from '@/cosmetics';
+import { SKINS, CAPES, CUSTOM_SKIN_ID, CUSTOM_CAPE_ID, isCustomSkinData, type PlayerLook } from '@/cosmetics';
 import { CAN_LINK_OUT, CAN_SELL_RANKS, ADS_POSSIBLE, PLATFORM, initAds, triggerRewardedAd, setGameplayActive, reportLoadingFinished, setAdsBlocked, maybeInterstitial, lastAdResult } from '@/adEconomy';
 import {
-  getProgress, subscribeProgress, onLevelUp, setCustomSkin, addActiveSeconds, rewardAdCoins, rewardAdBooster, claimCoins, claimBooster, claimStatus, COIN_CLAIMS_PER_HOUR, buyCosmetic, equipCosmetic, currentLook, reloadProgress, progressForAccount, mergeAccountProgress,
+  getProgress, subscribeProgress, onLevelUp, setCustomSkin, setCustomCape, addActiveSeconds, rewardAdCoins, rewardAdBooster, claimCoins, claimBooster, claimStatus, COIN_CLAIMS_PER_HOUR, buyCosmetic, equipCosmetic, currentLook, reloadProgress, progressForAccount, mergeAccountProgress,
   dailyStatus, claimDaily, openLootbox, buyShopItem, FREEZE_PRICE, BOOSTER_PRICE, LOOTBOX_PRICE, LOOTBOX_PACK_PRICE, MAX_FREEZES, DAILY_COINS, DAILY_LOOTBOX_DAYS, WEEKLY_FALLBACK_COINS, type DailyGrant, type LootResult,
   xpForLevel, DISCORD_INVITE_URL, TEBEX_STORE_URL, AD_COINS, LEVEL_UP_COINS, XP_PER_PERIOD, SECONDS_PER_PERIOD, BOOSTER_SECONDS, IDLE_AFTER_SECONDS,
 } from '@/progression';
 import { ModBuilder } from '@/ModBuilder';
 import { parseModCode } from '@/modBuilderLogic';
-import { readRank, worldLimit, WORLD_LIMITS, RANK_NAMES, effectiveRank, playerCap, scriptBudgetMs, canUploadSkin, SCRIPT_BUDGET_MS, creatorTier, CREATOR_PLAYS, CREATOR_NAMES, PLAYER_CAP, adsAllowedFor, badgeTags, perkRank, isStaffId, isSpecialId, type SpecialId, type StaffId, type RankId, type CreatorTier } from '@/ranks';
+import { filterProfanity } from '@/profanity';
+import { readRank, worldLimit, WORLD_LIMITS, RANK_NAMES, effectiveRank, playerCap, scriptBudgetMs, canUploadSkin, SCRIPT_BUDGET_MS, creatorTier, CREATOR_PLAYS, CREATOR_NAMES, PLAYER_CAP, adsAllowedFor, badgeTags, perkRank, canGoUndercover, isStaffId, isSpecialId, type SpecialId, type StaffId, type RankId, type CreatorTier } from '@/ranks';
 import { GAME_VERSION, NEWS } from '@/news';
 import { t, useLanguage, setLanguage, LANGUAGES, type LangCode } from '@/i18n';
 import { useKeybinds, rebind, resetBinds, keyLabel, KEY_ACTIONS, setCapturingKey, isCapturingKey, getBinds } from '@/keybinds';
@@ -136,7 +138,7 @@ function listImage(img?: string): Promise<string | undefined> {
   });
 }
 type NetBlock = [number, number, number, number];
-type NetBadge = { owner?: boolean; rank?: string; tier?: string };
+type NetBadge = { owner?: boolean; rank?: string; tier?: string; staff?: string | null; og?: boolean; special?: string | null; undercover?: boolean };
 type NetPlayerInfo = { id: number; name: string; x: number; y: number; z: number; yaw: number; pitch: number; mode: string; look?: PlayerLook; badge?: NetBadge };
 type ServerSettings = { difficulty: Difficulty; keepInventory: boolean; scripts: boolean; mods: boolean; commands: boolean; pvp?: boolean; scriptPerm?: ScriptPerm };
 const DEFAULT_SERVER: ServerSettings = { difficulty: 'normal', keepInventory: false, scripts: true, mods: true, commands: true, pvp: true };
@@ -174,7 +176,7 @@ type MpEvents = {
   onAdminPlayers?: (list: Array<{ id: number; name: string; mode: string }>) => void;
   onMatch?: (m: NetMatch) => void;
   onMatchReset?: (round: number) => void;
-  onHurt?: (h: { by: number; name: string; dmg: number; kx: number; kz: number }) => void;
+  onHurt?: (h: { by: number; name: string; dmg: number; kx: number; kz: number; breach?: number; kbm?: number }) => void;
   onHurtFx?: (id: number) => void;
   onRoles?: (roles: Record<string, string>) => void;
   onAnticheat?: (settings: { enabled: boolean; autoKick: boolean; kickAt: number }) => void;
@@ -187,7 +189,7 @@ type MpClient = {
   sendPromote(name: string, role: 'admin' | 'coowner' | 'none'): void;
   sendMod(action: 'kick' | 'ban' | 'unban', name: string): void;
   sendAnticheat(settings: { enabled: boolean; autoKick: boolean; kickAt: number }): void;
-  sendHit(id: number, dmg: number, kx: number, kz: number, bow?: boolean): void;
+  sendHit(id: number, dmg: number, kx: number, kz: number, bow?: boolean, extra?: { breach?: number; kbm?: number }): void;
   sendMatchStart(): void;
   sendMatchDied(by: number | null): void;
   sendMatchEgg(team: number): void;
@@ -403,7 +405,7 @@ const rankTiers: RankTier[] = [
     price: '$30',
     priceValue: 30,
     icon: Crown,
-    perks: [`${WORLD_LIMITS.champion} planets`, 'Animated molten magma chat tags', 'Cosmic floating chat tags', `${SCRIPT_BUDGET_MS.champion}ms CPU script budget`, 'Upload your own custom skin', 'Unlimited AI terminal access'],
+    perks: [`${WORLD_LIMITS.champion} planets`, 'Animated molten magma chat tags', 'Cosmic floating chat tags', `${SCRIPT_BUDGET_MS.champion}ms CPU script budget`, 'Upload your own custom skin and cape', 'Unlimited AI terminal access'],
     borderClass: 'vb-border-plasma',
     accentText: 'text-[#ffd700]',
     iconBg: 'from-[#ffd700] to-[#ff8c00]',
@@ -842,7 +844,7 @@ function MinigamePicker({ kind, onPlay, onClose, onFind }: { kind: ArenaKind; on
     : { title: 'Bridge Duels', blurb: 'Two islands over the void. Build a bridge across, fight your opponent, and jump into their goal hole. First to 5 goals wins.' };
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 vb-fade-in" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }} data-testid="minigame-picker">
-      <div className="w-[480px] max-w-full rounded-2xl bg-[#0d131b] border border-[#243044] p-6 shadow-2xl">
+      <div data-testid="minigame-card" className="w-[480px] max-w-full rounded-2xl bg-[#0d131b] border border-[#243044] p-6 shadow-2xl my-auto">
         <div className="flex items-start justify-between gap-3 mb-2">
           <h2 className="font-[var(--font-retro)] text-white text-lg tracking-wider">{info.title.toUpperCase()}</h2>
           <button onClick={onClose} className="text-[#8ea0b8] hover:text-white text-sm" aria-label="Close">✕</button>
@@ -1528,7 +1530,7 @@ function SettingsView({
       </header>
       )}
 
-      <div className="flex gap-5" data-testid="settings-layout">
+      <div className="flex flex-col sm:flex-row gap-3 sm:gap-5" data-testid="settings-layout">
       <SideNav testid="settings-sidenav" active={tab} onSelect={setTab} tabs={[
         { id: 'video', label: 'Video' }, { id: 'shaders', label: 'Shaders' }, { id: 'crosshair', label: 'Crosshair' }, { id: 'audio', label: 'Audio' }, { id: 'controls', label: t('settings.controls') }, { id: 'hud', label: 'HUD' },
         { id: 'language', label: t('settings.language') }, { id: 'account', label: 'Account' }, { id: 'about', label: 'About' },
@@ -1840,7 +1842,7 @@ function useProgress() {
 
 function LookPicture({ look, view, size = 96 }: { look: PlayerLook; view: 'front' | 'back'; size?: number }) {
   const ref = useRef<HTMLCanvasElement>(null);
-  useEffect(() => { if (ref.current) drawLookPreview(ref.current, look, view); }, [look.skin, look.cape, look.custom, view]);
+  useEffect(() => { if (ref.current) drawLookPreview(ref.current, look, view); }, [look.skin, look.cape, look.custom, look.capeData, view]);
   return <canvas ref={ref} width={size} height={Math.round(size * 1.25)} className="[image-rendering:pixelated]" />;
 }
 
@@ -1964,6 +1966,34 @@ function ShopView({ compact = false }: { compact?: boolean }) {
     } finally {
       URL.revokeObjectURL(url);
       if (fileRef.current) fileRef.current.value = '';
+    }
+  }
+  const capeFileRef = useRef<HTMLInputElement>(null);
+  /** Reads a cape PNG (the standard 64x32 cape picture, or the small 22x17 one), re-encodes it small, and wears it. */
+  async function uploadCape(file: File | undefined) {
+    if (!file) return;
+    if (!/^image\/png$/.test(file.type) && !/\.png$/i.test(file.name)) { setNote('Pick a PNG cape file (64x32).'); return; }
+    if (file.size > 300_000) { setNote('That file is too big for a cape.'); return; }
+    const url = URL.createObjectURL(file);
+    try {
+      const img = await new Promise<HTMLImageElement>((resolve, reject) => { const im = new Image(); im.onload = () => resolve(im); im.onerror = () => reject(new Error('bad image')); im.src = url; });
+      const standard = img.width === 64 && img.height === 32, small = img.width === 22 && img.height === 17;
+      if (!standard && !small) { setNote(`Capes are 64x32 pixels (yours is ${img.width}x${img.height}).`); return; }
+      const c = document.createElement('canvas');
+      c.width = 64; c.height = 32;
+      const ctx = c.getContext('2d');
+      if (!ctx) { setNote("This browser can't read the picture."); return; }
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(img, 0, 0);
+      const data = c.toDataURL('image/png');
+      if (!isCustomSkinData(data)) { setNote('That cape is too detailed to share with other players. Try a simpler one.'); return; }
+      setCustomCape(data);
+      setNote('Your cape is on! Other players see it too.');
+    } catch {
+      setNote("Couldn't read that picture.");
+    } finally {
+      URL.revokeObjectURL(url);
+      if (capeFileRef.current) capeFileRef.current.value = '';
     }
   }
   const tabBtn = (active: boolean) => `px-4 py-2 rounded-xl text-sm font-bold transition-all duration-200 active:scale-95 ${active ? 'bg-[#00e676] text-[#0a0e14]' : 'bg-[#121822] text-[#8ea0b8] border border-[#243044] hover:text-white'}`;
@@ -2093,6 +2123,27 @@ function ShopView({ compact = false }: { compact?: boolean }) {
                   </>
                 ) : (
                   <div className="w-full rounded-lg py-1.5 text-[11px] text-center bg-[#1a2230] text-[#8ea0b8]" data-testid="skin-locked">{shopSignedIn ? 'Champion rank only' : 'Sign in with a Champion account'}</div>
+                )}
+              </div>
+            )}
+            {sub === 'capes' && (
+              <div data-testid="custom-cape-card" className={`rounded-2xl border p-3 flex flex-col items-center gap-2 bg-[#121822] ${p.currentCape === CUSTOM_CAPE_ID ? 'border-[#00e676]' : 'border-[#ffd23a]/40'}`}>
+                <div className="h-[120px] flex items-center">
+                  <LookPicture look={p.customCape ? { ...look, cape: CUSTOM_CAPE_ID, capeData: p.customCape } : { ...look, cape: 'none' }} view="back" />
+                </div>
+                <div className="text-white text-sm font-bold text-center flex items-center gap-1"><Crown className="w-3.5 h-3.5 text-[#ffd700]" />Your own cape</div>
+                {mayUpload ? (
+                  <>
+                    <input ref={capeFileRef} data-testid="cape-file" type="file" accept="image/png" className="hidden" onChange={(e) => { void uploadCape(e.target.files?.[0]); }} />
+                    <div className="flex gap-1.5 w-full">
+                      <button data-testid="cape-upload" onClick={() => capeFileRef.current?.click()} className="flex-1 rounded-lg py-1.5 text-xs font-bold bg-[#ffd23a] text-[#0a0e14] hover:scale-[1.03] transition-all active:scale-95">{p.customCape ? 'Replace' : 'Upload PNG'}</button>
+                      {p.customCape && (p.currentCape === CUSTOM_CAPE_ID
+                        ? <button onClick={() => { setCustomCape(null); }} className="rounded-lg px-2 py-1.5 text-xs bg-[#1a2230] text-[#8ea0b8] hover:text-white">Remove</button>
+                        : <button onClick={() => { equipCosmetic('cape', CUSTOM_CAPE_ID); }} className="rounded-lg px-2 py-1.5 text-xs bg-[#1a2230] text-white hover:bg-[#243044]">Wear</button>)}
+                    </div>
+                  </>
+                ) : (
+                  <div className="w-full rounded-lg py-1.5 text-[11px] text-center bg-[#1a2230] text-[#8ea0b8]" data-testid="cape-locked">{shopSignedIn ? 'Champion or YOUTUBE rank only' : 'Sign in with a Champion account'}</div>
                 )}
               </div>
             )}
@@ -2323,7 +2374,7 @@ function DailyCard() {
 }
 
 /** Your rank, whether you are a Rising Creator, and your plays: provided by App, read by the shop and the panels. */
-const StandingContext = createContext<{ /** the tags shown before your name: [OWNER], [MOD], [Elite] ... */ nameTags?: string[]; rank: RankId; rising: boolean; tier: CreatorTier; isOwner: boolean; standing: Standing | null; signedIn: boolean; /** known not to be signed in: worlds, levels, the shop and social are switched off */ guest: boolean }>({ rank: 'none', rising: false, tier: 'none', isOwner: false, standing: null, signedIn: false, guest: false });
+const StandingContext = createContext<{ /** the tags shown before your name: [OWNER], [MOD], [Elite] ... */ nameTags?: string[]; /** [YOUTUBE] with /undercover on: the tags are hidden from other players */ undercover?: boolean; rank: RankId; rising: boolean; tier: CreatorTier; isOwner: boolean; standing: Standing | null; signedIn: boolean; /** known not to be signed in: worlds, levels, the shop and social are switched off */ guest: boolean }>({ rank: 'none', rising: false, tier: 'none', isOwner: false, standing: null, signedIn: false, guest: false });
 /** Lets the profile panel (right side of Home) open the daily reward window. */
 const DailyUiContext = createContext<{ openDaily: () => void }>({ openDaily: () => {} });
 
@@ -2743,7 +2794,7 @@ function ProfileModal({ name, me, onClose }: { name: string; me: Account | null;
               {owner && <span className="px-2 py-0.5 rounded-full bg-[#ffd23a]/15 text-[#ffd23a] text-[10px] font-bold">OWNER</span>}
               {p?.staff && <span className="px-2 py-0.5 rounded-full bg-[#4dd0e1]/15 text-[#4dd0e1] text-[10px] font-bold">{p.staff.toUpperCase()}</span>}
               {p?.special && <span className="px-2 py-0.5 rounded-full bg-[#ff4d4d]/15 text-[#ff6b6b] text-[10px] font-bold">{p.special.toUpperCase()}</span>}
-              {(p?.og || (isMe && me?.og === true)) && <span className="px-2 py-0.5 rounded-full bg-[#22e6e6]/15 text-[#22e6e6] text-[10px] font-bold">OG</span>}
+              {(p?.og || (isMe && me?.og === true && me?.undercover !== true)) && <span className="px-2 py-0.5 rounded-full bg-[#22e6e6]/15 text-[#22e6e6] text-[10px] font-bold">OG</span>}
               {rank && <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${RANK_CHIP[rank] ?? 'bg-[#243044] text-white'}`}>{RANK_NAMES[rank as RankId] ?? rank}</span>}
               {p && <TierBadge tier={tier} small />}
               {guestName && <span className="px-2 py-0.5 rounded-full bg-[#243044] text-[#8ea0b8] text-[10px] font-bold">GUEST</span>}
@@ -2788,7 +2839,7 @@ function ProfileModal({ name, me, onClose }: { name: string; me: Account | null;
 function ProfilePanel({ username, onOpenLeaderboard }: { username: string; onOpenLeaderboard: () => void }) {
   useLanguage();
   const p = useProgress();
-  const { rising, tier, signedIn, guest, nameTags } = useContext(StandingContext);
+  const { rising, tier, signedIn, guest, nameTags, undercover } = useContext(StandingContext);
   const displayName = username || 'PlayerOne';
   const initial = username ? username.charAt(0).toUpperCase() : 'P';
   const curXp = xpForLevel(p.level), nextXp = xpForLevel(p.level + 1);
@@ -2800,12 +2851,13 @@ function ProfilePanel({ username, onOpenLeaderboard }: { username: string; onOpe
           <button onClick={() => openProfile(displayName)} data-testid="panel-avatar" title="View your profile" className="shrink-0 rounded-2xl hover:scale-105 active:scale-95 transition-transform">
             <HeadAvatar className="w-16 h-16" width={128} height={128} fallback={initial} />
           </button>
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0 text-sm" data-testid="panel-namerow">
-              {!guest && (nameTags ?? []).length > 0 && <span className="shrink-0 font-bold" data-testid="panel-tags">{(nameTags ?? []).map((tg, i) => <span key={i} className="mr-1"><FancyText text={tg} /></span>)}</span>}
-              <button onClick={() => openProfile(displayName)} data-testid="panel-name" className="block text-left font-[var(--font-display)] text-white text-sm truncate max-w-[160px] hover:underline">{displayName}</button>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-col items-start gap-y-0.5 text-sm min-w-0" data-testid="panel-namerow">
+              {/* one or two tags per line, depending on how long they are: nothing is cut off */}
+              {!guest && (nameTags ?? []).length > 0 && <span className="flex flex-wrap gap-x-1.5 gap-y-0 max-w-full font-bold leading-tight" data-testid="panel-tags">{(nameTags ?? []).map((tg, i) => <span key={i} data-testid="panel-tag" className="whitespace-nowrap"><FancyText text={tg} /></span>)}</span>}
+              <button onClick={() => openProfile(displayName)} data-testid="panel-name" className="block text-left font-[var(--font-display)] text-white text-sm truncate max-w-full hover:underline">{displayName}</button>
             </div>
-            <p className="text-[#5a6b80] text-xs">{signedIn ? 'Online' : 'Guest'}</p>
+            <p className="text-[#5a6b80] text-xs">{signedIn ? 'Online' : 'Guest'}{undercover && <span className="ml-1.5 px-1.5 py-0.5 rounded bg-[#ff4d4d]/15 text-[#ff8a8a] text-[10px] font-bold" data-testid="panel-undercover">UNDERCOVER</span>}</p>
             {rising && <div className="mt-1"><TierBadge tier={tier} small /></div>}
           </div>
         </div>
@@ -3202,7 +3254,7 @@ function ManageServerView({ settings, hardcore, online, isHost, players, myId, h
     );
   };
   return (
-    <div className="flex gap-5" data-testid="manage-server">
+    <div className="flex flex-col sm:flex-row gap-3 sm:gap-5" data-testid="manage-server">
      <SideNav tabs={[{ id: 'world', label: 'World' }, { id: 'rules', label: 'Rules' }, { id: 'players', label: 'Players' }, ...(online ? [{ id: 'roles' as const, label: 'Roles' }] : []), ...(canRules ? [{ id: 'schematics' as const, label: 'Schematics' }] : []), ...(anticheat && canRules ? [{ id: 'anticheat' as const, label: 'Anti-cheat' }] : [])]} active={tab} onSelect={setTab} testid="manage-sidenav" />
      <div className="flex-1 min-w-0 flex flex-col gap-4">
       {!isHost && role && <p className="text-[#8ea0b8] text-xs flex items-center" data-testid="my-role"><RoleIcon role={role} />You are {role === 'admin' ? 'an admin' : role === 'coowner' ? 'a co-owner' : 'the owner'} here. {role === 'admin' ? 'You can kick and ban players and use commands.' : role === 'coowner' ? 'You can change the rules, use schematics, set up anti-cheat and promote admins.' : ''}</p>}
@@ -4317,7 +4369,7 @@ function modToFile(m: Mod): string {
 /** What still works in a minigame or in somebody else's world: help and talking to people. */
 /** What a script may run with game.commands.run (the rest have game.* functions). */
 const SCRIPT_COMMANDS = new Set(['title', 'say', 'effect', 'give', 'summon', 'tp', 'teleport', 'time', 'weather', 'playsound', 'rank']);
-const SAFE_COMMANDS = new Set(['help', '?', 'whisper', 'w', 'msg', 'tell', 'r', 'reply', 'friend', 'friends', 'unfriend']);
+const SAFE_COMMANDS = new Set(['help', '?', 'whisper', 'w', 'msg', 'tell', 'r', 'reply', 'friend', 'friends', 'unfriend', 'undercover']);
 const COMMANDS: Array<{ names: string[]; usage: string; desc: string }> = [
   { names: ['help', '?'], usage: '/help', desc: 'Show this list of commands.' },
   { names: ['gamemode', 'mode', 'gm'], usage: '/gamemode <mode> [player]', desc: 'Change a game mode: survival (s, 0), creative (c, 1), adventure (a, 2) or spectator (sp, 3). Other players need /panel (admins).' },
@@ -4338,6 +4390,7 @@ const COMMANDS: Array<{ names: string[]; usage: string; desc: string }> = [
   { names: ['summon'], usage: '/summon [baby] <mob> [x y z]', desc: 'Spawn a mob in front of you: pig, cow, chicken, sheep, zombie, skeleton, creeper, spider, ghast, blaze, piglin, villager, iron golem, cinderbone or hollow tyrant (the boss). Add "baby" for a baby one, e.g. /summon baby cow.' },
   { names: ['enchant'], usage: '/enchant <player> <enchantment> [level]', desc: 'Enchant the item in a player\'s hand, e.g. /enchant @p sharpness 5. Also works on books. /give @s enchanted_book mending gives a book.' },
   { names: ['whisper', 'w', 'msg', 'tell'], usage: '/w <player> <message>', desc: 'Send a private message to a player on your server, or to a friend (even offline). /r <message> answers the last whisper.' },
+  { names: ['undercover'], usage: '/undercover [on|off]', desc: 'YouTube rank only: hide your YouTube, OG and rank tags from other players.' },
   { names: ['friend'], usage: '/friend <username>', desc: 'Send a friend request (or accept theirs). Manage friends and messages in the Social tab.' },
   { names: ['unfriend'], usage: '/unfriend <username>', desc: 'Remove a friend.' },
   { names: ['friends'], usage: '/friends', desc: 'List your friends and who is online.' },
@@ -4477,8 +4530,39 @@ function SleepOverlay({ online, onLeave, onChat }: { online: boolean; onLeave: (
   );
 }
 
-function ChatBox({ open, initialText, messages, history, onSubmit, restricted = false }: {
+/** How long a private-message channel stays open without anyone writing in it. */
+export const CHANNEL_IDLE_MS = 5 * 60 * 1000;
+/** (tests can shorten it with window.__vbChannelIdleMs) */
+const channelIdleMs = () => { const v = (window as unknown as { __vbChannelIdleMs?: number }).__vbChannelIdleMs; return typeof v === 'number' && v > 0 ? v : CHANNEL_IDLE_MS; };
+let pingCtx: AudioContext | null = null;
+/** A short two-note "ping" for an incoming message (works with the tab in the background, as long as sound is allowed). */
+export function playPingSound() {
+  try {
+    const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    if (!Ctor) return;
+    pingCtx ??= new Ctor();
+    const ctx = pingCtx;
+    if (ctx.state === 'suspended') void ctx.resume();
+    const t0 = ctx.currentTime;
+    for (const [i, f] of [880, 1318].entries()) {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'sine'; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t0 + i * 0.09);
+      g.gain.exponentialRampToValueAtTime(0.18, t0 + i * 0.09 + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + i * 0.09 + 0.32);
+      o.connect(g); g.connect(ctx.destination);
+      o.start(t0 + i * 0.09); o.stop(t0 + i * 0.09 + 0.35);
+    }
+    (window as unknown as { __pings?: number }).__pings = ((window as unknown as { __pings?: number }).__pings ?? 0) + 1;
+  } catch { /* no audio: no ping */ }
+}
+
+function ChatBox({ open, initialText, messages, history, onSubmit, restricted = false, channels = [], channel = null, onChannel }: {
   restricted?: boolean;
+  /** Private-message channels that are open right now (Tab / the chips switch between them and the server chat). */
+  channels?: string[];
+  channel?: string | null;
+  onChannel?: (c: string | null) => void;
   open: boolean;
   initialText: string;
   messages: ChatMessage[];
@@ -4523,7 +4607,12 @@ function ChatBox({ open, initialText, messages, history, onSubmit, restricted = 
       setText(i >= 0 ? history[history.length - 1 - i] : '');
     } else if (e.key === 'Tab') {
       e.preventDefault();
-      if (suggestions[0]) setText('/' + suggestions[0].names[0] + ' ');
+      if (suggestions[0]) { setText('/' + suggestions[0].names[0] + ' '); return; }
+      if (!onChannel || !channels.length) return;
+      // Server chat -> each private channel -> server chat. (Shift+Tab goes the other way.)
+      const order: Array<string | null> = [null, ...channels];
+      const at = Math.max(0, order.indexOf(channel ?? null));
+      onChannel(order[(at + (e.shiftKey ? order.length - 1 : 1)) % order.length]);
     }
   }
 
@@ -4554,6 +4643,21 @@ function ChatBox({ open, initialText, messages, history, onSubmit, restricted = 
           <div className="px-2 pt-0.5 text-[10px] text-[#7a7a7a]">Tab to autocomplete</div>
         </div>
       )}
+      {open && channels.length > 0 && (
+        <div data-testid="chat-channels" className="flex flex-wrap items-center gap-1 pointer-events-auto text-xs select-none">
+          <button
+            type="button" data-testid="chat-channel-server" onMouseDown={(e) => e.preventDefault()} onClick={() => onChannel?.(null)}
+            className={`px-2 py-0.5 rounded-sm border ${channel === null ? 'bg-white/85 text-black border-white' : 'bg-black/60 text-white/80 border-white/25'}`}
+          >Server</button>
+          {channels.map((c) => (
+            <button
+              key={c} type="button" data-testid={`chat-channel-${c.toLowerCase()}`} onMouseDown={(e) => e.preventDefault()} onClick={() => onChannel?.(c)}
+              className={`px-2 py-0.5 rounded-sm border ${channel === c ? 'bg-[#c8a2ff] text-black border-[#c8a2ff]' : 'bg-black/60 text-[#c8a2ff] border-[#c8a2ff]/50'}`}
+            >{c}</button>
+          ))}
+          <span className="text-white/45 hidden sm:inline">Tab to switch</span>
+        </div>
+      )}
       {open && (
         <input
           autoFocus
@@ -4562,7 +4666,9 @@ function ChatBox({ open, initialText, messages, history, onSubmit, restricted = 
           onChange={(e) => { setText(e.target.value); setHistIdx(-1); }}
           onKeyDown={onKeyDown}
           className="w-full px-2 py-1.5 bg-black/65 text-white text-sm font-mono outline-none border border-white/20 focus:border-white/50 rounded-sm transition-colors"
-          placeholder="Type a message, or / for commands"
+          placeholder={channel ? `Message ${channel} privately (Tab: back to the server chat)` : 'Type a message, or / for commands'}
+          style={channel ? { borderColor: 'rgba(200,162,255,0.7)' } : undefined}
+          data-channel={channel ?? ''}
         />
       )}
     </div>
@@ -5080,6 +5186,31 @@ function advKindLabel(a: Advancement): { text: string; color: string } {
   return { text: 'Advancement Made!', color: '#ffe066' };
 }
 /** The Minecraft-style pop-ups in the top right corner. */
+/** Flames licking up the bottom of the screen while you are on fire. */
+function BurnOverlay() {
+  const tongues = Array.from({ length: 16 }, (_, i) => i);
+  return (
+    <div data-testid="burn-overlay" className="absolute inset-x-0 bottom-0 z-[16] pointer-events-none overflow-hidden" style={{ height: '34vh' }}>
+      <style>{`
+        @keyframes vbFlame { 0%{transform:translateY(8%) scaleY(.75) scaleX(1)} 25%{transform:translateY(0) scaleY(1.1) scaleX(.92)} 50%{transform:translateY(5%) scaleY(.88) scaleX(1.08)} 75%{transform:translateY(-2%) scaleY(1.15) scaleX(.95)} 100%{transform:translateY(8%) scaleY(.75) scaleX(1)} }
+        @keyframes vbFlameGlow { 0%,100%{opacity:.55} 50%{opacity:.8} }
+      `}</style>
+      <div className="absolute inset-x-0 bottom-0 h-full" style={{ background: 'linear-gradient(to top, rgba(255,90,10,0.55), rgba(255,140,20,0.22) 55%, rgba(255,140,20,0) 100%)', animation: 'vbFlameGlow 0.5s ease-in-out infinite' }} />
+      {tongues.map((i) => (
+        <div
+          key={i}
+          style={{
+            position: 'absolute', bottom: '-4%', left: `${(i / tongues.length) * 100 - 3}%`, width: `${100 / tongues.length * 2.1}%`, height: `${62 + ((i * 37) % 38)}%`,
+            background: 'radial-gradient(ellipse at 50% 100%, #fff3a0 0%, #ffc230 28%, #ff7a12 58%, rgba(255,60,0,0) 100%)',
+            borderRadius: '50% 50% 18% 18% / 90% 90% 10% 10%', transformOrigin: '50% 100%', filter: 'blur(1.5px)',
+            animation: `vbFlame ${0.38 + ((i * 53) % 30) / 100}s ease-in-out ${-(i * 0.13)}s infinite`, opacity: 0.88,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
 function AdvancementToasts({ toasts }: { toasts: AdvToast[] }) {
   return (
     <div className="absolute top-3 right-3 z-30 flex flex-col gap-2 pointer-events-none" data-testid="advancement-toasts">
@@ -5940,7 +6071,7 @@ export default function App() {
   const viewRef = useRef<View>('home');
   viewRef.current = view;
   // ---- accounts, friends, private messages, admin ----
-  const { account, admin, checked: accountChecked, signOut: doSignOut, rename: doRename } = useAccount();
+  const { account, admin, adminPerms, checked: accountChecked, signOut: doSignOut, rename: doRename, undercover: doUndercover } = useAccount();
   const [profileName, setProfileName] = useState<string | null>(null);
   useEffect(() => { setProfileOpener(setProfileName); return () => setProfileOpener(null); }, []);
   const accountRef = useRef(account);
@@ -5980,6 +6111,10 @@ export default function App() {
   const myOg = !!account && !isGuestName(account.username) && account.og === true;
   const mySpecial: SpecialId | null = account && !isGuestName(account.username) && isSpecialId(account.special) ? account.special : null;
   const myPerk: RankId = perkRank(myRank, { staff: myStaff, og: myOg, special: mySpecial });
+  /** [YOUTUBE] only: /undercover hides your tags from everyone (and from your own name plate, so you can see it works) */
+  const myUndercover = mySpecial === 'youtube' && account?.undercover === true;
+  const myUndercoverRef = useRef(myUndercover);
+  myUndercoverRef.current = myUndercover;
   const myTier: CreatorTier = isOwnerAccount ? 'star' : creatorTier(standing?.plays ?? 0);
   /** Admins and staff can kick, ban, mute and use commands in every world. */
   const canModerate = !!admin || !!myStaff;
@@ -6011,7 +6146,7 @@ export default function App() {
     if (fr) parts.push(`${fr}\\reset\\`);
     const me = name.toLowerCase() === (usernameRef.current || '').toLowerCase();
     const a = accountRef.current;
-    const badge: NetBadge | undefined = me ? (a && !isGuestName(a.username) ? { owner: isOwnerRef.current, rank: myRankRef.current, tier: myTierRef.current, staff: myStaffRef.current, og: myOgRef.current, special: mySpecialRef.current } : undefined) : badgesRef.current[name.toLowerCase()];
+    const badge: NetBadge | undefined = me ? (a && !isGuestName(a.username) ? { owner: isOwnerRef.current, rank: myRankRef.current, tier: myTierRef.current, staff: myStaffRef.current, og: myOgRef.current, special: mySpecialRef.current, undercover: myUndercoverRef.current } : undefined) : badgesRef.current[name.toLowerCase()];
     parts.push(...badgeTags(badge));
     return parts.length ? parts.join(' ') + ' ' : '';
   }
@@ -6060,6 +6195,37 @@ export default function App() {
 
   const sleepingRef = useRef(false);
   const lastWhisperFromRef = useRef<string | null>(null);
+  // Private-message channels: one opens when someone messages you (or you message them) and closes after 5 minutes without a message
+  const channelSeenRef = useRef<Record<string, { name: string; last: number }>>({}); // (a plain object: `Map` is the map icon in this file)
+  const [chatChannels, setChatChannels] = useState<string[]>([]);
+  const [chatChannel, setChatChannel] = useState<string | null>(null);
+  const chatChannelRef = useRef<string | null>(null);
+  /** A private message came in: show it, open that person's channel and ping. (Also reachable from tests as window.__vbWhisper.) */
+  function receiveWhisper(from: string, text: string) {
+    lastWhisperFromRef.current = from;
+    touchChannel(from);
+    pushMessage(`[${from} \u2192 you] ${filterProfanity(text)}`, '#c8a2ff');
+    playPingSound();
+  }
+  useEffect(() => { (window as unknown as { __vbWhisper?: (f: string, t: string) => void }).__vbWhisper = receiveWhisper; });
+  const touchChannel = (name: string) => {
+    const k = name.toLowerCase();
+    channelSeenRef.current[k] = { name, last: Date.now() };
+    setChatChannels(Object.values(channelSeenRef.current).map((c) => c.name));
+  };
+  const switchChannel = (c: string | null) => { chatChannelRef.current = c; setChatChannel(c); };
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      const now = Date.now();
+      let changed = false;
+      for (const [k, v] of Object.entries(channelSeenRef.current)) if (now - v.last > channelIdleMs()) { delete channelSeenRef.current[k]; changed = true; }
+      if (!changed) return;
+      setChatChannels(Object.values(channelSeenRef.current).map((c) => c.name));
+      const cur = chatChannelRef.current;
+      if (cur && !channelSeenRef.current[cur.toLowerCase()]) switchChannel(null);
+    }, 5000);
+    return () => window.clearInterval(id);
+  }, []);
   const pendingWhisperRef = useRef<{ to: string; text: string } | null>(null);
   const [gameMode, setGameMode] = useState<GameMode>('menu');
   useEffect(() => {
@@ -6259,6 +6425,7 @@ export default function App() {
   const [builderMod, setBuilderMod] = useState<Mod | null>(null);
   const [scriptsTab, setScriptsTab] = useState<'scripts' | 'builder'>('scripts');
   const [hurtFlash, setHurtFlash] = useState(false);
+  const [burning, setBurning] = useState(false);
   const menuOpenRef = useRef(false);
   const menuPageRef = useRef<MenuPage>('main');
   menuPageRef.current = menuPage;
@@ -6482,7 +6649,7 @@ export default function App() {
     gameHandleRef.current?.setPlayerLook(look);
     gameHandleRef.current?.setOwnSkin(look.skin); // a player head you get shows your skin
     mpRef.current?.sendLook(look);
-  }, [progress.currentSkin, progress.currentCape, progress.customSkin, gameMode]);
+  }, [progress.currentSkin, progress.currentCape, progress.customSkin, progress.customCape, gameMode]);
 
   // Soundtrack — lifted up to App level (rather than living inside
   // SettingsView) so playback survives navigating to other sidebar panels
@@ -6821,7 +6988,7 @@ export default function App() {
         else if (e.type === 'egg') mp.sendMatchEgg(e.team);
         else mp.sendMatchGoal(e.team);
       });
-      handle.onPvpHit((id, dmg, kx, kz, bow) => mpRef.current?.sendHit(id, dmg, kx, kz, bow));
+      handle.onPvpHit((id, dmg, kx, kz, bow, extra) => mpRef.current?.sendHit(id, dmg, kx, kz, bow, extra));
       if (onlineMgRef.current?.host) window.setTimeout(() => { if (gameHandleRef.current === handle) void startMatchHostingRef.current(); }, 600);
       // Advancements belong to this planet; whatever you already hold on load is granted quietly
       advRef.current = loadAdvancements(activeWorldIdRef.current);
@@ -6894,6 +7061,8 @@ export default function App() {
       menuOpenRef.current = false;
       setMenuOpen(false);
       setMenuPage('main');
+      handle.onBurning((on) => setBurning(on));
+      setBurning(false);
       handle.onPlayerHurt(() => {
         setHurtFlash(true);
         window.clearTimeout(hurtTimerRef.current);
@@ -7065,7 +7234,7 @@ export default function App() {
   useEffect(() => installUiSounds(), []);
   useEffect(() => subscribeQol(() => gameHandleRef.current?.setBlockOutline(getQol().outline)), []);
   // keep it right when you log in, your rank changes, or a fake rank is given
-  useEffect(() => { if (gameMode === 'playing') refreshNameTags(); }, [gameMode, account?.username, myRank, myTier, isOwnerAccount, fakeRanks, myStaff, myOg, mySpecial]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (gameMode === 'playing') refreshNameTags(); }, [gameMode, account?.username, myRank, myTier, isOwnerAccount, fakeRanks, myStaff, myOg, mySpecial, myUndercover]); // eslint-disable-line react-hooks/exhaustive-deps
   // block sounds: the switches and volume in Settings > Audio
   const applyBlockSounds = () => { const q = getQol(); gameHandleRef.current?.setBlockSoundPrefs({ breaking: q.blockBreak, placing: q.blockPlace, footsteps: q.footsteps, volume: q.blockVolume }); };
   useEffect(() => subscribeQol(applyBlockSounds), []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -7308,12 +7477,12 @@ export default function App() {
   // Autosave every 10 seconds, and whenever the tab is hidden or closed
   useEffect(() => {
     if (gameMode !== 'playing') return;
-    const t = setInterval(saveWorldNow, 10_000);
+    const t = setBgInterval(saveWorldNow, 10_000);
     const onHide = () => { if (document.visibilityState === 'hidden') saveWorldNow(); };
     window.addEventListener('beforeunload', saveWorldNow);
     document.addEventListener('visibilitychange', onHide);
     return () => {
-      clearInterval(t);
+      clearBgInterval(t);
       window.removeEventListener('beforeunload', saveWorldNow);
       document.removeEventListener('visibilitychange', onHide);
     };
@@ -7448,7 +7617,12 @@ export default function App() {
         onlineNamesRef.current = next;
         setOnlinePlayers(next);
       },
-      onChat: (name, text) => pushMessage(`<${tagsFor(name)}${name}> ${text}`),
+      onChat: (name, rawText) => {
+        const text = filterProfanity(rawText);
+        pushMessage(`<${tagsFor(name)}${name}> ${text}`);
+        const me = usernameRef.current;
+        if (me && name.toLowerCase() !== me.toLowerCase() && new RegExp(`(^|[^a-z0-9_])${me.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^a-z0-9_])`, 'i').test(text)) playPingSound(); // somebody said your name
+      },
       onTitle: (text, sub) => showTitle(text, sub),
       onDrop: (d) => gameHandleRef.current?.addRemoteDrop(d),
       onDropGone: (n) => gameHandleRef.current?.removeNetDrop(n),
@@ -7470,8 +7644,8 @@ export default function App() {
       onSystem: (text) => pushMessage(text, '#ffe066'),
       onTime: (t) => gameHandleRef.current?.setTime(t),
       onWeather: (k) => { gameHandleRef.current?.setWeather(k); setWeather(k); },
-      onWhisper: (from, text) => { lastWhisperFromRef.current = from; pushMessage(`[${from} \u2192 you] ${text}`, '#c8a2ff'); },
-      onWhispered: (to, text) => { pendingWhisperRef.current = null; pushMessage(`[you \u2192 ${to}] ${text}`, '#c8a2ff'); },
+      onWhisper: (from, text) => receiveWhisper(from, text),
+      onWhispered: (to, text) => { pendingWhisperRef.current = null; touchChannel(to); pushMessage(`[you \u2192 ${to}] ${text}`, '#c8a2ff'); },
       onWhisperFail: (to) => {
         const p = pendingWhisperRef.current;
         pendingWhisperRef.current = null;
@@ -7482,7 +7656,7 @@ export default function App() {
       onAdminPlayers: (list) => setAdminPlayers(list),
       onMatch: (m) => applyMatch(m),
       onMatchReset: () => gameHandleRef.current?.onlineMatchReset(),
-      onHurt: (hh) => gameHandleRef.current?.hurtByPlayer(hh.dmg, hh.kx, hh.kz, hh.name, hh.by),
+      onHurt: (hh) => gameHandleRef.current?.hurtByPlayer(hh.dmg, hh.kx, hh.kz, hh.name, hh.by, { breach: hh.breach, kbm: hh.kbm }),
       onHurtFx: (id) => gameHandleRef.current?.remoteHurtFx(id),
       onClose: (reason) => {
         if (hostingSelf) { stopHostingRef.current(true); return; } // (only if your own room shut down by itself)
@@ -7865,7 +8039,7 @@ export default function App() {
   useEffect(() => {
     if (gameMode !== 'playing' || netStatus !== 'online') return;
     let last = '';
-    const t = setInterval(() => {
+    const t = setBgInterval(() => { // (a background-proof timer: other players still see you while this tab is hidden)
       const h = gameHandleRef.current;
       const mp = mpRef.current;
       if (!h || !mp || !mp.connected) return;
@@ -7882,7 +8056,7 @@ export default function App() {
     const h0 = gameHandleRef.current;
     h0?.onDropThrown((d) => mpRef.current?.sendDrop(d));
     h0?.onPickupRequest((n) => mpRef.current?.sendPickup(n));
-    return () => { clearInterval(t); h0?.onDropThrown(null); h0?.onPickupRequest(null); };
+    return () => { clearBgInterval(t); h0?.onDropThrown(null); h0?.onPickupRequest(null); };
   }, [gameMode, netStatus]);
 
   // Hold Tab to see who's online
@@ -8441,7 +8615,7 @@ export default function App() {
 
   runCommandRef2.current = (raw) => { runCommand(raw); };
   function submitChat(raw: string) {
-    const text = raw.trim();
+    const text = raw.trim().startsWith('/') ? raw.trim() : filterProfanity(raw.trim()); // bad words become ****, mild language stays
     if (text) setChatHistory((h) => [...h.slice(-49), text]);
     if (text.startsWith('/')) {
       const res = runCommand(text);
@@ -8455,6 +8629,12 @@ export default function App() {
         openPanel();
         return;
       }
+    } else if (text && chatChannelRef.current && channelSeenRef.current[chatChannelRef.current.toLowerCase()]) {
+      const ch = channelSeenRef.current[chatChannelRef.current.toLowerCase()];
+      touchChannel(ch.name); // writing in a channel keeps it open
+      sendWhisper(ch.name, text); // in a private channel: it goes to that person
+      closeChat();
+      return;
     } else if (text) {
       runnerRef.current?.emit('chat', { text });
       // Online, the server echoes chat back to everyone (you included)
@@ -8486,10 +8666,11 @@ export default function App() {
     const f = fr.friends.find((x) => x.username.toLowerCase() === to.toLowerCase());
     if (!f) { pushMessage(`No player or friend named ${to}`, '#ff6b6b'); return; }
     const r = await sendDM(me, f.id, text);
-    if (r.ok) pushMessage(`[you \u2192 ${f.username}] ${text}`, '#c8a2ff');
+    if (r.ok) pushMessage(`[you \u2192 ${f.username}] ${filterProfanity(text)}`, '#c8a2ff');
     else pushMessage(r.error, '#ff6b6b');
   }
-  function sendWhisper(to: string, text: string) {
+  function sendWhisper(to: string, rawText: string) {
+    const text = filterProfanity(rawText);
     const mp = mpRef.current;
     if (mp?.connected) { pendingWhisperRef.current = { to, text }; mp.sendWhisper(to, text); return; } // the server says if nobody here has that name
     void whisperToFriend(to, text);
@@ -8583,6 +8764,18 @@ export default function App() {
     if (cmd === 'panel') {
       if (!me || !canModerateRef.current) { err("You don't have permission to use /panel"); return; }
       return 'panel';
+    }
+    if (cmd === 'undercover') {
+      if (!me || isGuestName(me.username)) { err('Sign in to use /undercover.'); return; }
+      if (!canGoUndercover(me.special ?? null)) { err("You don't have permission to use /undercover"); return; }
+      const want = args[0] ? !['off', 'false', '0', 'no'].includes(args[0].toLowerCase()) : !me.undercover;
+      void doUndercover(want).then((r: any) => {
+        if (r && r.ok === false) { err(r.error ?? 'Could not change undercover'); return; }
+        info(want ? 'Undercover on: your YouTube, OG and rank tags are hidden.' : 'Undercover off: your tags are visible again.');
+        mpRef.current?.sendRefreshBadge();
+        refreshNameTags();
+      });
+      return;
     }
     if (cmd === 'friend' || cmd === 'unfriend' || cmd === 'friends') {
       if (!me || isGuestName(me.username)) { err('Sign in to use friends (open the Social tab in the menu).'); return; }
@@ -8715,7 +8908,7 @@ export default function App() {
       });
       return;
     }
-    const SOCIAL = ['friend', 'friends', 'unfriend', 'whisper', 'w', 'msg', 'tell', 'r', 'reply', 'panel', 'join'];
+    const SOCIAL = ['friend', 'friends', 'unfriend', 'whisper', 'w', 'msg', 'tell', 'r', 'reply', 'panel', 'join', 'undercover'];
     if (SOCIAL.includes(cmd)) {
       if (ctx) { err('That command only works in chat'); return; }
       return runSocialCommand(cmd, args);
@@ -9100,7 +9293,7 @@ export default function App() {
         info(`Seed: ${h.getDebugInfo().seed}`);
         return;
       case 'say': {
-        const text = parts.slice(1).join(' ').trim();
+        const text = filterProfanity(parts.slice(1).join(' ').trim());
         if (!text) { err('Usage: /say <message>'); return; }
         // online, the server sends chat back to everyone (you too); offline it just shows here
         if (mpRef.current?.connected) mpRef.current.sendChat(ctx ? `[@] ${text}` : text);
@@ -9416,7 +9609,7 @@ export default function App() {
 
   return (
     <AccountSummaryContext.Provider value={{ username: account?.username ?? '', signedIn: !!account && !isGuestName(account.username), isOwner: isOwnerAccount, isAdmin: !!admin, openAdmin: () => openPanel() }}>
-    <StandingContext.Provider value={{ nameTags: badgeTags({ owner: isOwnerAccount, rank: myRank, staff: myStaff, og: myOg, special: mySpecial }), rank: myPerk, rising, tier: myTier, isOwner: isOwnerAccount, standing, signedIn: !!account && !isGuestName(account.username), guest: (accountChecked || authWaitOver) && (!account || isGuestName(account.username)) }}>
+    <StandingContext.Provider value={{ nameTags: badgeTags({ owner: isOwnerAccount, rank: myRank, staff: myStaff, og: myOg, special: mySpecial, undercover: myUndercover }), undercover: myUndercover, rank: myPerk, rising, tier: myTier, isOwner: isOwnerAccount, standing, signedIn: !!account && !isGuestName(account.username), guest: (accountChecked || authWaitOver) && (!account || isGuestName(account.username)) }}>
       <DailyUiContext.Provider value={{ openDaily: () => setShowDaily(true) }}>
       {outsideNotice && (
         <div className="fixed top-3 left-1/2 -translate-x-1/2 z-[9999] max-w-[92vw] w-[520px] rounded-xl border border-[#ff9800]/50 bg-[#1c1408]/95 px-4 py-3 shadow-xl" data-testid="outside-script-notice" role="alert">
@@ -9625,6 +9818,9 @@ export default function App() {
             history={chatHistory}
             onSubmit={submitChat}
             restricted={!ownsWorld}
+            channels={chatChannels}
+            channel={chatChannel}
+            onChannel={switchChannel}
           />
         )}
         {!showMenu && helpOpen && (
@@ -9640,6 +9836,7 @@ export default function App() {
             style={{ opacity: hurtFlash ? 1 : 0, background: 'radial-gradient(ellipse at center, rgba(0,0,0,0) 45%, rgba(200,0,0,0.55) 100%)' }}
           />
         )}
+        {!showMenu && burning && <BurnOverlay />}
         {!showMenu && advToasts.length > 0 && <AdvancementToasts toasts={advToasts} />}
         {!showMenu && scoped && (
           <div className="absolute inset-0 z-10 pointer-events-none" style={{ background: 'radial-gradient(circle at center, transparent 0, transparent 36vh, rgba(0,0,0,0.97) calc(36vh + 2px))' }}>
@@ -9835,6 +10032,7 @@ export default function App() {
         <AdminPanel
           account={account}
           staffOnly={!admin}
+          perms={adminPerms}
           onMute={(n, on) => { if (mpRef.current?.connected) mpRef.current.sendAdmin(account.token, on ? 'mute' : 'unmute', { name: n }); }}
           online={netStatus === 'online'}
           players={adminPlayers}

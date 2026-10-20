@@ -43,11 +43,15 @@ export function isCustomSkinData(s: unknown): s is string {
   return typeof s === 'string' && s.length > 40 && s.length <= MAX_CUSTOM_SKIN_CHARS && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(s);
 }
 
-export type PlayerLook = { skin: string; cape: string; /** the PNG, when skin is 'custom' */ custom?: string };
+/** The cape id of a Champion's / [YOUTUBE]'s own uploaded cape (its PNG travels in `capeData`). */
+export const CUSTOM_CAPE_ID = 'custom';
+export type PlayerLook = { skin: string; cape: string; /** the PNG, when skin is 'custom' */ custom?: string; /** the PNG, when cape is 'custom' (a standard 64x32 cape picture) */ capeData?: string };
 export const DEFAULT_LOOK: PlayerLook = { skin: 'classic', cape: 'none' };
 /** Anything unknown (old saves, other players on newer versions) falls back to the default. */
 export function cleanLook(l: Partial<PlayerLook> | null | undefined): PlayerLook {
-  const cape = l?.cape && CAPES[l.cape] ? l.cape : 'none';
-  if (l?.skin === CUSTOM_SKIN_ID && isCustomSkinData(l.custom)) return { skin: CUSTOM_SKIN_ID, cape, custom: l.custom };
-  return { skin: l?.skin && SKINS[l.skin] ? l.skin : 'classic', cape };
+  const customCape = l?.cape === CUSTOM_CAPE_ID && isCustomSkinData(l.capeData);
+  const cape = customCape ? CUSTOM_CAPE_ID : l?.cape && l.cape !== CUSTOM_CAPE_ID && CAPES[l.cape] ? l.cape : 'none';
+  const extra = customCape ? { capeData: l!.capeData as string } : {};
+  if (l?.skin === CUSTOM_SKIN_ID && isCustomSkinData(l.custom)) return { skin: CUSTOM_SKIN_ID, cape, custom: l.custom, ...extra };
+  return { skin: l?.skin && SKINS[l.skin] ? l.skin : 'classic', cape, ...extra };
 }

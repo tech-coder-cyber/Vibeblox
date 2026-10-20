@@ -9,7 +9,8 @@ import AccountPanel from './AccountPanel';
 import { ShieldCheck, Megaphone, Gavel, UserX, Ban, X, Loader2, Undo2, Crown, Sun, Moon, ShieldAlert, Tv, UserPlus } from 'lucide-react';
 import {
   postAnnouncement, banEverywhere, unbanEverywhere, listBans, getLastAnnouncement, setLastAnnouncement, isOwnerName, giveRank, rankInfo, rankPending, RANKS, RANK_LABELS, ANNOUNCE_MAX, USERNAME_RE,
-  listAdmins, setAdmin, listCheatReports, dismissCheatReports, clearCheatReports, listStaff, setStaffRank, STAFF_RANKS, STAFF_LABELS, listSpecial, setSpecialRank, setOgRank, type SpecialRow, type StaffRank, type StaffRow, type Account, type Ban as BanRow, type RankName, type CheatReport,
+  listAdmins, setAdmin, listCheatReports, dismissCheatReports, clearCheatReports, listStaff, setStaffRank, STAFF_RANKS, STAFF_LABELS, listSpecial, setSpecialRank, setOgRank,
+  ADMIN_PERMS, ADMIN_PERM_LABELS, ADMIN_PERM_HELP, type AdminPerm, type AdminRow, type SpecialRow, type StaffRank, type StaffRow, type Account, type Ban as BanRow, type RankName, type CheatReport,
 } from './social';
 import { adStatus } from './adEconomy';
 import { useTheme, setTheme } from './layout';
@@ -28,6 +29,8 @@ type Props = {
   onAnnounced: (text: string) => void;
   /** Staff (HELPER / MOD) get a smaller panel: players only. Their ban covers this world, not all of VibeBlox. */
   staffOnly?: boolean;
+  /** What this admin may do (the owner and full-access admins: everything). Left out = everything, like before Indev 32. */
+  perms?: readonly AdminPerm[];
   /** Stops (on = true) or allows a player to chat in this world. */
   onMute?: (name: string, on: boolean) => void;
   onRefreshPlayers: () => void;
@@ -48,18 +51,16 @@ const ui = {
 };
 
 type Ctx = Props & { owner: boolean; say: (ok: boolean, text: string) => void };
-type Section = { id: string; label: string; ownerOnly?: boolean; /** staff (HELPER / MOD) can see it too */ staffOk?: boolean; render: (c: Ctx) => ReactNode };
+type Section = { id: string; label: string; ownerOnly?: boolean; /** an admin needs this permission to see it (the owner always has them all) */ perm?: AdminPerm; /** staff (HELPER / MOD) can see it too */ staffOk?: boolean; render: (c: Ctx) => ReactNode };
 
 // ---------------- The sections ----------------
 const SECTIONS: Section[] = [
-  { id: 'announce', label: 'Announce', render: (c) => <AnnounceSection {...c} /> },
+  { id: 'announce', label: 'Announce', perm: 'announce', render: (c) => <AnnounceSection {...c} /> },
   { id: 'players', label: 'Players', staffOk: true, render: (c) => <PlayersSection {...c} /> },
-  { id: 'bans', label: 'Bans', render: (c) => <BansSection {...c} /> },
-  { id: 'anticheat', label: 'Anti-cheat', render: (c) => <AntiCheatSection {...c} /> },
-  { id: 'ranks', label: 'Ranks', render: (c) => <RanksSection {...c} /> },
+  { id: 'bans', label: 'Bans', perm: 'bans', render: (c) => <BansSection {...c} /> },
+  { id: 'anticheat', label: 'Anti-cheat', perm: 'anticheat', render: (c) => <AntiCheatSection {...c} /> },
+  { id: 'ranks', label: 'Ranks', perm: 'ranks', render: (c) => <RanksSection {...c} /> },
   { id: 'admins', label: 'Admins', ownerOnly: true, render: (c) => <AdminsSection {...c} /> },
-  { id: 'staff', label: 'Staff', ownerOnly: true, render: (c) => <StaffSection {...c} /> },
-  { id: 'special', label: 'YouTube & OG', ownerOnly: true, render: (c) => <SpecialSection {...c} /> },
   { id: 'ads', label: 'Ads', render: () => <AdsSection /> },
   { id: 'account', label: 'My account', render: (c) => <AccountPanel summary={{ username: c.account.username, signedIn: true, isOwner: c.owner, isAdmin: true, openAdmin: () => undefined, inPanel: true }} /> },
 ];
@@ -67,7 +68,9 @@ const SECTIONS: Section[] = [
 export default function AdminPanel(props: Props) {
   const { account, onClose } = props;
   const owner = isOwnerName(account.username);
-  const sections = SECTIONS.filter((s) => props.staffOnly ? !!s.staffOk || s.id === 'account' : !s.ownerOnly || owner);
+  const perms: readonly AdminPerm[] = owner || !props.perms ? ADMIN_PERMS : props.perms;
+  const limited = !owner && !props.staffOnly && perms.length < ADMIN_PERMS.length;
+  const sections = SECTIONS.filter((s) => props.staffOnly ? !!s.staffOk || s.id === 'account' : (!s.ownerOnly || owner) && (!s.perm || perms.includes(s.perm)));
   const [tab, setTab] = useState(sections[0].id);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const theme = useTheme();
@@ -76,14 +79,14 @@ export default function AdminPanel(props: Props) {
   const current = sections.find((s) => s.id === tab) ?? sections[0];
   return (
     <div className="vb-themed fixed inset-0 z-[70] flex items-center justify-center bg-black/75 backdrop-blur-sm p-4" data-testid="admin-panel">
-      <div className="w-[860px] max-w-full max-h-[92vh] overflow-y-auto bg-[#121822] border border-[#243044] rounded-2xl shadow-2xl">
-        <div className="sticky top-0 z-10 flex items-center gap-3 px-6 py-4 bg-[#121822] border-b border-[#243044]">
+      <div className="w-[860px] max-w-full max-h-[92vh] overflow-y-auto overflow-x-hidden bg-[#121822] border border-[#243044] rounded-2xl shadow-2xl">
+        <div className="sticky top-0 z-20 flex items-center gap-3 px-4 sm:px-6 py-3 sm:py-4 bg-[#121822] border-b border-[#243044]">
           <ShieldCheck className="w-6 h-6 text-[#ffd700]" />
           <div className="flex-1">
             <div className="text-white font-bold text-lg leading-tight flex items-center gap-2">
               {props.staffOnly ? 'Staff Panel' : 'Admin Panel'}
               {props.staffOnly ? <span className="text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-md bg-[#22e6e6] text-[#0a0e14]" data-testid="staff-badge">Staff</span> : owner ? <span className="text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-md bg-[#ffd700] text-[#0a0e14]" data-testid="owner-badge">Owner</span>
-                : <span className="text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-md bg-[#00e676] text-[#0a0e14]" data-testid="admin-badge">Admin</span>}
+                : <span className="text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-md bg-[#00e676] text-[#0a0e14]" data-testid="admin-badge">{limited ? 'Admin · limited' : 'Admin'}</span>}
             </div>
             <div className="text-[#5a6b80] text-xs">Signed in as {account.username}{owner ? ' · the owner of VibeBlox' : ''}</div>
           </div>
@@ -94,11 +97,11 @@ export default function AdminPanel(props: Props) {
           <button onClick={onClose} className="w-9 h-9 rounded-lg text-[#8ea0b8] hover:text-white hover:bg-[#1a2230] flex items-center justify-center" aria-label="Close"><X className="w-5 h-5" /></button>
         </div>
 
-        <div className="p-6 flex gap-5">
+        <div className="p-3 sm:p-6 flex flex-col sm:flex-row gap-3 sm:gap-5" data-testid="admin-layout">
           <SideNav testid="admin-sidenav" active={current.id} onSelect={setTab} tabs={sections.map((s) => ({ id: s.id, label: s.label }))} />
           <div className="flex-1 min-w-0 space-y-4">
             {msg && <div className={`rounded-lg px-4 py-2.5 text-sm border ${msg.ok ? 'bg-[#00e676]/10 border-[#00e676]/30 text-[#00e676]' : 'bg-red-500/10 border-red-500/30 text-red-400'}`} data-testid="admin-msg">{msg.text}</div>}
-            {current.render({ ...props, owner, say })}
+            {current.render({ ...props, perms, owner, say })}
           </div>
         </div>
       </div>
@@ -334,7 +337,17 @@ function AntiCheatSection({ account, say }: Ctx) {
   );
 }
 
-// ---------------- Ranks (owner) ----------------
+// ---------------- Ranks: paid ranks, staff, [YOUTUBE] and [OG] (the owner, or an admin with the Give ranks permission) ----------------
+function RanksSection(c: Ctx) {
+  return (
+    <>
+      <GiveRankCard say={c.say} />
+      <StaffSection say={c.say} />
+      <SpecialSection say={c.say} />
+    </>
+  );
+}
+
 /** How long a rank lasts: hours (null = for good). */
 const RANK_DURATIONS: Array<{ id: string; label: string; hours: number | null }> = [
   { id: 'perm', label: 'Permanent', hours: null },
@@ -352,7 +365,7 @@ function untilText(until: string | null): string {
   const h = Math.floor(ms / 3_600_000), d = Math.floor(h / 24);
   return `for ${d >= 1 ? `${d} day${d === 1 ? '' : 's'} ${h % 24} h` : h >= 1 ? `${h} h ${Math.floor((ms % 3_600_000) / 60_000)} min` : `${Math.max(1, Math.ceil(ms / 60_000))} min`} more`;
 }
-function RanksSection({ owner, say }: Ctx) {
+function GiveRankCard({ say }: Pick<Ctx, 'say'>) {
   const [rankName, setRankName] = useState('');
   const [rankPick, setRankPick] = useState<RankName>('vanguard');
   const [duration, setDuration] = useState('perm');
@@ -386,7 +399,6 @@ function RanksSection({ owner, say }: Ctx) {
   return (
     <div className={ui.section} data-testid="admin-ranks">
       <div className={ui.h2}><Crown className="w-5 h-5 text-[#ffd700]" />Give a rank</div>
-      {!owner && <p className="text-[#ff9800] text-xs mb-3">Only the owner can give ranks.</p>}
       <div className="flex flex-wrap gap-2 items-center">
         <input value={rankName} onChange={(e) => setRankName(e.target.value.replace(/[^A-Za-z0-9_]/g, '').slice(0, 16))} placeholder="Username" data-testid="rank-name" className={`${ui.input} flex-1 min-w-[140px]`} />
         <select value={rankPick} onChange={(e) => setRankPick(e.target.value as RankName)} data-testid="rank-pick" aria-label="Rank" className={sel}>
@@ -405,7 +417,7 @@ function RanksSection({ owner, say }: Ctx) {
             </select>
           </>
         )}
-        <button onClick={apply} disabled={!owner || !USERNAME_RE.test(rankName) || busy || Number.isNaN(hours)} data-testid="rank-give"
+        <button onClick={apply} disabled={!USERNAME_RE.test(rankName) || busy || Number.isNaN(hours)} data-testid="rank-give"
           className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#ffd700] text-[#0a0e14] font-bold text-sm disabled:opacity-40 hover:brightness-110 active:scale-95 transition-all">
           {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Crown className="w-4 h-4" />}{rankPick === 'none' ? 'Remove rank' : hours === null ? 'Give rank for good' : 'Give temporary rank'}
         </button>
@@ -419,43 +431,74 @@ function RanksSection({ owner, say }: Ctx) {
 }
 
 // ---------------- Admins (owner only) ----------------
-function AdminsSection({ say }: Ctx) {
-  const [admins, setAdmins] = useState<string[] | null>(null);
+function permsText(perms: AdminPerm[] | null): string {
+  return perms === null ? 'Full access' : perms.length ? perms.map((p) => ADMIN_PERM_LABELS[p]).join(' · ') : 'Players only';
+}
+function AdminsSection({ say }: Pick<Ctx, 'say'>) {
+  const [admins, setAdmins] = useState<AdminRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState('');
+  const [full, setFull] = useState(true);
+  const [picked, setPicked] = useState<AdminPerm[]>(['announce']);
   const [busy, setBusy] = useState(false);
   async function refresh() {
     const r = await listAdmins();
-    if (r.ok) { setAdmins(r.admins); setError(null); } else { setAdmins([]); setError(r.error); }
+    if (r.ok) { setAdmins(r.rows); setError(null); } else { setAdmins([]); setError(r.error); }
   }
   useEffect(() => { void refresh(); }, []);
-  async function change(n: string, on: boolean) {
+  const toggle = (p: AdminPerm) => setPicked((cur) => (cur.includes(p) ? cur.filter((x) => x !== p) : [...cur, p]));
+  async function change(n: string, on: boolean, perms: AdminPerm[] | null = null) {
     if (busy) return;
     setBusy(true);
-    const r = await setAdmin(n, on);
+    const r = await setAdmin(n, on, perms);
     setBusy(false);
     if (!r.ok) { say(false, r.error); return; }
-    say(true, on ? `${r.username} is an admin now. They can open this panel the next time they sign in.` : `${r.username} is no longer an admin.`);
+    say(true, !on ? `${r.username} is no longer an admin.` : perms === null ? `${r.username} is an admin with full access. They can open this panel the next time they sign in.` : `${r.username} is an admin with limited access (${permsText(perms)}). They get it the next time they sign in.`);
     if (on) setName('');
     void refresh();
   }
+  function edit(row: AdminRow) {
+    setName(row.username);
+    setFull(row.perms === null);
+    setPicked(row.perms ?? ['announce']);
+  }
+  const chip = 'inline-flex items-center gap-2 px-3 py-2 rounded-xl border text-xs cursor-pointer select-none';
   return (
     <div className={ui.section} data-testid="admin-admins">
       <div className={ui.h2}><UserPlus className="w-5 h-5 text-[#00e676]" />Admins</div>
-      <p className="text-[#5a6b80] text-xs mb-3">Admins can open this panel: announce, kick and ban, change game modes and read anti-cheat reports. Only you (the owner) can give ranks and choose admins.</p>
+      <p className="text-[#5a6b80] text-xs mb-3">Everyone you pick can open this panel and use the Players tab (kick, ban in a world, game modes). Choose <b className="text-[#8ea0b8]">full access</b> (everything except choosing admins, which only you can do) or <b className="text-[#8ea0b8]">limited access</b> and tick what they may do. Typing the name of someone who is already an admin changes their access.</p>
       <div className="flex flex-wrap gap-2 mb-3">
         <input value={name} onChange={(e) => setName(e.target.value.replace(/[^A-Za-z0-9_]/g, '').slice(0, 16))} placeholder="Username" data-testid="admin-name" className={`${ui.input} flex-1 min-w-[140px]`} />
-        <button onClick={() => change(name, true)} disabled={!USERNAME_RE.test(name) || busy} data-testid="admin-add"
+        <div className="inline-flex rounded-xl border border-[#243044] overflow-hidden text-xs font-bold" role="radiogroup" aria-label="Access level">
+          <button type="button" role="radio" aria-checked={full} onClick={() => setFull(true)} data-testid="admin-level-full" className={`px-3 py-2.5 ${full ? 'bg-[#00e676] text-[#0a0e14]' : 'bg-[#0a0e14] text-[#8ea0b8] hover:text-white'}`}>Full access</button>
+          <button type="button" role="radio" aria-checked={!full} onClick={() => setFull(false)} data-testid="admin-level-limited" className={`px-3 py-2.5 ${!full ? 'bg-[#ffd23a] text-[#0a0e14]' : 'bg-[#0a0e14] text-[#8ea0b8] hover:text-white'}`}>Limited access</button>
+        </div>
+        <button onClick={() => change(name, true, full ? null : picked)} disabled={!USERNAME_RE.test(name) || busy} data-testid="admin-add"
           className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#00e676] text-[#0a0e14] font-bold text-sm disabled:opacity-40 active:scale-95">{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}Make admin</button>
       </div>
+      {!full && (
+        <div className="grid sm:grid-cols-2 gap-2 mb-3" data-testid="admin-perms">
+          {ADMIN_PERMS.map((p) => (
+            <label key={p} className={`${chip} ${picked.includes(p) ? 'border-[#ffd23a]/60 bg-[#ffd23a]/10 text-white' : 'border-[#243044] bg-[#0a0e14] text-[#8ea0b8]'}`}>
+              <input type="checkbox" checked={picked.includes(p)} onChange={() => toggle(p)} data-testid={`perm-${p}`} className="accent-[#ffd23a]" />
+              <span><b className="text-white">{ADMIN_PERM_LABELS[p]}</b><span className="block text-[11px] opacity-80">{ADMIN_PERM_HELP[p]}</span></span>
+            </label>
+          ))}
+        </div>
+      )}
       {error && <p className="text-[#ff9a3c] text-xs mb-2">{error}</p>}
       {admins === null ? <p className={ui.muted}>Loading…</p> : (
         <div className="space-y-1.5" data-testid="admin-list">
           {admins.map((a) => (
-            <div key={a} className={ui.row} data-testid="admin-row">
-              <span className="flex-1 text-white text-sm font-semibold">{a}</span>
-              {isOwnerName(a) ? <span className="text-[10px] uppercase font-bold text-[#ffd700]">Owner</span>
-                : <button onClick={() => change(a, false)} disabled={busy} className={`${ui.btn} border border-[#243044] text-[#8ea0b8] hover:text-white`}>Remove</button>}
+            <div key={a.username} className={`${ui.row} flex-wrap`} data-testid="admin-row">
+              <span className="flex-1 min-w-[110px] text-white text-sm font-semibold">{a.username}</span>
+              {isOwnerName(a.username) ? <span className="text-[10px] uppercase font-bold text-[#ffd700]">Owner</span> : (
+                <>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${a.perms === null ? 'bg-[#00e676]/15 text-[#00e676]' : 'bg-[#ffd23a]/15 text-[#ffd23a]'}`} data-testid="admin-access">{permsText(a.perms)}</span>
+                  <button onClick={() => edit(a)} data-testid="admin-edit" className={`${ui.btn} border border-[#243044] text-[#8ea0b8] hover:text-white`}>Change access</button>
+                  <button onClick={() => change(a.username, false)} disabled={busy} className={`${ui.btn} border border-[#243044] text-[#8ea0b8] hover:text-white`}>Remove</button>
+                </>
+              )}
             </div>
           ))}
         </div>
@@ -465,7 +508,7 @@ function AdminsSection({ say }: Ctx) {
 }
 
 // ---------------- Staff ranks ([HELPER], [MOD]) ----------------
-function StaffSection({ say }: Ctx) {
+function StaffSection({ say }: Pick<Ctx, 'say'>) {
   const [rows, setRows] = useState<StaffRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState('');
@@ -516,7 +559,7 @@ function StaffSection({ say }: Ctx) {
 }
 
 // ---------------- Special ranks ([YOUTUBE]) and OG fixes ----------------
-function SpecialSection({ say }: Ctx) {
+function SpecialSection({ say }: Pick<Ctx, 'say'>) {
   const [rows, setRows] = useState<SpecialRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState('');
@@ -550,7 +593,7 @@ function SpecialSection({ say }: Ctx) {
   return (
     <div className={ui.section} data-testid="admin-special">
       <div className={ui.h2}><Tv className="w-5 h-5 text-[#ff4d4d]" />[YOUTUBE] rank</div>
-      <p className="text-[#5a6b80] text-xs mb-3">For video makers. [YOUTUBE] gets Elite's perks (a bigger planet limit, more script time, no ads) and a red tag. It has no moderation powers.</p>
+      <p className="text-[#5a6b80] text-xs mb-3">For video makers. [YOUTUBE] gets everything Champion gets (15 planets, the biggest script budget, no ads, your own skin and cape) and a red tag. Only [YOUTUBE] can use <code className="text-[#ff6b6b]">/undercover</code> to hide their tags. It has no moderation powers.</p>
       <div className="flex flex-wrap gap-2 mb-3">
         <input value={name} onChange={(e) => setName(e.target.value.replace(/[^A-Za-z0-9_]/g, '').slice(0, 16))} placeholder="Username" data-testid="special-name" className={`${ui.input} flex-1 min-w-[140px]`} />
         <button onClick={() => change(name, 'youtube')} disabled={!USERNAME_RE.test(name) || busy} data-testid="special-add" className={`${btn} bg-[#ff4d4d] text-white`}>{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}Give [YOUTUBE]</button>

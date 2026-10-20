@@ -2,11 +2,45 @@
 // a small update to the current one is a point release (Indev 26.1, 26.2...), a big one is the next number.
 //
 // The News page in the sidebar shows this list, and a dot appears on it until the newest one has been read.
-export const GAME_VERSION = 30;
+export const GAME_VERSION = 32;
 
 export type NewsEntry = { version: number; date: string; title: string; changes: string[] };
 
 export const NEWS: NewsEntry[] = [
+  {
+    version: 32,
+    date: 'October 19, 2026',
+    title: 'Chat filter, admin access levels, YouTube perks, friends\' ranks',
+    changes: [
+      'Chat filter: bad words are hidden with stars, and only that word (the rest of your message stays). It also catches tricks like f.u.c.k, sh1t and f u c k. Mild, crude language (damn, hell, crap, ass, piss, suck, bastard, wtf...) is still allowed. It covers chat, whispers and private messages.',
+      'Admin panel: you can now choose Full or Limited access for every admin. Limited admins tick exactly what they can do (announcements, bans, anti-cheat reports, ranks), and only see those tabs. Only the owner picks who is an admin.',
+      'Admin panel: Staff, YOUTUBE and OG are now all in the Ranks tab, and anyone with the ranks permission can give them.',
+      'YOUTUBE rank has Champion perks (15 planets, biggest script budget, your own skin and cape) and /undercover to hide your tags. /undercover is for YOUTUBE only, not for other ranks or staff.',
+      'Custom capes: Champions and YOUTUBE can upload their own cape (a 64x32 PNG) in the Shop, next to custom skins.',
+      'Social: your friends\' ranks show next to their names, and you see when they were last online (like "Last online 10 hours ago").',
+      'Name plates and the profile panel wrap onto more lines when you have lots of ranks, so none are cut off.',
+      'Phones: Social shows the friends list or the conversation with a Back button, and Settings, Manage Server and the Admin panel stack their menus on top.',
+    ],
+  },
+  {
+    version: 31,
+    date: 'October 19, 2026',
+    title: 'Spears, the Mace, burning, no attack cooldown, chat channels',
+    changes: [
+      'New weapon: the Spear (wood to infernium; an iron ingot or plank over two sticks). Left-click is a Jab with extra reach. Hold right-click and let go for a Charge Attack that pierces everything in a line and goes through cobwebs. Spears never land critical hits or sprint-knockback hits.',
+      'New weapon: the Mace (iron block, diamond, iron block over two blaze rods). Fall 1.5 blocks or more before you hit and it smashes: the further you fall the more it hurts (no limit), mobs around the target are knocked back, and you take no fall damage from the landing.',
+      'New enchantments: Lunge (spears from the enchanting table, maces from the anvil) launches you forward and wears the weapon; while gliding on an elytra it boosts your glide instead. Mace only: Density, Breach (less armor protection for the target) and Wind Burst (throws you back up after a smash). Density, Breach, Smite and Bane of Arthropods can not be combined, and Sharpness can not go on a mace.',
+      'The attack cooldown is gone, so you can swing as fast as you can click, and falling hits are critical hits (+50%). Axes were changed to hit one less than a sword of the same kind, since they no longer pay a cooldown.',
+      'Burning: lava, campfires, fireballs and flames set you on fire for a few seconds, even after you step out. You see animated flames at the bottom of the screen and other players see you burning. Water puts it out.',
+      'Infernium is lava-proof: dropped infernium items do not burn up in lava, and holding an infernium item protects you from lava and fire. Everything else you drop into lava is burnt up.',
+      'Dyed beds: 12 colours. Craft a dye with a bed, any colour of bed can be recoloured, and beds keep their colour when placed, broken and slept in.',
+      'Chat channels: when someone messages you, their channel opens. Press Tab in chat to switch between the server chat and private channels (or tap the channel buttons on a phone). A channel closes after 5 minutes without messages. A ping sounds for private messages and when someone says your name.',
+      'Online play keeps going when you switch tabs or pause: your player and the host keep sending movement while the tab is hidden.',
+      'Wolves show an angry face when they are after someone. The hurt sound is meatier, big hits sound heavier, and Curse of Vanishing and Mending (in your hands too) work.',
+      'Phones: pop-ups taller than the screen (EggWars, Bridge Duels and others) scroll with a finger, and the buttons are smaller on short screens.',
+      'Fixes: walking into the side of a block in mid-jump is solid now (every row of your body is checked, and fast pushes are taken in small steps), sword blocking works against players too, and a sword no longer starts blocking when you right-click a bed or brewing stand.',
+    ],
+  },
   {
     version: 30,
     date: 'October 18, 2026',

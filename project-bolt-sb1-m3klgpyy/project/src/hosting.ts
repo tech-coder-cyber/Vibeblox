@@ -9,6 +9,8 @@
 // This file is optional, like multiplayer.ts: if it's deleted the game still runs (you just can't host or join worlds).
 
 import { AntiCheat, type AntiCheatSettings, type CheatAlert, type GroundProbe } from './anticheat';
+import { setBgInterval, clearBgInterval } from './bgTimer';
+import { filterProfanity } from './profanity';
 
 /** Must match PROTOCOL_VERSION in multiplayer.ts (and PROTOCOL in server/server.js). */
 export const ROOM_PROTOCOL = 17;
@@ -40,7 +42,7 @@ export type MatchView = {
 type MatchMember = { team: number; out: boolean; kills: number; deaths: number };
 const LOBBY_MS = 30_000, FULL_LOBBY_MS = 5000, COUNTDOWN_MS = 5000, ROUND_COUNTDOWN_MS = 3000, OVER_MS = 10_000;
 type Badge = { owner?: boolean; rank?: string; tier?: string; staff?: string | null; og?: boolean; special?: string | null };
-type Look = { skin: string; cape: string; custom?: string };
+type Look = { skin: string; cape: string; custom?: string; /** a custom cape picture (when cape is 'custom') */ capeData?: string };
 
 /** One player's link to the room (the host's own loopback, or a peer's data channel). */
 export type RoomConn = {
@@ -63,7 +65,7 @@ export type RoomServices = {
   /** Banned from all of VibeBlox (admin panel)? */
   isBanned?(name: string): Promise<boolean>;
   /** Paid rank and creator tier, for the tags in front of names. */
-  standing?(name: string): Promise<{ rank: string; tier: string; staff?: string | null; og?: boolean; special?: string | null }>;
+  standing?(name: string): Promise<{ rank: string; tier: string; staff?: string | null; og?: boolean; special?: string | null; /** may wear a custom skin and cape (Champion, [YOUTUBE]): true even while /undercover hides the tag */ cosmetics?: boolean }>;
   /** Is this token an admin's? (/panel actions) */
   isAdmin?(token: string): Promise<boolean>;
 };
@@ -140,14 +142,16 @@ function cleanRanks(v: unknown) {
 type Player = {
   id: number; conn: RoomConn; name: string; joined: boolean; joining: boolean; verified: boolean; joinedAt: number;
   x: number; y: number; z: number; yaw: number; pitch: number; mode: string; held: number; act: number; moved: boolean;
-  msgs: number; blocks: number; drops: number; sleepSince: number; look?: Look; badge?: Badge;
+  msgs: number; blocks: number; drops: number; sleepSince: number; look?: Look; badge?: Badge; badgeAt?: number;
 };
 
+/** Item ids of the spears (7 materials) and the mace (see voxelGame.ts); the host only needs them to judge a hit. */
+const SPEAR_FIRST = 1790, MACE_ID = 1797;
 const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const int = (v: unknown): v is number => Number.isInteger(v);
 const validBlock = (x: unknown, y: unknown, z: unknown, b: unknown) =>
   int(x) && int(y) && int(z) && int(b) && y >= 0 && y < 64 &&
-  Math.abs(x) < 30_000_000 && Math.abs(z) < 30_000_000 && ((b >= 0 && b < 100) || (b >= 1000 && b < 1400) || (b >= 2000 && b < 2300)); // 2000+: stairs, slabs, turned heads, low trapdoors
+  Math.abs(x) < 30_000_000 && Math.abs(z) < 30_000_000 && ((b >= 0 && b < 100) || (b >= 1000 && b < 1400) || (b >= 2000 && b < 2400)); // 2000+: stairs, slabs, turned heads, low trapdoors, dyed beds
 
 /** The world everyone shares, run inside the host's browser. */
 export class HostRoom {
@@ -171,7 +175,7 @@ export class HostRoom {
   private drops = new Map<string, number>();
   /** What each of those drops was (so players who join later see them on the ground too) */
   private dropInfo = new Map<string, Record<string, unknown>>();
-  private timers: Array<ReturnType<typeof setInterval>> = [];
+  private timers: number[] = []; // background-proof timers (they keep running when the host's tab is hidden)
   private stopped = false;
   privacy: Privacy;
   /** Watches the players who join (never the host's own game) */
@@ -206,11 +210,11 @@ export class HostRoom {
       if (this.settings.pvp === undefined) this.settings.pvp = true;
     }
     // Everyone's movement 10 times a second, batched into one message
-    this.timers.push(setInterval(() => this.flushMoves(), 100));
+    this.timers.push(setBgInterval(() => this.flushMoves(), 100));
     // Rate limits, silent connections, sleeping, the weather
-    this.timers.push(setInterval(() => this.everySecond(), 1000));
-    this.timers.push(setInterval(() => this.checkSleepers(), 500));
-    this.timers.push(setInterval(() => this.broadcast({ t: 'time', time: this.currentTime() }), 30_000));
+    this.timers.push(setBgInterval(() => this.everySecond(), 1000));
+    this.timers.push(setBgInterval(() => this.checkSleepers(), 500));
+    this.timers.push(setBgInterval(() => this.broadcast({ t: 'time', time: this.currentTime() }), 30_000));
   }
 
   get count(): number { return [...this.players.values()].filter((p) => p.joined).length; }
@@ -527,7 +531,7 @@ export class HostRoom {
       case 'hello': await this.hello(p, msg); return;
       case 'sleep': p.sleepSince = msg.on === true && this.isNight() ? Date.now() : 0; return;
       case 'whisper': {
-        const text = typeof msg.text === 'string' ? msg.text.trim().slice(0, 256) : '';
+        const text = typeof msg.text === 'string' ? filterProfanity(msg.text.trim().slice(0, 256)) : '';
         const to = typeof msg.to === 'string' ? msg.to.toLowerCase() : '';
         if (!text || !to) return;
         if (!p.conn.local && this.mutes.has(p.name.toLowerCase())) { p.conn.send({ t: 'system', text: 'You are muted.' }); return; }
@@ -648,20 +652,24 @@ export class HostRoom {
         p.x = msg.x as number; p.y = msg.y as number; p.z = msg.z as number; p.yaw = msg.yaw as number; p.pitch = msg.pitch as number;
         p.mode = typeof msg.mode === 'string' ? msg.mode.slice(0, 12) : 'survival';
         p.held = int(msg.held) && msg.held >= 0 && msg.held < 4000 ? msg.held : 0;
-        p.act = int(msg.act) ? msg.act & 255 : 0; // (64: swimming, 128: gliding with an elytra)
+        p.act = int(msg.act) ? msg.act & 511 : 0; // (64: swimming, 128: gliding with an elytra, 256: burning)
         p.moved = true;
         if (!p.conn.local && !this.exemptFromAntiCheat(p)) this.anticheat.onMove(p.id, p.name, p.x, p.y, p.z, p.mode, (p.act & 128) !== 0);
         return;
       case 'look': {
         const ok = (v: unknown): v is string => typeof v === 'string' && /^[a-z0-9_]{1,24}$/.test(v);
         if (!ok(msg.skin) || !ok(msg.cape)) return;
-        if (msg.skin === 'custom') {
-          const png = typeof msg.custom === 'string' && msg.custom.length <= 12000 && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(msg.custom) ? msg.custom : null;
-          if (!png || !p.verified || !this.opts.services.standing) return;
+        const isPng = (v: unknown): v is string => typeof v === 'string' && v.length <= 12000 && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(v);
+        const skinPng = msg.skin === 'custom' && isPng(msg.custom) ? msg.custom : null;
+        const capePng = msg.cape === 'custom' && isPng(msg.capeData) ? msg.capeData : null;
+        if ((msg.skin === 'custom' && !skinPng) || (msg.cape === 'custom' && !capePng)) return;
+        if (skinPng || capePng) {
+          // A custom skin or cape is a small PNG. Only signed-in Champions, [YOUTUBE] and the owner may wear one.
+          if (!p.verified || !this.opts.services.standing) return;
           const st = await this.opts.services.standing(p.name).catch(() => null);
-          if (p.conn.closed || !st || (st.rank !== 'champion' && p.name.toLowerCase() !== OWNER)) return;
-          p.look = { skin: 'custom', cape: msg.cape, custom: png };
-          this.broadcast({ t: 'look', id: p.id, skin: 'custom', cape: msg.cape, custom: png }, p.id);
+          if (p.conn.closed || !st || !(st.cosmetics === true || st.rank === 'champion' || st.special === 'youtube' || p.name.toLowerCase() === OWNER)) return;
+          p.look = { skin: msg.skin, cape: msg.cape, ...(skinPng ? { custom: skinPng } : {}), ...(capePng ? { capeData: capePng } : {}) };
+          this.broadcast({ t: 'look', id: p.id, ...p.look }, p.id);
           return;
         }
         p.look = { skin: msg.skin, cape: msg.cape };
@@ -683,6 +691,9 @@ export class HostRoom {
         if (ok.length && !p.conn.local && !this.exemptFromAntiCheat(p)) this.anticheat.onBlocks(p.id, p.name, ok.length, p.mode);
         return;
       }
+      case 'badge': // /undercover was turned on or off: look the rank up again (at most every 5 seconds)
+        if (p.verified && Date.now() - (p.badgeAt ?? 0) > 5000) { p.badgeAt = Date.now(); void this.sendBadge(p); }
+        return;
       case 'ping': if (num(msg.n)) p.conn.send({ t: 'pong', n: msg.n }); return;
       case 'integrity': { // the player's game says an outside script runs in its page (see integrity.ts)
         const KNOWN = ['userscript manager', 'injected script', 'patched browser functions', 'scripted clicks'];
@@ -691,7 +702,7 @@ export class HostRoom {
         return;
       }
       case 'chat': {
-        const text = typeof msg.text === 'string' ? msg.text.trim().slice(0, 256) : '';
+        const text = typeof msg.text === 'string' ? filterProfanity(msg.text.trim().slice(0, 256)) : '';
         if (!text) return;
         if (!p.conn.local && this.mutes.has(p.name.toLowerCase())) { p.conn.send({ t: 'system', text: 'You are muted.' }); return; }
         if (!p.conn.local && !this.exemptFromAntiCheat(p) && !this.anticheat.onChat(p.id, p.name)) { p.conn.send({ t: 'system', text: 'Slow down! You are sending messages too fast.' }); return; }
@@ -707,10 +718,14 @@ export class HostRoom {
           const a = this.match.members.get(p.id), b = this.match.members.get(target.id);
           if (this.match.phase !== 'playing' || !a || !b || a.out || b.out || a.team === b.team) return;
         } else if (!this.settings.pvp) return;
-        if (!p.conn.local && !this.exemptFromAntiCheat(p) && msg.bow !== true) this.anticheat.onHit(p.id, p.name, { x: p.x, y: p.y, z: p.z, yaw: p.yaw }, { x: target.x, y: target.y, z: target.z });
-        const dmg = Math.max(0, Math.min(msg.bow === true ? 14 : 30, msg.dmg));
+        // A spear reaches further than the rest (the host looks at what the attacker really holds, not at what the message says)
+        const holdsSpear = p.held >= SPEAR_FIRST && p.held < SPEAR_FIRST + 7, holdsMace = p.held === MACE_ID;
+        if (!p.conn.local && !this.exemptFromAntiCheat(p) && msg.bow !== true) this.anticheat.onHit(p.id, p.name, { x: p.x, y: p.y, z: p.z, yaw: p.yaw }, { x: target.x, y: target.y, z: target.z }, holdsSpear ? 6.4 : 4.6);
+        const dmg = Math.max(0, Math.min(msg.bow === true ? 14 : holdsMace ? 90 : 30, msg.dmg)); // (a mace smash has no upper limit in the game; 90 is plenty)
         const kx = num(msg.kx) ? Math.max(-1, Math.min(1, msg.kx)) : 0, kz = num(msg.kz) ? Math.max(-1, Math.min(1, msg.kz)) : 0;
-        target.conn.send({ t: 'hurt', by: p.id, name: p.name, dmg, kx, kz });
+        const breach = num(msg.breach) && holdsMace ? Math.max(0, Math.min(0.6, msg.breach)) : 0; // Breach only comes from a mace
+        const kbm = num(msg.kbm) ? Math.max(1, Math.min(2.5, msg.kbm)) : 1;
+        target.conn.send({ t: 'hurt', by: p.id, name: p.name, dmg, kx, kz, ...(breach > 0 ? { breach } : {}), ...(kbm > 1 ? { kbm } : {}) });
         this.broadcast({ t: 'hurtFx', id: target.id }, target.id);
         return;
       }
@@ -923,7 +938,7 @@ export class HostRoom {
     this.system(`${this.opts.hostName} left. ${next.name} is keeping the world open.`);
     // give the (big) hand-over message time to arrive before the connections close
     this.stopped = true;
-    for (const t of this.timers) clearInterval(t);
+    for (const t of this.timers) clearBgInterval(t);
     if (this.matchTimer) clearTimeout(this.matchTimer);
     setTimeout(() => {
       for (const p of [...this.players.values()]) p.conn.close(p.conn.local ? 1000 : 4012, p.conn.local ? '' : 'The world moved to another player');
@@ -936,7 +951,7 @@ export class HostRoom {
   stop(reason = 'The host left the world') {
     if (this.stopped) { for (const p of [...this.players.values()]) if (p.conn.local) p.conn.close(1000, ''); return; }
     this.stopped = true;
-    for (const t of this.timers) clearInterval(t);
+    for (const t of this.timers) clearBgInterval(t);
     if (this.matchTimer) clearTimeout(this.matchTimer);
     for (const p of [...this.players.values()]) if (!p.conn.local) p.conn.close(4009, reason);
     for (const p of [...this.players.values()]) if (p.conn.local) p.conn.close(1000, '');
