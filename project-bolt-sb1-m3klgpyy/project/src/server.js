@@ -170,6 +170,7 @@ let worldDirty = true;
 const timeBase = { at: Date.now(), value: world.time };
 
 function currentTime() {
+  if (world.settings && world.settings.alwaysDay) return 0.25;
   return (timeBase.value + (Date.now() - timeBase.at) / 1000 / DAY_LENGTH) % 1;
 }
 
@@ -283,7 +284,10 @@ function setWeather(kind) {
   broadcast({ t: 'weather', kind });
 }
 setInterval(() => {
-  if (WEATHER_CYCLE && Date.now() >= weatherChangeAt) setWeather(world.weather === 'clear' ? 'rain' : 'clear');
+  if (WEATHER_CYCLE && world.settings.weatherCycle !== false && Date.now() >= weatherChangeAt) {
+    const r = Math.random();
+    setWeather(world.weather === 'clear' ? (r < 0.2 ? 'thunder' : r < 0.4 ? 'snow' : 'rain') : 'clear');
+  }
 }, 5000);
 for (const sig of ['SIGINT', 'SIGTERM']) {
   process.on(sig, () => { console.log('Saving world before exit...'); saveWorld(); process.exit(0); });
@@ -424,7 +428,7 @@ const num = (v) => typeof v === 'number' && Number.isFinite(v);
 const int = (v) => Number.isInteger(v);
 const validBlock = (x, y, z, b) =>
   int(x) && int(y) && int(z) && int(b) && y >= 0 && y < 64 &&
-  Math.abs(x) < 30_000_000 && Math.abs(z) < 30_000_000 && ((b >= 0 && b < 100) || (b >= 1000 && b < 1400) || (b >= 2000 && b < 2400)); // 1000-1399: newer blocks (redstone, wool...); 2000+: stairs, slabs, turned heads, low trapdoors
+  Math.abs(x) < 30_000_000 && Math.abs(z) < 30_000_000 && ((b >= 0 && b < 100) || (b >= 1000 && b < 1400) || (b >= 2000 && b < 2560)); // 1000-1399: newer blocks (redstone, wool...); 2000+: stairs, slabs, turned heads, low trapdoors
 
 function finishJoin(p) {
   if ([...players.values()].filter((o) => o.joined).length >= maxPlayers()) return p.conn.close(4001, 'Server is full');
@@ -438,7 +442,7 @@ function finishJoin(p) {
     const [x, y, z] = k.split(',').map(Number);
     return [x, y, z, b];
   });
-  p.conn.send({ t: 'welcome', id: p.id, name: p.name, seed: world.seed, worldType: world.worldType, mode: world.mode, time: currentTime(), changes, players: others, hostId, settings: world.settings, weather: world.weather, experimental: !!world.experimental, maxPlayers: maxPlayers(), ranks: world.ranks });
+  p.conn.send({ t: 'welcome', id: p.id, name: p.name, seed: world.seed, worldType: world.worldType, mode: world.mode, time: currentTime(), changes, signs: Object.entries(world.signs ?? {}).map(([k, lines]) => [...k.split(',').map(Number), lines]), players: others, hostId, settings: world.settings, weather: world.weather, experimental: !!world.experimental, maxPlayers: maxPlayers(), ranks: world.ranks });
   broadcast({ t: 'join', id: p.id, name: p.name }, p.id);
   void sendBadge(p);
   system(`${p.name} joined the game`);
@@ -446,7 +450,7 @@ function finishJoin(p) {
 }
 
 // The night matches the game: from dusk (0.53) to just before sunrise (0.97)
-const isNight = () => { const t = currentTime(); return t > 0.53 && t < 0.97; };
+const isNight = () => { if (world.settings.alwaysDay) return false; const t = currentTime(); return t > 0.53 && t < 0.97; };
 
 /**
  * /panel actions. Every one is checked against Supabase with the sender's own access token, so a
@@ -603,7 +607,7 @@ function handle(p, msg) {
       const s = msg.settings || {};
       const next = { ...world.settings };
       if (DIFFICULTIES.includes(s.difficulty)) next.difficulty = s.difficulty;
-      for (const k of ['keepInventory', 'scripts', 'mods', 'commands']) if (typeof s[k] === 'boolean') next[k] = s[k];
+      for (const k of ['keepInventory', 'scripts', 'mods', 'commands', 'alwaysDay', 'weatherCycle']) if (typeof s[k] === 'boolean') next[k] = s[k];
       if (['off', 'all', 'admin', 'owner'].includes(String(s.scriptPerm))) next.scriptPerm = s.scriptPerm;
       world.settings = next;
       worldDirty = true;
@@ -699,6 +703,18 @@ function handle(p, msg) {
       if (!text) return;
       if (mutes.has(p.name.toLowerCase())) return p.conn.send({ t: 'system', text: 'You are muted.' });
       broadcast({ t: 'chat', id: p.id, name: p.name, text });
+      { const low = text.toLowerCase(); for (const o of players.values()) { if (!o.joined || o.id === p.id) continue; const n = '@' + o.name.toLowerCase(); let i = low.indexOf(n); while (i >= 0 && /[a-z0-9_]/.test(low[i + n.length] ?? ' ')) i = low.indexOf(n, i + 1); if (i >= 0) o.conn.send({ t: 'mention', from: p.name, text }); } }
+      return;
+    }
+    case 'sign': {
+      if (!Number.isInteger(msg.x) || !Number.isInteger(msg.y) || !Number.isInteger(msg.z) || !Array.isArray(msg.lines)) return;
+      if (++p.blocksThisSecond > 600) return;
+      const lines = msg.lines.slice(0, 4).map((l) => (typeof l === 'string' ? filterProfanity(l.slice(0, 15)) : ''));
+      world.signs ??= {};
+      const k = `${msg.x},${msg.y},${msg.z}`;
+      if (lines.every((l) => !l)) delete world.signs[k]; else world.signs[k] = lines;
+      worldDirty = true;
+      broadcast({ t: 'sign', x: msg.x, y: msg.y, z: msg.z, lines }, p.id);
       return;
     }
     default:
