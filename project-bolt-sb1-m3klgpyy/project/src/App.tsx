@@ -18,6 +18,7 @@ import { useKeybinds, rebind, resetBinds, keyLabel, KEY_ACTIONS, setCapturingKey
 import { pickWelcome, splitWelcome } from '@/welcome';
 import { useBackground, backgroundStyle, findDefaultBackground } from './background';
 import type { OneBlockView, KeyAction } from '@/voxelGame';
+import { getKeybinds } from '@/voxelGame';
 import { ITEM_IRON_INGOT, ITEM_GOLD_INGOT, ITEM_DIAMOND, ITEM_ENDER_PEARL, ITEM_IRON_SWORD, ITEM_IRON_PICKAXE, ITEM_BOW, BLOCK_TNT, BLOCK_GLASS, armorId } from '@/voxelGame';
 import { createVoxelGame, MINIGAME_SIZES, type GameWorldMode, type GraphicsQuality, type Recipe, type PlayMode, type DebugInfo, type WorldType, type Slots, type ItemStack, type SaveData, type WeatherKind, EXPERIMENTAL_IDS, experimentalEnabled, isWater, isLava, BLOCK_WATER, BLOCK_LAVA, BLOCK_GRASS, BLOCK_DIRT, BLOCK_STONE, ARMOR, ARMOR_PIECES, CUSTOM_ITEMS, CUSTOM_BLOCKS, customIdForKey, registerCustomItem, registerCustomBlock, createPlayerPreview, drawLookPreview, getTexturePreviews, setTextureResolution, type TextureRes, type DimensionSpec, type TextureSpec, maxStack, addToSlots, countInSlots, emptySlots, INVENTORY_SIZE, ITEM_INFO, RECIPES, getItemIconURL, matchRecipe, getBowStage, subscribeBowStage, BOW_PULL_BASE, SMELTING, FUEL_SECONDS, isBlockId, type Trade, type Difficulty, ITEM_WAND, CHUNK_SIZE, CHUNK_HEIGHT, isPotionItem, isBrewIngredient, ITEM_BLAZE_POWDER, potionName, ITEM_NAME_TAG, toolLore } from '@/voxelGame';
 import * as THREE from 'three';
@@ -26,7 +27,7 @@ import {
   COMMAND_TYPES, type CommandBlockInfo, type CommandType,
   MOB_KINDS, MOB_NAMES, playerHeadItem, isPlayerHeadItem, type MinigameView, type MinigameSize, type BotDifficulty, type ArenaKind,
 } from '@/voxelGame';
-import { enchantOffers, applyEnchants, anvilResult, canEnchant } from '@/enchanting';
+import { enchantOffers, applyEnchants, anvilResult, canEnchant, combineWorn } from '@/enchanting';
 import { FancyText, stripFancy } from '@/fancytext';
 import { emptyRanks, cleanFakeRanks, rankTagOf, runRankCommand, loadFakeRanks, saveFakeRanks, type FakeRanks } from '@/fakeranks';
 import { runSchem, pasteByName, type SchemEnv } from './schemCommands';
@@ -50,12 +51,12 @@ import LoginOverlay from './LoginOverlay';
 import SocialView from './SocialView';
 import AdminPanel, { type PanelPlayer } from './AdminPanel';
 import { useAccount } from './useAccount';
-import TouchControls, { RotateHint, touchEnabled, loadTouchPref, saveTouchPref, lockViewportForTouch, type TouchPref } from './TouchControls';
+import TouchControls, { RotateHint, touchEnabled, loadTouchPref, saveTouchPref, lockViewportForTouch, loadTouchScheme, saveTouchScheme, TOUCH_SCHEMES, type TouchPref, type TouchScheme } from './TouchControls';
 import Tutorial, { tutorialDone } from './Tutorial';
 import { LOYALTY_RANKS, isYearMilestone, loyaltyLabel, pendingMilestones, nextMilestone, type LoyaltyRank } from './loyalty';
 import { fetchLoyalty, claimLoyalty, type LoyaltyInfo } from './social';
 import { WORLD_TAGS, MAX_WORLD_TAGS, cleanTags, toggleTag, tagInfo } from './worldTags';
-import { fetchProfile, type PlayerProfile, type Account } from './social';
+import { randomGuestName, fetchProfile, type PlayerProfile, type Account } from './social';
 import { openProfile, setProfileOpener } from './profileBus';
 import { setWorldWaker, wakeWorld } from './wakeBus';
 import { watchOutsideScripts, FLAG_LABELS, type Flag } from './integrity';
@@ -317,42 +318,42 @@ const games: GameCard[] = [
   {
     title: 'Survival',
     activity: 'survival',
-    image: '/images/survival-bg.jpg',
+    image: 'images/survival-bg.jpg',
     tag: 'PvE',
     accent: 'from-orange-500 to-red-500',
   },
   {
     title: 'EggWars',
     activity: 'eggwars',
-    image: '/images/eggwars-bg.jpg',
+    image: 'images/eggwars-bg.jpg',
     tag: 'Team',
     accent: 'from-pink-500 to-purple-500',
   },
   {
     title: 'Superflat',
     activity: 'superflat',
-    image: '/images/superflat-bg.jpg',
+    image: 'images/superflat-bg.jpg',
     tag: 'Build',
     accent: 'from-sky-500 to-cyan-500',
   },
   {
     title: 'Creative',
     activity: 'creative',
-    image: '/images/creative-bg.jpg',
+    image: 'images/creative-bg.jpg',
     tag: 'Sandbox',
     accent: 'from-emerald-500 to-teal-500',
   },
   {
     title: 'OneBlock',
     activity: 'oneblock',
-    image: '/images/oneblock-bg.jpg',
+    image: 'images/oneblock-bg.jpg',
     tag: 'Solo',
     accent: 'from-amber-500 to-orange-500',
   },
   {
     title: 'Bridge Duels',
     activity: 'bridge',
-    image: '/images/bridgeduels-bg.jpg',
+    image: 'images/bridgeduels-bg.jpg',
     tag: 'PvP',
     accent: 'from-blue-500 to-indigo-500',
   },
@@ -360,6 +361,16 @@ const games: GameCard[] = [
 
 
 const STORAGE_KEY = 'vibeblox_username';
+
+/** True when the browser holds a saved sign-in (so it is worth waiting for the sign-in service). */
+function hasStoredSession(): boolean {
+  try { if (/[#&?](access_token|code|error_description)=/.test(location.hash + location.search)) return true; } catch { /* no location */ } // coming back from Google: the session is about to arrive
+  try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i) ?? ''; if (/^sb-.*-auth-token/.test(k)) return true; } } catch { /* storage blocked */ }
+  return false;
+}
+
+/** Old saves stored '/images/x.jpg'; the game now only uses relative paths ('images/x.jpg'). */
+function relImg<T extends string | null | undefined>(p: T): T | string { return typeof p === 'string' && p.startsWith('/images/') ? p.slice(1) : p; }
 
 function getInitialUsername(): string | null {
   try {
@@ -476,7 +487,7 @@ function Sidebar({ username, view, onNavClick, socialBadge = 0, compact = false 
   }
   return (
     <nav className="w-20 shrink-0 bg-[#0d131b] border-r border-[#243044] flex flex-col items-center py-6 gap-2">
-      <div className="mb-6"><img src="/images/logo.png" alt="VibeBlox" className="w-11 h-11 rounded-xl" /></div>
+      <div className="mb-6"><img src="images/logo.png" alt="VibeBlox" className="w-11 h-11 rounded-xl" /></div>
       <div className="flex flex-col gap-1.5 flex-1">
         {navItems.map((item) => {
           const Icon = item.icon;
@@ -549,7 +560,7 @@ function ThreeDLogo() {
     scene.add(ambientLight);
 
     const textureLoader = new THREE.TextureLoader();
-    const logoTexture = textureLoader.load('/images/logo.png', 
+    const logoTexture = textureLoader.load('images/logo.png', 
       (tex) => {
         tex.colorSpace = THREE.SRGBColorSpace;
         
@@ -561,7 +572,7 @@ function ThreeDLogo() {
       },
       undefined,
       () => {
-        logoTexture.image = textureLoader.load('/logo.png').image;
+        logoTexture.image = textureLoader.load('logo.png').image;
       }
     );
 
@@ -796,7 +807,7 @@ function PlanetsView({ savedWorlds, limit, onPlayWorld, onCreate, onDelete }: { 
             const key = String(world.id ?? idx);
             return (
               <div key={key} className="group rounded-2xl border border-[#243044] bg-[#121822] overflow-hidden hover:border-[#00e676]/60 transition-all" data-testid="planet-card">
-                <div className="h-28 bg-cover bg-center relative" style={{ backgroundImage: `url(${world.image || '/images/survival-bg.jpg'}), linear-gradient(135deg, #0e4f6e, #121822)` }}>
+                <div className="h-28 bg-cover bg-center relative" style={{ backgroundImage: `url(${relImg(world.image) || 'images/survival-bg.jpg'}), linear-gradient(135deg, #0e4f6e, #121822)` }}>
                   <span className="absolute top-2 left-2 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-black/60 text-white">{world.mode}{world.worldType === 'superflat' ? ' · flat' : world.worldType === 'oneblock' ? ' · oneblock' : world.worldType === 'skyblock' ? ' · skyblock' : world.worldType === 'void' ? ' · void' : ''}</span>
                   {world.experimental && <span className="absolute top-2 right-2 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-[#ffb347] text-[#0a0e14]" data-testid="experimental-badge">Experimental</span>}
                 </div>
@@ -993,28 +1004,28 @@ type WorldConfig = {
 
 const modeConfig: Record<WorldMode, { image: string; tag: string; accent: string; icon: typeof Swords; description: string }> = {
   survival: {
-    image: '/images/survival-bg.jpg',
+    image: 'images/survival-bg.jpg',
     tag: 'PvE',
     accent: 'from-orange-500 to-red-500',
     icon: Swords,
     description: 'Gather resources, craft tools, survive the night',
   },
   creative: {
-    image: '/images/creative-bg.jpg',
+    image: 'images/creative-bg.jpg',
     tag: 'Sandbox',
     accent: 'from-sky-500 to-cyan-500',
     icon: Palette,
     description: 'Unlimited blocks, fly freely, build anything you imagine',
   },
   adventure: {
-    image: '/images/adventure-bg.jpg',
+    image: 'images/adventure-bg.jpg',
     tag: 'Quest',
     accent: 'from-purple-500 to-pink-500',
     icon: Map,
     description: 'Explore dungeons, complete quests, find hidden treasure',
   },
   hardcore: {
-    image: '/images/survival-bg.jpg',
+    image: 'images/survival-bg.jpg',
     tag: 'One Life',
     accent: 'from-red-600 to-rose-900',
     icon: Heart,
@@ -1085,7 +1096,7 @@ function CreateWorldView({ onSave, onBack, used, limit, initialMode = 'survival'
     onSave({
       name: worldName.trim() || 'Untitled World',
       mode: selectedMode,
-      image: customImage ?? (selectedType === 'superflat' ? '/images/superflat-bg.jpg' : selectedType === 'oneblock' ? '/images/oneblock-bg.jpg' : currentMode.image),
+      image: customImage ?? (selectedType === 'superflat' ? 'images/superflat-bg.jpg' : selectedType === 'oneblock' ? 'images/oneblock-bg.jpg' : currentMode.image),
       tag: currentMode.tag,
       accent: currentMode.accent,
       worldType: selectedType,
@@ -1323,7 +1334,7 @@ function CreateWorldView({ onSave, onBack, used, limit, initialMode = 'survival'
             <div className="relative bg-[#0a0e14] rounded-xl overflow-hidden border border-[#243044]">
               <div className="relative h-40 overflow-hidden">
                 <img
-                  src={customImage ?? (selectedType === 'superflat' ? '/images/superflat-bg.jpg' : currentMode.image)}
+                  src={customImage ?? (selectedType === 'superflat' ? 'images/superflat-bg.jpg' : currentMode.image)}
                   alt="World preview"
                   onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }}
                   className="w-full h-full object-cover opacity-70"
@@ -2318,6 +2329,8 @@ function MainContent({
 function TouchSetting() {
   const [pref, setPref] = useState<TouchPref>(loadTouchPref);
   const pick = (v: TouchPref) => { setPref(v); saveTouchPref(v); window.dispatchEvent(new CustomEvent('vb-touch', { detail: v })); };
+  const [scheme, setScheme] = useState<TouchScheme>(loadTouchScheme);
+  const pickScheme = (v: TouchScheme) => { setScheme(v); saveTouchScheme(v); };
   return (
     <div className="mt-5" data-testid="touch-setting">
       <p className="text-white text-sm font-medium">Touch controls</p>
@@ -2326,6 +2339,14 @@ function TouchSetting() {
         {(['auto', 'on', 'off'] as TouchPref[]).map((v) => (
           <button key={v} onClick={() => pick(v)} data-testid={`touch-${v}`}
             className={`py-2 rounded-xl text-xs font-bold capitalize ${pref === v ? 'bg-[#00e676] text-[#0a0e14]' : 'bg-[#0a0e14] border border-[#243044] text-[#8ea0b8] hover:text-white'}`}>{v}</button>
+        ))}
+      </div>
+      <p className="text-white text-sm font-medium mt-4">Touch layout</p>
+      <p className="text-[#5a6b80] text-xs mt-0.5 mb-2">{TOUCH_SCHEMES.find((x) => x.id === scheme)?.blurb}</p>
+      <div className="grid grid-cols-2 gap-2" data-testid="touch-schemes">
+        {TOUCH_SCHEMES.map((x) => (
+          <button key={x.id} onClick={() => pickScheme(x.id)} data-testid={`touch-scheme-${x.id}`}
+            className={`py-2 rounded-xl text-xs font-bold ${scheme === x.id ? 'bg-[#00e676] text-[#0a0e14]' : 'bg-[#0a0e14] border border-[#243044] text-[#8ea0b8] hover:text-white'}`}>{x.name}</button>
         ))}
       </div>
       <button onClick={() => { try { localStorage.removeItem('vb-tutorial-done'); } catch { /* blocked */ } window.dispatchEvent(new CustomEvent('vb-tutorial-reset')); }} data-testid="tutorial-again"
@@ -3944,9 +3965,18 @@ function InventoryOverlay({
   const gridIds = (g: Slots) => g.map((st) => (st ? st.id : null));
   const consumeGrid = () => commitGrid(gridRef.current.map((st) => (st && st.count > 1 ? { id: st.id, count: st.count - 1 } : null)));
   const result = craftMode === 'grid' && !chestKey && !furnaceKey && !station ? matchRecipe(gridIds(grid), gridSize, atCraftingTable) : null;
+  // two worn tools / armor pieces of the same kind (and nothing else) make one with their durability added up
+  const combinedOf = (g: Slots): ItemStack | null => { const two = g.filter((st): st is ItemStack => !!st); return two.length === 2 ? combineWorn(two[0], two[1]) : null; };
+  const combined = !result && craftMode === 'grid' && !chestKey && !furnaceKey && !station ? combinedOf(grid) : null;
 
   function onResult(e: ReactMouseEvent) {
     e.preventDefault();
+    if (!result && combined) {
+      if (cursorRef.current) return;
+      commitGrid(gridRef.current.map(() => null));
+      commitCursor(combined);
+      return;
+    }
     if (!result) return;
     if (e.shiftKey) {
       // Craft as many as possible straight into the inventory
@@ -4319,8 +4349,9 @@ function InventoryOverlay({
               {slotRow('grid', grid, 0, grid.length)}
             </div>
             <span className="text-[#5a6b80] text-2xl">→</span>
-            <ItemSlot id={result ? result.output.id : null} count={result?.output.count} highlight={!!result} onMouseDown={onResult} />
+            <ItemSlot id={result ? result.output.id : combined ? combined.id : null} count={result?.output.count ?? (combined ? 1 : undefined)} st={combined ?? undefined} highlight={!!result || !!combined} onMouseDown={onResult} />
             {result && <span className="text-white text-xs">{result.name}</span>}
+            {!result && combined && <span data-testid="combine-label" className="text-white text-xs">Combine (durability adds up)</span>}
           </div>
         )}
         </div>
@@ -4504,7 +4535,7 @@ function itemIdFromNameAny(name: string): number | null {
     return ITEM_INFO[id] ? id : null;
   }
   // the old names still work in scripts: "planks" is oak planks now, "snow" is the snow block...
-  const OLD_NAMES: Record<string, string> = { planks: 'oakplanks', wood: 'oaklog', log: 'oaklog', leaves: 'oakleaves', snow: 'snowblock', door: 'oakdoor', trapdoor: 'oaktrapdoor', fence: 'oakfence', fencegate: 'oakfencegate' };
+  const OLD_NAMES: Record<string, string> = { planks: 'oakplanks', wood: 'oaklog', log: 'oaklog', leaves: 'oakleaves', snow: 'snowblock', door: 'oakdoor', trapdoor: 'oaktrapdoor', fence: 'oakfence', fencegate: 'oakfencegate', woodsword: 'woodensword', wood_sword: 'woodensword' };
   const n0 = normalizeItemName(name);
   const n = OLD_NAMES[n0] ?? n0;
   let hiddenMatch: number | null = null; // block states (a lit torch on a wall...) share names: prefer the real item
@@ -5500,7 +5531,7 @@ function ServersView({ serverUrl, onServerUrlChange, onJoin, status, error, avai
     .sort((a, b) => (sortBy === 'likes' ? b.w.likes - a.w.likes : 0) || b.w.players - a.w.players || a.i - b.i).map((x) => x.w);
   const privacyBadge = (p: HostedWorld['privacy']) => (p === 'friends' ? { icon: Users, text: 'Friends', cls: 'text-[#c8a2ff]' } : p === 'accounts' ? { icon: Shield, text: 'Accounts', cls: 'text-[#6ec6ff]' } : { icon: Globe, text: 'Public', cls: 'text-[#7cfc7c]' });
   const gameLabel = (w: HostedWorld) => (w.worldType === 'eggwars' ? 'EggWars' : w.worldType === 'bridge' ? 'Bridge Duels' : `${w.mode.charAt(0).toUpperCase()}${w.mode.slice(1)}${w.worldType === 'superflat' ? ' · Superflat' : ''}`);
-  const fallbackImage = (w: HostedWorld) => (w.worldType === 'eggwars' ? '/images/eggwars-bg.jpg' : w.worldType === 'bridge' ? '/images/bridgeduels-bg.jpg' : w.worldType === 'superflat' ? '/images/superflat-bg.jpg' : (modeConfig as Record<string, { image: string }>)[w.mode]?.image ?? '/images/survival-bg.jpg');
+  const fallbackImage = (w: HostedWorld) => (w.worldType === 'eggwars' ? 'images/eggwars-bg.jpg' : w.worldType === 'bridge' ? 'images/bridgeduels-bg.jpg' : w.worldType === 'superflat' ? 'images/superflat-bg.jpg' : (modeConfig as Record<string, { image: string }>)[w.mode]?.image ?? 'images/survival-bg.jpg');
   return (
     <div className="vb-fade-in max-w-5xl">
       <header className="mb-6">
@@ -5559,7 +5590,7 @@ function ServersView({ serverUrl, onServerUrlChange, onJoin, status, error, avai
             const b = privacyBadge(w.privacy);
             const full = w.players >= w.max;
             const mine = !!summary.username && w.host.toLowerCase() === summary.username.toLowerCase();
-            const img = w.image || fallbackImage(w);
+            const img = relImg(w.image) || fallbackImage(w);
             const minigame = w.worldType === 'eggwars' || w.worldType === 'bridge';
             return (
               <div key={w.id} className="flex flex-col rounded-2xl bg-[#0a0e14] border border-[#243044] overflow-hidden hover:border-[#364860] transition-colors" data-testid="world-row">
@@ -6111,6 +6142,7 @@ export default function App() {
   useLanguage();
   const [username, setUsername] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
+  const [autoPlay, setAutoPlay] = useState(false);
   const [ready, setReady] = useState(false);
   const [view, setView] = useState<View>('home');
   const viewRef = useRef<View>('home');
@@ -6848,10 +6880,23 @@ export default function App() {
       setUsername(account.username);
       setShowModal(false);
       try { localStorage.setItem(STORAGE_KEY, account.username); } catch { /* storage blocked */ }
-    } else if ((accountChecked || authWaitOver) && !username) {
-      setShowModal(true);
+    } else if ((accountChecked || authWaitOver || !hasStoredSession()) && !username) {
+      // A brand-new player drops straight into a game as a guest: no sign-up screen first (they can make an account later from the profile)
+      const g = randomGuestName();
+      handleGuest(g);
+      let first = true;
+      try { first = !localStorage.getItem('vb-visited'); localStorage.setItem('vb-visited', '1'); } catch { /* storage blocked */ }
+      if (first) setAutoPlay(true);
     }
   }, [ready, account, accountChecked, authWaitOver, username]);
+
+  // First visit ever: start a quick survival game as soon as the guest name is ready
+  useEffect(() => {
+    if (!autoPlay || gameMode !== 'menu' || !username) return;
+    setAutoPlay(false);
+    handlePlayNow();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoPlay, gameMode, username]);
 
   // Open the daily reward by itself, once, when you open VibeBlox with a reward waiting (not for guests, not if you already took today's)
   useEffect(() => {
@@ -6940,7 +6985,10 @@ export default function App() {
         return;
       }
       if (e.key === 'Escape' && gameMode !== 'playing' && panelOpenRef.current) { e.preventDefault(); closePanel(); return; } // the Admin panel opened from Settings or Social
-      if (e.key === 'Escape' && gameMode === 'playing') {
+      const tgt = e.target as HTMLElement | null;
+      const typing = !!tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.isContentEditable);
+      const pausePressed = !e.repeat && !typing && !e.ctrlKey && !e.metaKey && !e.altKey && e.code === getKeybinds().pause; // P (rebindable): same as Esc
+      if ((e.key === 'Escape' || pausePressed) && gameMode === 'playing') {
         e.preventDefault();
         e.stopPropagation();
         if (panelOpenRef.current) { closePanel(); return; }
@@ -7889,7 +7937,7 @@ export default function App() {
     });
     const peer = new hMod.PeerHost(id, signalingFor(hMod), room);
     hostingRef.current = { id, room, peer, worldId: '', privacy: 'public', name, mode: 'survival', worldType: kind, max: teams * teamSize, timer: 0,
-      description: auto ? `Auto ${kind === 'bridge' ? 'Bridge Duels' : 'EggWars'}: starts by itself when players join.` : kind === 'bridge' ? `Bridge Duels, ${online.size}. First to 5 goals.` : `EggWars, ${online.size}. Protect your egg!`, image: kind === 'bridge' ? '/images/bridgeduels-bg.jpg' : '/images/eggwars-bg.jpg', tags: ['minigames', 'pvp'] };
+      description: auto ? `Auto ${kind === 'bridge' ? 'Bridge Duels' : 'EggWars'}: starts by itself when players join.` : kind === 'bridge' ? `Bridge Duels, ${online.size}. First to 5 goals.` : `EggWars, ${online.size}. Protect your egg!`, image: kind === 'bridge' ? 'images/bridgeduels-bg.jpg' : 'images/eggwars-bg.jpg', tags: ['minigames', 'pvp'] };
     joinedAddressRef.current = 'p2p:' + id;
     connectWith((mpMod as { MultiplayerClient: new () => MpClient }).MultiplayerClient, undefined, { hostSocket: hMod.loopback(room) });
     setHostingInfo({ privacy: 'public', players: 1 });
@@ -7993,7 +8041,7 @@ export default function App() {
     const existing = savedWorldsRef.current.find((x) => x.sharedId === sid);
     const id = existing?.id ?? newWorldId();
     const config: WorldConfig = {
-      ...(existing ?? { image: mode === 'creative' ? '/images/creative-bg.jpg' : '/images/survival-bg.jpg', tag: 'Shared', accent: '#00e676', createdAt: Date.now(), playSeconds: 0 }),
+      ...(existing ?? { image: mode === 'creative' ? 'images/creative-bg.jpg' : 'images/survival-bg.jpg', tag: 'Shared', accent: '#00e676', createdAt: Date.now(), playSeconds: 0 }),
       name: w.name, mode, worldType: w.worldType === 'superflat' ? 'superflat' : 'default', seed: Number(d.seed) || 0, id,
       difficulty: (settings.difficulty as Difficulty | undefined) ?? 'normal', keepInventory: !!settings.keepInventory, alwaysDay: !!settings.alwaysDay, weatherCycle: settings.weatherCycle !== false,
       creator: w.owner, owner: w.owner, sharedId: sid, experimental: !!d.experimental, privacy: w.privacy,
@@ -8347,7 +8395,7 @@ export default function App() {
       }
       case 'world.raycast': {
         const o = obj(args[3]);
-        const hit = S.raycast(xyz(args[0], 'origin'), xyz(args[1], 'direction'), opt(args[2], 50, 'maxDistance'), o.entities !== false, o.blocks !== false);
+        const hit = S.raycast(xyz(args[0], 'origin'), xyz(args[1], 'direction'), opt(args[2], 50, 'maxDistance'), o.entities !== false, o.blocks !== false, o.shot === true);
         if (!hit) return null;
         return { type: hit.type, point: hit.point, distance: hit.distance, entity: hit.entity ?? null,
           block: hit.block ? { x: hit.block.x, y: hit.block.y, z: hit.block.z, name: blockNameOf(hit.block.id) } : null };
@@ -8388,7 +8436,7 @@ export default function App() {
         const drops = o.drops === null ? null : o.drops === undefined || o.drops === 'self' ? undefined : item(o.drops);
         registerCustomBlock({
           key, name: String(o.name ?? key), texture: texture(o.texture ?? o.icon, o.color), shape: o.shape === 'cross' ? 'cross' : 'cube',
-          solid: o.solid !== false, drops, hardness: opt(o.hardness, 0.6, 'hardness'), tier: opt(o.tier, 0, 'tier'), hidden: !!o.hidden,
+          solid: o.solid !== false, drops, hardness: opt(o.hardness, 0.6, 'hardness'), tier: opt(o.tier, 0, 'tier'), hidden: !!o.hidden, use: !!o.use,
         });
         S.refreshCustomBlocks();
         return key;

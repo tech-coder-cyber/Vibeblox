@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Mail, Lock, User, Gamepad2, Chrome, Loader2, X } from 'lucide-react';
 import { randomGuestName, isGuestName } from './social';
+import { PLATFORM } from './adEconomy';
 import { signInWithGoogle, registerWithEmail, signInWithEmail, sendPasswordReset, initializeGuestAccount } from './auth/supabaseAuth';
 
 type LoginOverlayProps = {
@@ -128,7 +129,10 @@ export default function LoginOverlay({ onGuest, onClose, onSignedIn }: LoginOver
 
           {!showEmailForm ? (
             <>
+              {/* CrazyGames and Poki forbid external log-in options: Google sign-in is for our own site only */}
+              {PLATFORM === 'web' && (
               <button
+                data-testid="google-signin"
                 onClick={handleGoogle}
                 disabled={loading}
                 className="w-full flex items-center justify-center gap-3 py-3.5 rounded-xl bg-white text-[#0a0e14] font-semibold text-sm transition-all hover:bg-white/90 active:scale-[0.98] disabled:opacity-60"
@@ -136,6 +140,7 @@ export default function LoginOverlay({ onGuest, onClose, onSignedIn }: LoginOver
                 {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Chrome className="w-5 h-5" />}
                 Sign in with Google
               </button>
+              )}
 
               <button
                 onClick={() => { setMode('signin'); setError(''); setInfo(''); }}

@@ -15,7 +15,7 @@ export type { AiMode, AiTurn };
 export type AiMeta = { promptVersion: number; apiFunctions: number; model: string };
 
 /** Where requests go. functions/api/ai.ts (a Cloudflare Pages Function) serves this path. */
-export const AI_ENDPOINT = '/api/ai';
+export const AI_ENDPOINT = 'api/ai';
 
 type Names = { blocks: string[]; items: string[] };
 

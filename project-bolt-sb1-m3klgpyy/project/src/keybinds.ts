@@ -5,7 +5,7 @@
 import { useSyncExternalStore } from 'react';
 import { DEFAULT_KEYBINDS, setKeybinds, type KeyAction } from './voxelGame';
 
-export const KEY_ACTIONS: KeyAction[] = ['forward', 'back', 'left', 'right', 'jump', 'sprint', 'crouch', 'inventory', 'drop', 'offhand', 'zoom'];
+export const KEY_ACTIONS: KeyAction[] = ['forward', 'back', 'left', 'right', 'jump', 'sprint', 'crouch', 'inventory', 'drop', 'offhand', 'zoom', 'pause'];
 
 /** Keys with a fixed job (menu, chat, hotbar, advancements, debug, player list): they can't be given to an action. */
 export function isReservedKey(code: string): boolean {

@@ -1881,6 +1881,18 @@ function drawAppleCanvas(): HTMLCanvasElement {
   setPx(ctx, 9, 3, '#3f8a2a'); setPx(ctx, 10, 3, '#3f8a2a'); setPx(ctx, 10, 2, '#5aaa3a');
   return c;
 }
+function drawGoldenAppleCanvas(enchanted: boolean): HTMLCanvasElement {
+  const c = makeCanvas(16, 16), ctx = c.getContext('2d')!;
+  blobPx(ctx, 8, 9.5, 5, 4.5, '#f2c230', '#b07a10', '#fff2a0');
+  linePx(ctx, 8, 3, 8, 5, '#5a3a1a');
+  setPx(ctx, 9, 3, '#3f8a2a'); setPx(ctx, 10, 3, '#3f8a2a'); setPx(ctx, 10, 2, '#5aaa3a');
+  setPx(ctx, 6, 8, '#ffffff'); setPx(ctx, 6, 9, '#fff2a0');
+  if (enchanted) { // a purple shimmer over it
+    for (const [x, y] of [[5, 7], [9, 6], [11, 9], [7, 11], [10, 12], [4, 10], [8, 8]]) setPx(ctx, x, y, '#c58aff');
+    for (const [x, y] of [[12, 5], [3, 12]]) setPx(ctx, x, y, '#ffffff');
+  }
+  return c;
+}
 function drawWheatItemCanvas(): HTMLCanvasElement {
   const c = makeCanvas(16, 16), ctx = c.getContext('2d')!;
   for (const [x, top] of [[5, 3], [8, 2], [11, 4]]) {
@@ -2481,6 +2493,46 @@ function drawCoarseDirt(): HTMLCanvasElement {
   for (let i = 0; i < 46; i++) { ctx.fillStyle = cols[i % cols.length]; ctx.fillRect(Math.floor(Math.random() * 15) * S, Math.floor(Math.random() * 15) * S, i % 3 === 0 ? 2 * S : S, S); }
   return c;
 }
+/** Target block: red and white rings round a red bullseye (the bullseye glows when it has just been hit). */
+function drawTargetCanvas(on: boolean): HTMLCanvasElement {
+  const c = makeCanvas(16, 16), ctx = c.getContext('2d')!;
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+    const d = Math.max(Math.abs(x - 7.5), Math.abs(y - 7.5)); // square rings
+    const ring = Math.floor(d);
+    ctx.fillStyle = ring <= 1 ? (on ? '#ff5a3c' : '#c3281d') : ring <= 3 ? '#f4efe6' : ring <= 5 ? (on ? '#e8472c' : '#b5362a') : ring <= 6 ? '#efe9de' : '#d9d2c3';
+    ctx.fillRect(x, y, 1, 1);
+  }
+  ctx.fillStyle = 'rgba(80,50,30,0.35)'; ctx.fillRect(0, 0, 16, 1); ctx.fillRect(0, 15, 16, 1); ctx.fillRect(0, 0, 1, 16); ctx.fillRect(15, 0, 1, 16);
+  return c;
+}
+function drawArrowTrapCanvas(on: boolean): HTMLCanvasElement {
+  const c = speckleCanvas('#7d7d7d', ['#8a8a8a', '#6e6e6e', '#939393', '#767676'], 70);
+  const ctx = c.getContext('2d')!;
+  ctx.fillStyle = '#4a4a4a'; ctx.fillRect(0, 0, 16, 1); ctx.fillRect(0, 15, 16, 1); ctx.fillRect(0, 0, 1, 16); ctx.fillRect(15, 0, 1, 16);
+  ctx.fillStyle = '#2a2a2a'; ctx.fillRect(5, 5, 6, 6); // the muzzle
+  ctx.fillStyle = on ? '#ff5a3c' : '#1a1a1a'; ctx.fillRect(6, 6, 4, 4);
+  ctx.fillStyle = on ? '#ffd0a0' : '#8a6a3a'; ctx.fillRect(7, 3, 2, 2); ctx.fillRect(7, 11, 2, 2); // arrow nocks
+  return c;
+}
+function drawSpikesCanvas(): HTMLCanvasElement {
+  const c = speckleCanvas('#6a6a6a', ['#777777', '#5e5e5e', '#838383'], 50);
+  const ctx = c.getContext('2d')!;
+  for (let x = 1; x < 16; x += 4) for (let y = 1; y < 16; y += 4) {
+    ctx.fillStyle = '#cfd3d8'; ctx.fillRect(x, y, 2, 2);
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(x, y, 1, 1);
+    ctx.fillStyle = '#3a3a3a'; ctx.fillRect(x + 2, y, 1, 3); ctx.fillRect(x, y + 2, 3, 1);
+  }
+  return c;
+}
+/** A ladder: two rails with rungs between them, on a see-through background. Wooden (brown) or iron (grey). */
+function drawLadderCanvas(iron: boolean): HTMLCanvasElement {
+  const c = makeCanvas(16, 16), ctx = c.getContext('2d')!;
+  const rail = iron ? '#8e9399' : '#8a6a3a', railDark = iron ? '#5f656b' : '#6a4e28', rung = iron ? '#b9bec4' : '#a98250', rungDark = iron ? '#7b8187' : '#7c5c30';
+  for (const y of [2, 7, 12]) { ctx.fillStyle = rung; ctx.fillRect(2, y, 12, 2); ctx.fillStyle = rungDark; ctx.fillRect(2, y + 1, 12, 1); }
+  for (const x of [1, 12]) { ctx.fillStyle = rail; ctx.fillRect(x, 0, 3, 16); ctx.fillStyle = railDark; ctx.fillRect(x + 2, 0, 1, 16); }
+  if (iron) { ctx.fillStyle = '#d6dade'; for (const x of [1, 12]) for (const y of [2, 7, 12]) ctx.fillRect(x + 1, y, 1, 1); } // rivets
+  return c;
+}
 function drawPathTop(): HTMLCanvasElement {
   const c = speckleCanvas('#9a7e4b', ['#a98d57', '#8a6f3f', '#b49a62', '#82683a'], 80);
   const ctx = c.getContext('2d')!;
@@ -2553,7 +2605,7 @@ function drawNewFaces(): Record<string, HTMLCanvasElement> {
     ...Object.fromEntries(TERRA_DYED.map((t) => [`tc_${t.key}`, terracottaCanvas(t.color)])),
     enderChestTop: drawEnderChestCanvas(true), enderChestSide: drawEnderChestCanvas(false),
     cobweb: drawCobwebCanvas(), cinderLog: drawCinderCanvas('log'), cinderLogTop: drawCinderCanvas('logTop'), cinderPlanks: drawCinderCanvas('planks'), cinderLeaves: drawCinderCanvas('leaves'),
-    snowyGrassSide: drawSnowyGrassSide(), coarseDirt: drawCoarseDirt(), pathTop: drawPathTop(), pathSide: drawPathSide(),
+    snowyGrassSide: drawSnowyGrassSide(), coarseDirt: drawCoarseDirt(), targetOff: drawTargetCanvas(false), targetOn: drawTargetCanvas(true), arrowTrapOff: drawArrowTrapCanvas(false), arrowTrapOn: drawArrowTrapCanvas(true), spikes: drawSpikesCanvas(), pathTop: drawPathTop(), pathSide: drawPathSide(), ladder: drawLadderCanvas(false), ironLadder: drawLadderCanvas(true),
     ...Object.fromEntries(WOODS.map((_, w) => [`snowyLeaves${w}`, drawSnowyLeaves(w)])),
     ...Object.fromEntries([1, 2, 3, 4].flatMap((w) => [[`door${w}Lo`, drawDoorCanvas(false, w)], [`door${w}Hi`, drawDoorCanvas(true, w)], [`trap${w}`, drawTrapdoorCanvas(w)]])),
     allium: drawNewFlowerCanvas('allium'), orangeTulip: drawNewFlowerCanvas('orangeTulip'), pinkTulip: drawNewFlowerCanvas('pinkTulip'), oxeyeDaisy: drawNewFlowerCanvas('oxeyeDaisy'),
@@ -2995,6 +3047,9 @@ export function blockFaces(id: number): FaceSet | null {
   if (id === BLOCK_SNOW_LAYER) return all(f.snow);
   if (id === BLOCK_SNOWY_GRASS) return { top: f.snow, side: f.snowyGrassSide, bottom: f.dirt };
   if (id === BLOCK_COARSE_DIRT) return all(f.coarseDirt);
+  if (isTarget(id)) return all(id === BLOCK_TARGET ? f.targetOff : f.targetOn);
+  if (isArrowTrap(id)) return all(id === BLOCK_ARROW_TRAP ? f.arrowTrapOff : f.arrowTrapOn);
+  if (id === BLOCK_SPIKES) return all(f.spikes);
   if (id === BLOCK_DIRT_PATH) return { top: f.pathTop, side: f.pathSide, bottom: f.dirt };
   if (isSnowyLeaves(id)) return all(f[`snowyLeaves${id - BLOCK_SNOWY_LEAVES_FIRST}`]);
   if (id === BLOCK_LAPIS_ORE) return all(f.lapisOre);
@@ -3123,6 +3178,7 @@ function itemCanvasBase(id: number): HTMLCanvasElement | null {
   if (id === ITEM_HOLLOW_STAR) return drawHollowStarIcon();
   if (id === ITEM_BRIDGE_EGG) return drawBridgeEggIcon();
   if (id >= BLOCK_TORCH_WALL && id < BLOCK_TORCH_CEILING) return drawTorchIcon();
+  if (isLadder(id)) return drawLadderCanvas(isIronLadder(id));
   if (isEgg(id)) return drawEggCanvas(TEAM_COLORS[id - BLOCK_EGG].color);
   if (id >= ITEM_BED_DYED_FIRST && id < ITEM_BED_DYED_FIRST + 12 && id !== ITEM_BED_DYED_FIRST + BED_RED) return drawBedIcon(DYE_COLORS[id - ITEM_BED_DYED_FIRST].wool);
   { const n33 = drawIndev33Icon(id); if (n33) return n33; }
@@ -3153,6 +3209,8 @@ function itemCanvasBase(id: number): HTMLCanvasElement | null {
     case ITEM_GOLD_INGOT: return drawIngotCanvas('#fff2a0', '#f2c230', '#b07a10');
     case ITEM_INFERNIUM_INGOT: return drawIngotCanvas('#ffb06a', '#d8401a', '#6a120a');
     case ITEM_APPLE: return drawAppleCanvas();
+    case ITEM_GOLDEN_APPLE: return drawGoldenAppleCanvas(false);
+    case ITEM_ENCHANTED_GOLDEN_APPLE: return drawGoldenAppleCanvas(true);
     case ITEM_WHEAT: return drawWheatItemCanvas();
     case ITEM_SEEDS: return drawSeedsCanvas();
     case ITEM_BREAD: return drawBreadCanvas();
@@ -3743,6 +3801,7 @@ function mapFacing(b: number, f: (d: number) => number): number {
   if (b >= BLOCK_COMPARATOR && b < BLOCK_COMPARATOR + 16) { const v = b - BLOCK_COMPARATOR; return BLOCK_COMPARATOR + (f(v >> 2) << 2) + (v & 3); }
   if (b >= BLOCK_COMMAND && b < BLOCK_COMMAND + 18) { const v = b - BLOCK_COMMAND, face = v % 6; return face < 4 ? b - face + f(face) : b; }
   if (b >= BLOCK_TORCH_WALL && b <= BLOCK_TORCH_WALL + 3) return BLOCK_TORCH_WALL + f(b - BLOCK_TORCH_WALL);
+  if (isLadder(b)) { const lb = isIronLadder(b) ? BLOCK_IRON_LADDER : BLOCK_LADDER; return lb + f(b - lb); }
   if (b >= BLOCK_HEAD && b < BLOCK_HEAD + HEAD_KINDS * 4) { const face = (b - BLOCK_HEAD) % 4; return b - face + f(face); }
   for (const base of [BLOCK_PISTON, BLOCK_STICKY_PISTON]) {
     if (b >= base && b < base + 12) { const v = b - base, face = v >> 1; return face < 4 ? base + (f(face) << 1) + (v & 1) : b; }
@@ -3781,7 +3840,25 @@ export const BLOCK_DIRT_PATH = 1365;
 /** Snow-covered leaves, one per tree: oak, spruce, birch, dark oak, acacia. */
 export const BLOCK_SNOWY_LEAVES_FIRST = 1366;
 export const isSnowyLeaves = (b: number): boolean => b >= BLOCK_SNOWY_LEAVES_FIRST && b < BLOCK_SNOWY_LEAVES_FIRST + 5;
-export const LAST_BUILTIN_BLOCK = BLOCK_SNOWY_LEAVES_FIRST + 4; // 1370
+/** Target: an arrow, bullet, thrown item or potion that hits it gives redstone power for a moment. +1 is the powered state. */
+export const BLOCK_TARGET = 1371;
+export const isTarget = (b: number): boolean => b === BLOCK_TARGET || b === BLOCK_TARGET + 1;
+/** Trap blocks (Indev 35.1): the Arrow Trap (+1 while powered) shoots at the nearest hostile mob or at you; Spikes hurt whatever stands on them. */
+export const BLOCK_ARROW_TRAP = 1373;
+export const isArrowTrap = (b: number): boolean => b === BLOCK_ARROW_TRAP || b === BLOCK_ARROW_TRAP + 1;
+export const BLOCK_SPIKES = 1375;
+export const ARROW_TRAP_RANGE = 14;
+/** Ladders (Indev 35.2): thin blocks that hang on the side of a wall. +0..+3 is the wall they lean on (see SIDES). The wooden Ladder is slow and steady; the Iron Ladder is quicker. */
+export const BLOCK_LADDER = 1376;
+export const BLOCK_IRON_LADDER = 1380;
+export const isWoodLadder = (b: number): boolean => b >= BLOCK_LADDER && b < BLOCK_LADDER + 4;
+export const isIronLadder = (b: number): boolean => b >= BLOCK_IRON_LADDER && b < BLOCK_IRON_LADDER + 4;
+export const isLadder = (b: number): boolean => b >= BLOCK_LADDER && b < BLOCK_IRON_LADDER + 4;
+/** Which wall a ladder leans on: an index into SIDES. */
+export const ladderSide = (b: number): number => (b - BLOCK_LADDER) & 3;
+/** Blocks per second: climbing up (Space, or walking into the wall), sliding down when you do nothing, and the fastest slide. */
+export const LADDER_UP_SPEED = 3.0, IRON_LADDER_UP_SPEED = 4.6, LADDER_SLIDE_SPEED = 2.4, IRON_LADDER_SLIDE_SPEED = 3.4;
+export const LAST_BUILTIN_BLOCK = BLOCK_IRON_LADDER + 3; // 1383
 /** The five trees. Index 0 is oak (its blocks keep the old ids); 1-4 use the 1010/1020/1030 families. */
 export const WOODS = [
   { key: 'oak', name: 'Oak', color: '#c19a5b' }, { key: 'spruce', name: 'Spruce', color: '#73532f' }, { key: 'birch', name: 'Birch', color: '#d4c48a' },
@@ -3918,7 +3995,7 @@ export const makeCommandBlock = (type: CommandType, facing: number) => BLOCK_COM
 /** The six directions a command block can face: N, E, S, W, up, down. */
 export const DIRS6: ReadonlyArray<readonly [number, number, number]> = [[0, 0, -1], [1, 0, 0], [0, 0, 1], [-1, 0, 0], [0, 1, 0], [0, -1, 0]];
 /** Anything the redstone simulation needs to look at. */
-export const isRedstoneComponent = (b: number) => (b >= BLOCK_REDSTONE_WIRE && b <= BLOCK_COMMAND + 17) || b === BLOCK_REDSTONE_BLOCK || isPiston(b);
+export const isRedstoneComponent = (b: number) => (b >= BLOCK_REDSTONE_WIRE && b <= BLOCK_COMMAND + 17) || b === BLOCK_REDSTONE_BLOCK || isPiston(b) || isTarget(b) || isArrowTrap(b);
 export const wirePower = (b: number) => (isWire(b) ? b - BLOCK_REDSTONE_WIRE : 0);
 /** Lever, button and torch: 0 = on the floor, 1-4 = on a wall (N, E, S, W). */
 export function attachOf(b: number): number { const base = isLever(b) ? BLOCK_LEVER : isButton(b) ? BLOCK_BUTTON : BLOCK_REDSTONE_TORCH; return (b - base) >> 1; }
@@ -3990,7 +4067,11 @@ export const ITEM_INFERNIUM_INGOT = 165;
 export const ITEM_COOKED_PORKCHOP = 166;
 export const ITEM_STEAK = 167;
 export const ITEM_COOKED_CHICKEN = 168;
+export const REGEN_SLOW_SECS = 4, REGEN_FAST_SECS = 2;
 export const ITEM_APPLE = 169;
+/** Golden apples (Indev 35.1): you can eat them even when you are full. */
+export const ITEM_GOLDEN_APPLE = 2600, ITEM_ENCHANTED_GOLDEN_APPLE = 2601;
+export const isGoldenApple = (id: number): boolean => id === ITEM_GOLDEN_APPLE || id === ITEM_ENCHANTED_GOLDEN_APPLE;
 export const ITEM_WHEAT = 170;
 export const ITEM_SEEDS = 171;
 export const ITEM_BREAD = 172;
@@ -4017,7 +4098,7 @@ export const COOK_SECONDS = 8;
  * cubes: doors and glass panes. `at` reads the neighbouring blocks. null = a cube.
  */
 /** Blocks drawn as boxes rather than whole cubes. */
-export function hasShape(b: number): boolean { return isStepBlock(b) || b === BLOCK_GLASS_PANE || isDoor(b) || isBed(b) || b === BLOCK_CACTUS || isTorch(b) || isHead(b) || isEgg(b) || (b >= BLOCK_TRAPDOOR && b <= BLOCK_CAMPFIRE) || isTrapdoorLow(b) || (b >= BLOCK_ENCHANTING_TABLE && b <= BLOCK_ITEM_FRAME + 5) || (b >= BLOCK_REDSTONE_WIRE && b <= BLOCK_REPEATER + 31) || isComparator(b) || isPistonHead(b) || (isPiston(b) && pistonExtended(b)) || b === BLOCK_BREWING_STAND || b === BLOCK_SNOW_LAYER || b === BLOCK_DIRT_PATH || (b >= WOOD_BLOCKS_FIRST && b < WOOD_BLOCKS_END); }
+export function hasShape(b: number): boolean { return isStepBlock(b) || b === BLOCK_GLASS_PANE || isDoor(b) || isBed(b) || b === BLOCK_CACTUS || isTorch(b) || isLadder(b) || isHead(b) || isEgg(b) || (b >= BLOCK_TRAPDOOR && b <= BLOCK_CAMPFIRE) || isTrapdoorLow(b) || (b >= BLOCK_ENCHANTING_TABLE && b <= BLOCK_ITEM_FRAME + 5) || (b >= BLOCK_REDSTONE_WIRE && b <= BLOCK_REPEATER + 31) || isComparator(b) || isPistonHead(b) || (isPiston(b) && pistonExtended(b)) || b === BLOCK_BREWING_STAND || b === BLOCK_SNOW_LAYER || b === BLOCK_DIRT_PATH || (b >= WOOD_BLOCKS_FIRST && b < WOOD_BLOCKS_END); }
 /** A box inside the cell (0..1): x0, y0, z0, x1, y1, z1, and optionally its own texture. */
 export type ShapeBox = [number, number, number, number, number, number, number?];
 
@@ -4173,6 +4254,11 @@ export function shapeBoxes(b: number, at: (dx: number, dy: number, dz: number) =
       [1 / 16, 3 / 16, 1 / 16, 5 / 16, 7 / 16, 15 / 16, LOG], [11 / 16, 3 / 16, 1 / 16, 15 / 16, 7 / 16, 15 / 16, LOG],
       [4 / 16, 2 / 16, 4 / 16, 12 / 16, 15 / 16, 12 / 16, FIRE],
     ];
+  }
+  if (isLadder(b)) { // a thin board on the wall it leans on (SIDES[side] points at that wall)
+    const [dx, dz] = SIDES[ladderSide(b)], T = 2 / 16;
+    const box: ShapeBox = dx === 1 ? [1 - T, 0, 0, 1, 1, 1] : dx === -1 ? [0, 0, 0, T, 1, 1] : dz === 1 ? [0, 0, 1 - T, 1, 1, 1] : [0, 0, 0, 1, 1, T];
+    return [box];
   }
   if (b === BLOCK_TORCH) return [[7 / 16, 0, 7 / 16, 9 / 16, 10 / 16, 9 / 16]];
   if (b >= BLOCK_TORCH_WALL && b < BLOCK_TORCH_CEILING) {
@@ -4454,7 +4540,8 @@ function flowLevel(b: number): number {
 const BLOCK_FLAGS = new Uint8Array(MAX_BLOCK_ID); // bit 1 = solid, bit 2 = opaque
 /** Newer blocks: 'cube' = solid and opaque, 'see' = solid but not a full cube, 'pass' = you walk through it. */
 function newBlockKind(b: number): 'cube' | 'see' | 'pass' | null {
-  if (b >= BLOCK_SNOW_LAYER && b <= LAST_BUILTIN_BLOCK) return b === BLOCK_SNOW_LAYER ? 'pass' : isSnowyLeaves(b) || b === BLOCK_DIRT_PATH ? 'see' : 'cube'; // (a dirt path is a bit lower than a block: solid, but its neighbours still draw their faces)
+  if (isLadder(b)) return 'pass'; // you walk into a ladder (and climb it)
+  if (b >= BLOCK_SNOW_LAYER && b <= LAST_BUILTIN_BLOCK) return b === BLOCK_SNOW_LAYER ? 'pass' : isTarget(b) ? 'cube' : isSnowyLeaves(b) || b === BLOCK_DIRT_PATH ? 'see' : 'cube'; // (a dirt path is a bit lower than a block: solid, but its neighbours still draw their faces)
   if (b < 1094 || b > LAST_BUILTIN_BLOCK) return null;
   if (isIce(b) || b === BLOCK_SOUL_SOIL || b === BLOCK_MAGMA) return 'cube';
   if (isTorch(b)) return 'pass';
@@ -4742,7 +4829,7 @@ export const ITEM_INFO: Record<number, { name: string; color: string; hidden?: b
   [ITEM_STICK]: { name: 'Stick', color: '#a9814f' },
   [BLOCK_CRAFTING_TABLE]: { name: 'Crafting Table', color: '#9c6f3f' },
   [ITEM_WOOD_PICKAXE]: { name: 'Wood Pickaxe', color: '#b98a52' },
-  [ITEM_WOOD_SWORD]: { name: 'Wood Sword', color: '#caa06a' },
+  [ITEM_WOOD_SWORD]: { name: 'Wooden Sword', color: '#caa06a' },
   [ITEM_STONE_PICKAXE]: { name: 'Stone Pickaxe', color: '#9a9a9a' },
   [ITEM_STONE_SWORD]: { name: 'Stone Sword', color: '#ababab' },
   [ITEM_WOOD_AXE]: { name: 'Wood Axe', color: '#c99a5f' },
@@ -4817,6 +4904,8 @@ export const ITEM_INFO: Record<number, { name: string; color: string; hidden?: b
   [ITEM_STEAK]: { name: 'Steak', color: '#8a4a2a' },
   [ITEM_COOKED_CHICKEN]: { name: 'Cooked Chicken', color: '#c8823a' },
   [ITEM_APPLE]: { name: 'Apple', color: '#d8282a' },
+  [ITEM_GOLDEN_APPLE]: { name: 'Golden Apple', color: '#f2c230', lore: ['Eat it anytime: Regeneration II for 5 seconds.', '8 gold ingots around an apple.'] },
+  [ITEM_ENCHANTED_GOLDEN_APPLE]: { name: 'Enchanted Golden Apple', color: '#c58aff', lore: ['Eat it anytime: Regeneration II for 20 seconds,', 'Resistance and Fire Resistance for 5 minutes.', '8 gold blocks around an apple.'] },
   [ITEM_WHEAT]: { name: 'Wheat', color: '#d8b44a' },
   [ITEM_SEEDS]: { name: 'Seeds', color: '#6aa83a', lore: ['Plant on farmland (hoe some grass or dirt first).'] },
   [ITEM_BREAD]: { name: 'Bread', color: '#c8893a' },
@@ -4990,6 +5079,14 @@ for (let k = 0; k < 8; k++) ITEM_INFO[BLOCK_TRAPDOOR_LOW + k] = { name: 'Oak Tra
 ITEM_INFO[BLOCK_SNOW_LAYER] = { name: 'Snow Layer', color: '#f2f6fa', lore: ['A thin layer of snow.', 'Break it with a shovel to get a snowball.'] };
 ITEM_INFO[BLOCK_SNOWY_GRASS] = { name: 'Snowy Grass Block', color: '#dbe8e0', lore: ['Break the snow off and it becomes grass again.'] };
 ITEM_INFO[BLOCK_COARSE_DIRT] = { name: 'Coarse Dirt', color: '#7c6a54' };
+ITEM_INFO[BLOCK_TARGET] = { name: 'Target', color: '#c3281d', lore: ['Hit it with an arrow, a bullet or a thrown item', 'to give redstone power for a moment.'] };
+ITEM_INFO[BLOCK_TARGET + 1] = { name: 'Target', color: '#ff5a3c', hidden: true };
+ITEM_INFO[BLOCK_ARROW_TRAP] = { name: 'Arrow Trap', color: '#7d7d7d', lore: ['Give it redstone power and it shoots arrows', 'at the nearest hostile mob (or at you) within 14 blocks.', 'It never runs out of arrows.'] };
+ITEM_INFO[BLOCK_ARROW_TRAP + 1] = { name: 'Arrow Trap', color: '#ff5a3c', hidden: true };
+ITEM_INFO[BLOCK_LADDER] = { name: 'Ladder', color: '#a98250', lore: ['Click the side of a wall to put it up.', 'Hold Space (or walk into the wall) to climb,', 'Alt to hang on. Let go and you slide down slowly.'] };
+ITEM_INFO[BLOCK_IRON_LADDER] = { name: 'Iron Ladder', color: '#b9bec4', lore: ['A sturdier ladder: you climb and slide faster.', 'Click the side of a wall to put it up.'] };
+for (let i = 1; i < 4; i++) { ITEM_INFO[BLOCK_LADDER + i] = { name: 'Ladder', color: '#a98250', hidden: true }; ITEM_INFO[BLOCK_IRON_LADDER + i] = { name: 'Iron Ladder', color: '#b9bec4', hidden: true }; }
+ITEM_INFO[BLOCK_SPIKES] = { name: 'Spike Block', color: '#6a6a6a', lore: ['Whatever stands on it gets hurt (1 heart every half second).', 'Hide it under a carpet of... nothing. It is a trap.'] };
 ITEM_INFO[BLOCK_DIRT_PATH] = { name: 'Dirt Path', color: '#9a7e4b', lore: ['Right-click grass or dirt with a shovel.'] };
 WOODS.forEach((wd, w) => {
   ITEM_INFO[snowyLeavesId(w)] = { name: `Snowy ${wd.name} Leaves`, color: '#cfe0d4' };
@@ -5118,6 +5215,8 @@ export type CustomItemDef = { id: number; key: string; name: string; canvas: HTM
 export type CustomBlockDef = {
   id: number; key: string; name: string; canvas: HTMLCanvasElement; shape: 'cube' | 'cross';
   solid: boolean; drops: number | null; hardness: number; tier: number;
+  /** Right-click fires the blockUse event (instead of placing a block against it; crouch to place). */
+  use?: boolean;
 };
 export const CUSTOM_ITEMS = new Map<number, CustomItemDef>();
 export const CUSTOM_BLOCKS = new Map<number, CustomBlockDef>();
@@ -5195,7 +5294,7 @@ function toPowerOfTwo(c: HTMLCanvasElement): HTMLCanvasElement {
 
 export function registerCustomBlock(spec: {
   key: string; name: string; texture?: TextureSpec; shape?: 'cube' | 'cross'; solid?: boolean;
-  drops?: number | null; hardness?: number; tier?: number; hidden?: boolean;
+  drops?: number | null; hardness?: number; tier?: number; hidden?: boolean; use?: boolean;
 }): number {
   if (!KEY_RE.test(spec.key)) throw new Error(`Block ids look like "mymod:thing" (got "${spec.key}")`);
   const id = allocateCustomId(spec.key, 60, 99);
@@ -5203,7 +5302,7 @@ export function registerCustomBlock(spec: {
   const solid = shape === 'cube' && spec.solid !== false;
   const def: CustomBlockDef = {
     id, key: spec.key, name: String(spec.name).slice(0, 40), canvas: toPowerOfTwo(drawTexture(spec.texture, '#9a9a9a')), shape, solid,
-    drops: spec.drops === undefined ? id : spec.drops, hardness: Math.max(0, Math.min(30, spec.hardness ?? 0.6)), tier: Math.max(0, Math.min(5, Math.floor(spec.tier ?? 0))),
+    drops: spec.drops === undefined ? id : spec.drops, hardness: Math.max(0, Math.min(30, spec.hardness ?? 0.6)), tier: Math.max(0, Math.min(5, Math.floor(spec.tier ?? 0))), use: !!spec.use,
   };
   CUSTOM_BLOCKS.set(id, def);
   CUSTOM_KEYS.set(spec.key, id);
@@ -5220,6 +5319,7 @@ export const FOOD_VALUES: Record<number, number> = {
   [ITEM_CHICKEN]: 2,
   [ITEM_ROTTEN_FLESH]: 4,
   [ITEM_APPLE]: 4,
+  [ITEM_GOLDEN_APPLE]: 4, [ITEM_ENCHANTED_GOLDEN_APPLE]: 4,
   [ITEM_BREAD]: 5,
   [ITEM_COOKED_PORKCHOP]: 8,
   [ITEM_STEAK]: 8,
@@ -5276,7 +5376,7 @@ export const RECIPES: Recipe[] = [
     output: { id: ITEM_WOOD_PICKAXE, count: 1 }, needsTable: true,
   },
   {
-    id: 'wood_sword', name: 'Wood Sword',
+    id: 'wooden_sword', name: 'Wooden Sword',
     pattern: [ITEM_PLANKS, ITEM_PLANKS, ITEM_STICK], width: 1, height: 3,
     output: { id: ITEM_WOOD_SWORD, count: 1 }, needsTable: true,
   },
@@ -5417,6 +5517,13 @@ RECIPES.push(
   { id: 'sign', name: 'Oak Sign', pattern: [ITEM_PLANKS, ITEM_PLANKS, ITEM_PLANKS, ITEM_PLANKS, ITEM_PLANKS, ITEM_PLANKS, null, ITEM_STICK, null], width: 3, height: 3, output: { id: signBlock(0, false, 0), count: 3 }, needsTable: true, wood: (w) => signBlock(w, false, 0) },
   { id: 'snow_block', name: 'Snow Block', pattern: [ITEM_SNOWBALL, ITEM_SNOWBALL, ITEM_SNOWBALL, ITEM_SNOWBALL], width: 2, height: 2, output: { id: BLOCK_SNOW, count: 1 }, needsTable: false },
   { id: 'snowballs', name: 'Snowballs', pattern: [BLOCK_SNOW], width: 1, height: 1, output: { id: ITEM_SNOWBALL, count: 4 }, needsTable: false },
+  { id: 'golden_apple', name: 'Golden Apple', pattern: [ITEM_GOLD_INGOT, ITEM_GOLD_INGOT, ITEM_GOLD_INGOT, ITEM_GOLD_INGOT, ITEM_APPLE, ITEM_GOLD_INGOT, ITEM_GOLD_INGOT, ITEM_GOLD_INGOT, ITEM_GOLD_INGOT], width: 3, height: 3, output: { id: ITEM_GOLDEN_APPLE, count: 1 }, needsTable: true },
+  { id: 'enchanted_golden_apple', name: 'Enchanted Golden Apple', pattern: [BLOCK_GOLD_BLOCK, BLOCK_GOLD_BLOCK, BLOCK_GOLD_BLOCK, BLOCK_GOLD_BLOCK, ITEM_APPLE, BLOCK_GOLD_BLOCK, BLOCK_GOLD_BLOCK, BLOCK_GOLD_BLOCK, BLOCK_GOLD_BLOCK], width: 3, height: 3, output: { id: ITEM_ENCHANTED_GOLDEN_APPLE, count: 1 }, needsTable: true },
+  { id: 'arrow_trap', name: 'Arrow Trap', pattern: [BLOCK_STONE, BLOCK_STONE, BLOCK_STONE, BLOCK_STONE, ITEM_BOW, BLOCK_STONE, BLOCK_STONE, ITEM_REDSTONE, BLOCK_STONE], width: 3, height: 3, output: { id: BLOCK_ARROW_TRAP, count: 1 }, needsTable: true },
+  { id: 'ladder', name: 'Ladder', pattern: [ITEM_STICK, null, ITEM_STICK, ITEM_STICK, ITEM_STICK, ITEM_STICK, ITEM_STICK, null, ITEM_STICK], width: 3, height: 3, output: { id: BLOCK_LADDER, count: 3 }, needsTable: true },
+  { id: 'iron_ladder', name: 'Iron Ladder', pattern: [ITEM_IRON_INGOT, null, ITEM_IRON_INGOT, ITEM_IRON_INGOT, ITEM_STICK, ITEM_IRON_INGOT, ITEM_IRON_INGOT, null, ITEM_IRON_INGOT], width: 3, height: 3, output: { id: BLOCK_IRON_LADDER, count: 4 }, needsTable: true },
+  { id: 'spike_block', name: 'Spike Block', pattern: [ITEM_IRON_INGOT, ITEM_IRON_INGOT, ITEM_IRON_INGOT, BLOCK_STONE, BLOCK_STONE, BLOCK_STONE], width: 3, height: 2, output: { id: BLOCK_SPIKES, count: 2 }, needsTable: true },
+  { id: 'target', name: 'Target', pattern: [null, ITEM_REDSTONE, null, ITEM_REDSTONE, ITEM_WHEAT, ITEM_REDSTONE, null, ITEM_REDSTONE, null], width: 3, height: 3, output: { id: BLOCK_TARGET, count: 1 }, needsTable: true },
   { id: 'coarse_dirt', name: 'Coarse Dirt', pattern: [BLOCK_DIRT, BLOCK_GRAVEL, BLOCK_GRAVEL, BLOCK_DIRT], width: 2, height: 2, output: { id: BLOCK_COARSE_DIRT, count: 4 }, needsTable: false },
 );
 RECIPES.push(
@@ -6125,15 +6232,16 @@ const NEW_FACE_KEYS: string[] = [
   'spawner', ...TERRA_DYED.map((t) => `tc_${t.key}`),
   'enderChestTop', 'enderChestSide', 'cobweb', 'cinderLog', 'cinderLogTop', 'cinderPlanks', 'cinderLeaves', 'allium', 'orangeTulip', 'pinkTulip', 'oxeyeDaisy',
   ...DYE_COLORS.flatMap((d, i) => (i === BED_RED ? [] : [`bedSide_${d.key}`, `bedFoot_${d.key}`, `bedHead_${d.key}`])),
-  'snowyGrassSide', 'coarseDirt', 'pathTop', 'pathSide', ...WOODS.map((_, w) => `snowyLeaves${w}`),
+  'snowyGrassSide', 'coarseDirt', 'targetOff', 'targetOn', 'arrowTrapOff', 'arrowTrapOn', 'spikes', 'pathTop', 'pathSide', ...WOODS.map((_, w) => `snowyLeaves${w}`),
   ...[1, 2, 3, 4].flatMap((w) => [`door${w}Lo`, `door${w}Hi`, `trap${w}`]),
+  'ladder', 'ironLadder',
 ];
 const MINERAL_TEX: Record<number, string> = {}; // filled right below (the block ids are defined above)
 MINERAL_TEX[BLOCK_DIAMOND_BLOCK] = 'mDiamond'; MINERAL_TEX[BLOCK_GOLD_BLOCK] = 'mGold'; MINERAL_TEX[BLOCK_COAL_BLOCK] = 'mCoal';
 MINERAL_TEX[BLOCK_EMERALD_BLOCK] = 'mEmerald'; MINERAL_TEX[BLOCK_LAPIS_BLOCK] = 'mLapis'; MINERAL_TEX[BLOCK_INFERNIUM_BLOCK] = 'mInfernium';
 /** The material slot of a newer block texture. */
 function NF(key: string): number { const i = NEW_FACE_KEYS.indexOf(key); if (i < 0) throw new Error(`no texture ${key}`); return NEW_FACE_START + i; }
-const NEW_SEE_THROUGH = new Set([...WOODS.map((_, w) => `snowyLeaves${w}`), ...[1, 2, 3, 4].flatMap((w) => [`door${w}Hi`, `trap${w}`]), 'dandelion', 'poppy', 'cornflower', 'sugarCane', 'cobweb', 'cinderLeaves', 'allium', 'orangeTulip', 'pinkTulip', 'oxeyeDaisy', 'rtorchOn', 'rtorchOff', 'rs0', 'rs1', 'rs2', 'rs3', 'torchWall', 'torchHang', ...Array.from({ length: HEAD_KINDS }, (_, k) => [`head${k}face`, `head${k}side`, `head${k}top`]).flat()].map(NF));
+const NEW_SEE_THROUGH = new Set([...WOODS.map((_, w) => `snowyLeaves${w}`), ...[1, 2, 3, 4].flatMap((w) => [`door${w}Hi`, `trap${w}`]), 'dandelion', 'poppy', 'cornflower', 'sugarCane', 'cobweb', 'cinderLeaves', 'allium', 'orangeTulip', 'pinkTulip', 'oxeyeDaisy', 'rtorchOn', 'rtorchOff', 'rs0', 'rs1', 'rs2', 'rs3', 'torchWall', 'torchHang', 'ladder', 'ironLadder', ...Array.from({ length: HEAD_KINDS }, (_, k) => [`head${k}face`, `head${k}side`, `head${k}top`]).flat()].map(NF));
 CROSS_MAT[BLOCK_DANDELION] = NF('dandelion');
 CROSS_MAT[BLOCK_POPPY] = NF('poppy');
 CROSS_MAT[BLOCK_CORNFLOWER] = NF('cornflower');
@@ -6161,6 +6269,10 @@ function matIndexFor(block: number, f: number): number {
     if (block === BLOCK_SNOW_LAYER) return 16;
     if (block === BLOCK_SNOWY_GRASS) return top ? 16 : bottom ? 0 : NF('snowyGrassSide');
     if (block === BLOCK_COARSE_DIRT) return NF('coarseDirt');
+    if (isTarget(block)) return NF(block === BLOCK_TARGET ? 'targetOff' : 'targetOn');
+    if (isArrowTrap(block)) return NF(block === BLOCK_ARROW_TRAP ? 'arrowTrapOff' : 'arrowTrapOn');
+    if (block === BLOCK_SPIKES) return NF('spikes');
+    if (isLadder(block)) return NF(isIronLadder(block) ? 'ironLadder' : 'ladder');
     if (block === BLOCK_DIRT_PATH) return top ? NF('pathTop') : bottom ? 0 : NF('pathSide');
     return NF(`snowyLeaves${block - BLOCK_SNOWY_LEAVES_FIRST}`);
   }
@@ -8415,18 +8527,23 @@ class World {
 
 export type GameWorldMode = 'survival' | 'creative' | 'adventure';
 export type GraphicsQuality = 'low' | 'medium' | 'high' | 'epic' | 'max';
+/** How many debris/smoke particles may exist at once, and be made in one frame, per graphics tier (Indev 35.1). */
+export const PARTICLE_CAP: Record<GraphicsQuality, number> = { low: 100, medium: 220, high: 320, epic: 400, max: 400 };
+export const PARTICLE_BUDGET: Record<GraphicsQuality, number> = { low: 24, medium: 40, high: 60, epic: 80, max: 80 };
+/** A computer that reports 4 GB of memory or less (CrazyGames' lowest target) loads a shorter view. */
+export const LOW_MEMORY_MAX_RENDER_DISTANCE = 8;
 /** The mode you're playing in right now (switchable with /gamemode). */
 export type PlayMode = GameWorldMode | 'spectator';
 export type WorldType = 'default' | 'superflat' | 'eggwars' | 'bridge' | 'oneblock' | 'skyblock' | 'void';
 
 /** Actions you can put on any key (Settings > Controls). */
-export type KeyAction = 'forward' | 'back' | 'left' | 'right' | 'jump' | 'sprint' | 'crouch' | 'inventory' | 'drop' | 'offhand' | 'zoom';
+export type KeyAction = 'forward' | 'back' | 'left' | 'right' | 'jump' | 'sprint' | 'crouch' | 'inventory' | 'drop' | 'offhand' | 'zoom' | 'pause';
 /** Holding Shift (sprint) while flying is this much faster. */
 export const FLY_SPRINT_MULT = 2;
 export const DEFAULT_KEYBINDS: Record<KeyAction, string> = {
   forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD',
   jump: 'Space', sprint: 'ShiftLeft', crouch: 'AltLeft',
-  inventory: 'KeyE', drop: 'KeyQ', offhand: 'KeyF', zoom: 'KeyV',
+  inventory: 'KeyE', drop: 'KeyQ', offhand: 'KeyF', zoom: 'KeyV', pause: 'KeyP',
 };
 let activeBinds: Record<KeyAction, string> = { ...DEFAULT_KEYBINDS };
 /** Replace some or all key bindings (missing actions fall back to the defaults). Works while a world is running. */
@@ -8562,7 +8679,7 @@ export type DebugInfo = {
   chunkX: number; chunkZ: number;
   facing: string; yaw: number; pitch: number;
   biome: string; dimension: string; mode: PlayMode; flying: boolean;
-  loadedChunks: number; renderDistance: number; graphics: GraphicsQuality; fps: number;
+  loadedChunks: number; renderDistance: number; graphics: GraphicsQuality; fps: number; particles: number;
   target: { name: string; x: number; y: number; z: number } | null;
   mobs: number;
   camera: string;
@@ -8586,7 +8703,7 @@ export type EntityInfo = { id: number; type: string; x: number; y: number; z: nu
 
 /** What scripts and mods can reach inside the engine (App checks every argument first). */
 export type ScriptEngineApi = {
-  raycast(o: [number, number, number] | null, d: [number, number, number] | null, maxDist: number, entities: boolean, blocks: boolean): RayHit | null;
+  raycast(o: [number, number, number] | null, d: [number, number, number] | null, maxDist: number, entities: boolean, blocks: boolean, shot?: boolean): RayHit | null;
   listEntities(): EntityInfo[];
   spawnEntity(type: string, x: number, y: number, z: number): number;
   removeEntity(id: number): boolean;
@@ -8938,7 +9055,8 @@ export function createVoxelGame(
   arenaVariantParam?: number,
 ): GameHandle {
   setExperimental(experimental);
-  let renderDistance = initialRenderDistance;
+  const lowMemory = (() => { try { const m = (navigator as unknown as { deviceMemory?: number }).deviceMemory; return typeof m === 'number' && m > 0 && m <= 4; } catch { return false; } })();
+  let renderDistance = lowMemory ? Math.min(initialRenderDistance, LOW_MEMORY_MAX_RENDER_DISTANCE) : initialRenderDistance;
   let graphicsQuality: GraphicsQuality = initialGraphicsQuality;
   /** Low graphics: mobs and players hold one still pose (items and the world keep moving). */
   let entityAnimOff = initialGraphicsQuality === 'low';
@@ -10072,7 +10190,8 @@ export function createVoxelGame(
     [BLOCK_WOOD]: 0.75,
     [BLOCK_CRAFTING_TABLE]: 0.75,
     [BLOCK_STONE]: 1.4,
-    [BLOCK_SNOW]: 0.3, [BLOCK_SNOW_LAYER]: 0.1, [BLOCK_SNOWY_GRASS]: 0.4, [BLOCK_COARSE_DIRT]: 0.5, [BLOCK_DIRT_PATH]: 0.5,
+    [BLOCK_SNOW]: 0.3, [BLOCK_SNOW_LAYER]: 0.1, [BLOCK_SNOWY_GRASS]: 0.4, [BLOCK_COARSE_DIRT]: 0.5, [BLOCK_TARGET]: 0.5, [BLOCK_TARGET + 1]: 0.5, [BLOCK_ARROW_TRAP]: 2, [BLOCK_ARROW_TRAP + 1]: 2, [BLOCK_SPIKES]: 2, [BLOCK_DIRT_PATH]: 0.5,
+    ...Object.fromEntries(Array.from({ length: 4 }, (_, i) => [BLOCK_LADDER + i, 0.4])), ...Object.fromEntries(Array.from({ length: 4 }, (_, i) => [BLOCK_IRON_LADDER + i, 0.8])),
     ...Object.fromEntries(Array.from({ length: 5 }, (_, i) => [BLOCK_SNOWY_LEAVES_FIRST + i, 0.25])),
     ...Object.fromEntries(Array.from({ length: SIGN_FIRST - WOOD_BLOCKS_FIRST }, (_, i) => [WOOD_BLOCKS_FIRST + i, isDoorBottom(WOOD_BLOCKS_FIRST + i) || (WOOD_BLOCKS_FIRST + i) < WOOD_TRAPDOOR_FIRST ? 1.0 : 2])),
     ...Object.fromEntries(Array.from({ length: SIGN_END - SIGN_FIRST }, (_, i) => [SIGN_FIRST + i, 0.5])),
@@ -10148,6 +10267,8 @@ export function createVoxelGame(
     if (isLever(block)) return BLOCK_LEVER;
     if (isButton(block)) return BLOCK_BUTTON;
     if (isPlate(block)) return BLOCK_PRESSURE_PLATE;
+    if (isTarget(block)) return BLOCK_TARGET;
+    if (isArrowTrap(block)) return BLOCK_ARROW_TRAP;
     if (isRedstoneTorch(block)) return ITEM_REDSTONE_TORCH;
     if (isRepeater(block)) return BLOCK_REPEATER;
     if (isLamp(block)) return BLOCK_REDSTONE_LAMP;
@@ -10158,6 +10279,7 @@ export function createVoxelGame(
     if (isAnvil(block)) return BLOCK_ANVIL;
     if (isItemFrame(block)) return BLOCK_ITEM_FRAME;
     if (isTorch(block)) return BLOCK_TORCH;
+    if (isLadder(block)) return isIronLadder(block) ? BLOCK_IRON_LADDER : BLOCK_LADDER; // all four wall variants give back the one item
     if (isHead(block)) return headItem(headKind(block));
     if (isIce(block)) return null; // ice only comes back with Silk Touch
     if (isEgg(block)) return null;
@@ -10227,6 +10349,9 @@ export function createVoxelGame(
   let viewKick = 0;
   let leftUseDown = false;
   let peelLock = false;
+  let breakCooldown = 0; // short pause after each block breaks while the button stays down (holding left-click was far too fast)
+  let rightHeldRepeat = false; // right-click held on a placeable block: keeps placing (bridging)
+  let rightRepeatTimer = 0;
   let rightUseDown = false;
   let bowDrawing = false;
   let bowDrawStart = 0;
@@ -10372,7 +10497,7 @@ export function createVoxelGame(
   // bows held upright.
   const heldBase = new THREE.Vector3();
   // First-person pose for swords and tools, and for blocking with a sword (right-click and hold)
-  const TOOL_FP = { scale: 1.15, x: 0.5, y: -0.15, z: -0.95, rx: -0.2, ry: -0.2, rz: 0.32 };
+  const TOOL_FP = { scale: 1.0, x: 0.76, y: -0.14, z: -0.95, rx: -0.05, ry: -0.3, rz: 0.34 };
   const BLOCK_FP = { x: 0.22, y: -0.28, z: -0.85, rx: 0.1, ry: -0.9, rz: 1.2 };
   // A spear is held out ahead of you, the point away from the camera (thrusts drive it forward; charging draws it back)
   const SPEAR_FP = { scale: 1.25, x: 0.45, y: -0.34, z: -0.95, rx: -0.85, ry: -0.2, rz: 0.55 };
@@ -10382,13 +10507,15 @@ export function createVoxelGame(
   // (not a flat sticker) — the extra yaw (ry) reveals the flat of the blade and the pitch (rx) tips the tip
   // away from the camera, into the depth of the scene. Blocking raises it across the body.
   // Plain holding pose: low in the bottom-right corner, the blade pointing up and only leaning a little (relaxed, not raised).
-  const SWORD_FP = { scale: 0.9, x: 0.5, y: -0.46, z: -0.95, rx: -0.12, ry: -0.35, rz: 0.42 };
+  const SWORD_FP = { scale: 1.05, x: 0.78, y: -0.15, z: -0.95, rx: -0.05, ry: -0.3, rz: 0.36 };
   // The raised pose across the screen (blade lying diagonally toward the middle) is for BLOCKING only (hold right-click).
   const SWORD_BLOCK_FP = { x: 0.42, y: -0.58, z: -0.8, rx: -0.35, ry: -0.55, rz: 1.65 };
   let swordBlocking = false;
   let blockLerp = 0;
   let crouchNow = false;
   let inWeb = false;
+  /** 0 = not on a ladder, 1 = on a wooden ladder, 2 = on an iron one (Indev 35.2). */
+  let onLadder = 0;
   // ---- Elytra: jump in the air with one on to glide (look where you want to go; fireworks boost you) ----
   let gliding = false;
   const glideV = new THREE.Vector3(); // velocity in blocks per tick (20 ticks a second), like Minecraft
@@ -10497,9 +10624,9 @@ export function createVoxelGame(
       heldBase.set(0.52, -0.46, -0.82);
       m.rotation.set(0.1, Math.PI / 4, 0);
     } else if (heldItem === ITEM_BOW) {
-      m.scale.setScalar(0.92);
-      heldBase.set(0.4, -0.28, -0.82);
-      m.rotation.set(0.05, -0.55, 0.5);
+      m.scale.setScalar(1.12);
+      heldBase.set(0.74, -0.16, -0.9);
+      m.rotation.set(0.05, -0.35, 0.42);
     } else if (TOOLS[heldItem]?.kind === 'sword') {
       m.scale.setScalar(SWORD_FP.scale);
       heldBase.set(SWORD_FP.x, SWORD_FP.y, SWORD_FP.z);
@@ -10842,7 +10969,8 @@ export function createVoxelGame(
     if (isWool(block)) return 'wool';
     if (block === BLOCK_SNOW) return 'snow';
     if (block === BLOCK_SAND || block === BLOCK_RED_SAND) return 'sand';
-    if (isLog(block) || isPlanks(block) || block === BLOCK_WOOD || block === BLOCK_CRAFTING_TABLE || block === BLOCK_CHEST || block === BLOCK_BOOKSHELF || isItemFrame(block) || isDoor(block) || isBed(block) || (block >= BLOCK_TRAPDOOR && block <= BLOCK_CAMPFIRE) || isTrapdoorLow(block) || (block >= WOOD_BLOCKS_FIRST && block < WOOD_BLOCKS_END)) return 'wood';
+    if (isLog(block) || isPlanks(block) || block === BLOCK_WOOD || block === BLOCK_CRAFTING_TABLE || block === BLOCK_CHEST || block === BLOCK_BOOKSHELF || isItemFrame(block) || isDoor(block) || isBed(block) || (block >= BLOCK_TRAPDOOR && block <= BLOCK_CAMPFIRE) || isTrapdoorLow(block) || (block >= WOOD_BLOCKS_FIRST && block < WOOD_BLOCKS_END) || isWoodLadder(block)) return 'wood';
+    if (isIronLadder(block)) return 'metal';
     if (block === BLOCK_GRASS) return 'grass';
     if (block === BLOCK_STONE || block === BLOCK_BEDROCK || block === BLOCK_OBSIDIAN || isConcrete(block) || block === BLOCK_SPAWNER || (block >= BLOCK_COAL_ORE && block <= BLOCK_EMERALD_ORE)
       || isTerracotta(block) || (block >= BLOCK_LAPIS_ORE && block <= BLOCK_ENCHANTING_TABLE) || isLamp(block) || (block >= 1094 && block <= 1097)
@@ -11006,8 +11134,16 @@ export function createVoxelGame(
   const particleGeo = new THREE.BoxGeometry(1, 1, 1);
   const particleMats = new Map<string, THREE.MeshLambertMaterial>();
 
+  /** Particles are single meshes (one draw call each), so the limit follows the graphics tier and the frame rate: a 4 GB laptop on Low gets far fewer. */
+  function particleCap(): number {
+    const base = PARTICLE_CAP[graphicsQuality] ?? 400;
+    return fps > 0 && fps < 25 ? Math.floor(base * 0.5) : base;
+  }
+  let particleBudget = 60; // new particles allowed this frame (refilled by updateParticles)
   function spawnParticles(pos: THREE.Vector3, colors: string[], count: number, speed: number, size: number, life: number, rise = false) {
-    for (let i = 0; i < count && particles.length < 400; i++) {
+    if (pos.distanceToSquared(camera.position) > 48 * 48) return; // too far away to see: don't make it
+    const cap = particleCap();
+    for (let i = 0; i < count && particles.length < cap && particleBudget > 0; i++, particleBudget--) {
       const color = colors[Math.floor(Math.random() * colors.length)];
       let m = particleMats.get(color);
       if (!m) { m = new THREE.MeshLambertMaterial({ color }); particleMats.set(color, m); }
@@ -11028,6 +11164,7 @@ export function createVoxelGame(
   }
 
   function updateParticles(dt: number) {
+    particleBudget = PARTICLE_BUDGET[graphicsQuality] ?? 60;
     for (let i = particles.length - 1; i >= 0; i--) {
       const p = particles[i];
       p.life += dt;
@@ -11213,7 +11350,7 @@ export function createVoxelGame(
     stopGlide();
     if (sleeping) wakeUp(false);
     if (riding) leaveBoat();
-    isMining = false;
+    isMining = false; rightHeldRepeat = false;
     miningTarget = null;
     miningProgress = 0;
     crackMesh.visible = false;
@@ -11353,7 +11490,7 @@ export function createVoxelGame(
 
   function tryEat(): boolean {
     if (heldItem === null || !FOOD_VALUES[heldItem] || !canBeAttacked()) return false;
-    if (hunger >= 20 || !slots[selectedSlot]) return false;
+    if ((hunger >= 20 && !isGoldenApple(heldItem)) || !slots[selectedSlot]) return false;
     if (eatingItem === null) { eatingItem = heldItem; eatTimer = 0; }
     eatHold = true;
     return true;
@@ -11366,12 +11503,14 @@ export function createVoxelGame(
     consumeHeld(1);
     setStats(health, hunger + FOOD_VALUES[ate]);
     playSfx('eat', null);
+    if (ate === ITEM_GOLDEN_APPLE) giveEffect('regeneration', 5, 2);
+    if (ate === ITEM_ENCHANTED_GOLDEN_APPLE) { giveEffect('regeneration', 20, 2); giveEffect('resistance', 300, 1); giveEffect('fire_resistance', 300, 1); }
     if (ate === ITEM_PUFFERFISH) { giveEffect('poison', 12, 1); giveEffect('slowness', 15, 1); showHint('Ugh! The pufferfish made you sick'); }
     engineEvent('playerEat', { item: ate });
   }
   function tickEating(dt: number) {
     if (eatingItem === null) return;
-    if (heldItem !== eatingItem || dead || !engaged() || (!touchMode && !eatHold) || hunger >= 20 || !canBeAttacked()) { eatingItem = null; eatTimer = 0; return; }
+    if (heldItem !== eatingItem || dead || !engaged() || (!touchMode && !eatHold) || (hunger >= 20 && !isGoldenApple(eatingItem)) || !canBeAttacked()) { eatingItem = null; eatTimer = 0; return; }
     eatTimer += dt;
     if (Math.floor(eatTimer / 0.25) !== Math.floor((eatTimer - dt) / 0.25)) {
       playSfx('eat', null);
@@ -13399,9 +13538,9 @@ export function createVoxelGame(
   }
   /** Mending: an orb repairs worn armor / an elytra with Mending (2 durability per point); what is left over is yours. */
   function collectXp(value: number) {
-    // Mending mends what you wear and what you hold (either hand)
-    const held = slots[selectedSlot];
-    const worn: ItemStack[] = [...armor, held, offhand].filter((st): st is ItemStack => !!st && enchLevel(st, 'mending') > 0 && (st.damage ?? 0) > 0);
+    // Mending mends what you wear, and a mace or spear in either hand (not swords, tools or bows)
+    const inHand = (st: ItemStack | null | undefined) => (st && (isSpear(st.id) || isMace(st.id)) ? st : null);
+    const worn: ItemStack[] = [...armor, inHand(slots[selectedSlot]), inHand(offhand)].filter((st): st is ItemStack => !!st && enchLevel(st, 'mending') > 0 && (st.damage ?? 0) > 0);
     let rest = value;
     if (worn.length) {
       const st = worn[Math.floor(Math.random() * worn.length)];
@@ -13487,7 +13626,7 @@ export function createVoxelGame(
         if (hitBlock || hitMob) { hit = true; break; }
         b.pos.copy(next);
       }
-      if (hit) shatterBottle(b.pos, b.potion);
+      if (hit) { hitTargetNear(b.pos, b.vel, 5); shatterBottle(b.pos, b.potion); }
       if (hit || b.pos.y < -20 || b.life > 10) { scene.remove(b.mesh); if (b.potion !== undefined) (b.mesh.material as THREE.Material).dispose(); bottles.splice(i, 1); continue; }
       b.mesh.position.copy(b.pos);
       b.mesh.rotation.x += dt * 9;
@@ -13870,6 +14009,17 @@ export function createVoxelGame(
     playSfx('bow', m.pos);
   }
 
+  let spikeTimer = 0;
+  /** Spike Blocks hurt whatever stands on them (you, and any mob), every half second. */
+  function tickSpikes(dt: number) {
+    spikeTimer -= dt;
+    if (spikeTimer > 0) return;
+    spikeTimer = 0.5;
+    const below = (p: THREE.Vector3) => world.getWorldBlock(Math.floor(p.x), Math.floor(p.y - 0.05), Math.floor(p.z)) === BLOCK_SPIKES;
+    if (!dead && (mode === 'survival' || mode === 'adventure') && !isFlying && below(playerFeet())) { playerHurtCooldown = 0; hurtPlayer(2, null, 0, 'Spikes'); }
+    for (const m of mobs) if (m.deathTime < 0 && m.health > 0 && below(m.pos)) hurtMob(m, 2, m.pos, 0, true, false, false);
+  }
+
   function updateArrows(dt: number) {
     for (let i = arrows.length - 1; i >= 0; i--) {
       const a = arrows[i];
@@ -13943,6 +14093,7 @@ export function createVoxelGame(
         if (isSolid(hitCell) && (!isStepBlock(hitCell) || insideStep(hitCell, Math.floor(next.x), Math.floor(next.y), Math.floor(next.z), next.x, next.y, next.z))) {
           a.stuck = true;
           a.life = 0;
+          hitTarget(Math.floor(next.x), Math.floor(next.y), Math.floor(next.z), 10);
           playSfx('arrowHit', a.pos);
           break;
         }
@@ -14639,6 +14790,7 @@ export function createVoxelGame(
         if (!bc.generated) world.generateChunk(bc);
         chunkLoaded = true;
       }
+      { const seen = far < Math.max(40, renderDistance * CHUNK_SIZE); if (m.model.root.visible !== seen) m.model.root.visible = seen; } // out in the fog: not drawn at all
       const persistent = m.kind === 'hollow_tyrant' || m.kind === 'bot' || !!m.persistent; // a boss, a minigame player or a shopkeeper never just vanishes
       if (!persistent && (!chunkLoaded || far > (infoOf(m).hostile ? 64 : 96))) { removeMob(i); continue; }
       if (!chunkLoaded && m.kind !== 'hollow_tyrant') continue; // wait (frozen) until the ground under it is loaded again
@@ -15179,6 +15331,7 @@ export function createVoxelGame(
     }
     if (b >= BLOCK_TORCH_WALL && b < BLOCK_TORCH_CEILING) { const [dx, dz] = SIDES[b - BLOCK_TORCH_WALL]; return [x + dx, y, z + dz]; }
     if (b === BLOCK_TORCH_CEILING) return [x, y + 1, z];
+    if (isLadder(b)) { const [dx, dz] = SIDES[ladderSide(b)]; return [x + dx, y, z + dz]; }
     if (isLever(b) || isButton(b) || isRedstoneTorch(b)) {
       const a = attachOf(b);
       if (a === 0) return [x, y - 1, z];
@@ -15476,6 +15629,61 @@ export function createVoxelGame(
   let rsAuthority = true;
   let rsTimer = 0;
   let rsTick = 0;
+  const rsTrapCooldown = new Map<string, number>(); // ticks (0.1 s) until an Arrow Trap may fire again
+  /** Is there a clear line from a to b (no solid block in between)? */
+  function trapSees(a: THREE.Vector3, b: THREE.Vector3): boolean {
+    const d = b.clone().sub(a), len = d.length();
+    if (len < 0.5) return true;
+    d.multiplyScalar(1 / len);
+    for (let t = 0.9; t < len - 0.4; t += 0.4) {
+      if (isSolid(world.getWorldBlock(Math.floor(a.x + d.x * t), Math.floor(a.y + d.y * t), Math.floor(a.z + d.z * t)))) return false;
+    }
+    return true;
+  }
+  /** An Arrow Trap at (x,y,z) shoots at the nearest hostile mob or at you (within ARROW_TRAP_RANGE, in sight). Returns whether it fired. */
+  function fireArrowTrap(x: number, y: number, z: number): boolean {
+    const from = new THREE.Vector3(x + 0.5, y + 0.5, z + 0.5);
+    let best: { pos: THREE.Vector3; mob: Mob | null } | null = null;
+    let bestD = ARROW_TRAP_RANGE * ARROW_TRAP_RANGE;
+    const consider = (p: THREE.Vector3, mob: Mob | null) => {
+      const d = p.distanceToSquared(from);
+      if (d < bestD && trapSees(from, p)) { bestD = d; best = { pos: p, mob }; }
+    };
+    for (const m of mobs) if (m.deathTime < 0 && m.health > 0 && infoOf(m).hostile) consider(m.pos.clone().add(new THREE.Vector3(0, 1.0, 0)), m);
+    if (!dead && (mode === 'survival' || mode === 'adventure')) consider(playerFeet().add(new THREE.Vector3(0, 1.0, 0)), null);
+    const pick = best as { pos: THREE.Vector3; mob: Mob | null } | null;
+    if (!pick) return false;
+    const d = pick.pos.clone().sub(from);
+    const dh = Math.hypot(d.x, d.z);
+    const speed = 24;
+    const t = Math.max(0.05, Math.max(dh, 0.5) / speed);
+    const vel = new THREE.Vector3(d.x / t, d.y / t + 0.5 * 20 * t, d.z / t);
+    const dir = d.clone().normalize();
+    const start = from.clone().addScaledVector(dir, 0.9);
+    const { mesh } = buildArrow(false);
+    mesh.position.copy(start);
+    scene.add(mesh);
+    arrows.push({ mesh, pos: start, vel, life: 0, stuck: false, owner: pick.mob ? 'player' : 'mob', damage: 3, cause: 'Arrow trap', free: true });
+    playSfx('bow', from);
+    engineEvent('arrowTrapFired', { x, y, z, target: pick.mob ? { id: pick.mob.id, type: pick.mob.kind } : { type: 'player' } });
+    return true;
+  }
+  const rsTargetTimers = new Map<string, number>(); // ticks (0.1 s) before a hit Target goes quiet
+  /** Something hit this cell: a Target there gives power for `ticks` redstone ticks. */
+  function hitTarget(x: number, y: number, z: number, ticks = 10): boolean {
+    const b = world.getWorldBlock(x, y, z);
+    if (!isTarget(b)) return false;
+    rsTargetTimers.set(`${x},${y},${z}`, ticks);
+    if (b === BLOCK_TARGET) { setBlockAndNotify(x, y, z, BLOCK_TARGET + 1); rebuildAround(x, z); playSfx('ding', new THREE.Vector3(x + 0.5, y + 0.5, z + 0.5)); engineEvent('targetHit', { x, y, z }); }
+    return true;
+  }
+  /** A projectile stopped at `pos` going along `vel`: did it hit a Target (the cell it is in, or the one just ahead)? */
+  function hitTargetNear(pos: THREE.Vector3, vel: THREE.Vector3, ticks = 10): boolean {
+    if (hitTarget(Math.floor(pos.x), Math.floor(pos.y), Math.floor(pos.z), ticks)) return true;
+    const l = vel.length();
+    if (l < 1e-6) return false;
+    return hitTarget(Math.floor(pos.x + vel.x / l * 0.5), Math.floor(pos.y + vel.y / l * 0.5), Math.floor(pos.z + vel.z / l * 0.5), ticks);
+  }
   const rsButtonTimers = new Map<string, number>(); // ticks before a pressed button pops back out
   const rsPlateTimers = new Map<string, number>(); // ticks a plate stays down after you step off
   const rsRepeaterPending = new Map<string, { out: boolean; ticks: number }>();
@@ -15664,6 +15872,7 @@ export function createVoxelGame(
     /** Does component b at (x,y,z) give power straight into the neighbouring cell (tx,ty,tz)? */
     const emitsInto = (b: number, x: number, y: number, z: number, tx: number, ty: number, tz: number): boolean => {
       if (b === BLOCK_REDSTONE_BLOCK) return true;
+      if (isTarget(b)) return b === BLOCK_TARGET + 1;
       if (isLever(b) || isButton(b) || isPlate(b)) return switchOn(b);
       if (isRedstoneTorch(b)) {
         if (!switchOn(b)) return false;
@@ -15735,6 +15944,9 @@ export function createVoxelGame(
       if (isButton(b) && switchOn(b)) {
         const t = (rsButtonTimers.get(k) ?? 10) - 1;
         if (t <= 0) { rsButtonTimers.delete(k); changes.set(k, b - 1); } else rsButtonTimers.set(k, t);
+      } else if (b === BLOCK_TARGET + 1) {
+        const t = (rsTargetTimers.get(k) ?? 1) - 1; // a hit target stays powered for a moment, then goes quiet
+        if (t <= 0) { rsTargetTimers.delete(k); changes.set(k, BLOCK_TARGET); } else rsTargetTimers.set(k, t);
       } else if (isPlate(b)) {
         const occ = plateOccupied(x, y, z);
         if (occ) { rsPlateTimers.set(k, 5); if (!switchOn(b)) changes.set(k, BLOCK_PRESSURE_PLATE + 1); }
@@ -15820,6 +16032,12 @@ export function createVoxelGame(
       } else if (isLamp(b)) {
         const lit = receives(x, y, z);
         if (lit !== switchOn(b)) changes.set(k, lit ? BLOCK_REDSTONE_LAMP + 1 : BLOCK_REDSTONE_LAMP);
+      } else if (isArrowTrap(b)) {
+        const on = receives(x, y, z);
+        if (on !== (b === BLOCK_ARROW_TRAP + 1)) changes.set(k, on ? BLOCK_ARROW_TRAP + 1 : BLOCK_ARROW_TRAP);
+        const cd = (rsTrapCooldown.get(k) ?? 0) - 1;
+        if (on && cd <= 0) { if (fireArrowTrap(x, y, z)) rsTrapCooldown.set(k, 12); } // a shot every ~1.2 s while it has power and something to shoot at
+        else if (cd > 0) rsTrapCooldown.set(k, cd); else rsTrapCooldown.delete(k);
       } else if (isComparator(b)) {
         // back input minus (subtract) or against (compare) the strongest side input
         const f = comparatorFacing(b), [dx, dz] = SIDES[f];
@@ -16249,7 +16467,7 @@ export function createVoxelGame(
     const fx = isHead ? x - ddx : x, fz = isHead ? z - ddz : z, hx = fx + ddx, hz = fz + ddz;
     const top = y + 0.5625; // the mattress is 9/16 of a block tall
     sleeping = { bx: x, by: y, bz: z, fx, fz, hx, hz, top, eye: new THREE.Vector3(hx + 0.5, top + 0.3, hz + 0.5), lieYaw: Math.atan2(ddx, ddz), t: 0 };
-    isFlying = false; stopGlide(); velocityY = 0; isMining = false; swordBlocking = false; bowDrawing = false; eatingItem = null; eatTimer = 0; eatHold = false; scriptZoom = 1;
+    isFlying = false; stopGlide(); velocityY = 0; isMining = false; rightHeldRepeat = false; swordBlocking = false; bowDrawing = false; eatingItem = null; eatTimer = 0; eatHold = false; scriptZoom = 1;
     camera.position.copy(sleeping.eye);
     yaw = sleeping.lieYaw; pitch = 0.45; // looking up at the ceiling along the bed
     if (document.pointerLockElement) document.exitPointerLock(); // so you can click Leave Bed and Chat
@@ -16454,7 +16672,7 @@ export function createVoxelGame(
     if (bubbleTimer < 0.05) return;
     bubbleTimer = 0;
     const px = camera.position.x, py = camera.position.y, pz = camera.position.z;
-    for (let n = 0; n < 24 && particles.length < 380; n++) {
+    for (let n = 0; n < 24 && particles.length < Math.min(380, particleCap() - 20); n++) {
       const x = Math.floor(px + (Math.random() * 2 - 1) * 10), z = Math.floor(pz + (Math.random() * 2 - 1) * 10), y = Math.floor(py + (Math.random() * 2 - 1) * 8);
       const col = bubbleColumn(x + 0.5, y + 0.5, z + 0.5);
       if (!col) continue;
@@ -16945,7 +17163,7 @@ export function createVoxelGame(
         const hitMob = !p.stasis && mobs.some((mm) => mm.deathTime < 0 && Math.abs(next.x - mm.pos.x) < infoOf(mm).width / 2 + 0.1
           && Math.abs(next.z - mm.pos.z) < infoOf(mm).width / 2 + 0.1 && next.y > mm.pos.y && next.y < mm.pos.y + infoOf(mm).height);
         if (hitBlock && p.stasis) { p.vel.set(0, 0, 0); break; } // it rests against the floor or ceiling of its column
-        if (hitBlock || hitMob) { landed = true; break; }
+        if (hitBlock || hitMob) { landed = true; if (hitBlock) hitTargetNear(next, p.vel, 5); break; }
         p.pos.copy(next);
       }
       if (landed && p.boat && riding === p.boat) pearlBoat(p.boat, p.pos);
@@ -17268,7 +17486,7 @@ export function createVoxelGame(
         if (isSolid(world.getWorldBlock(Math.floor(next.x), Math.floor(next.y), Math.floor(next.z)))) { landed = true; break; }
         t.pos.copy(next);
       }
-      if (landed) throwableLands(t, hitMob);
+      if (landed) { if (!hitMob) hitTargetNear(t.pos, t.vel, 5); throwableLands(t, hitMob); }
       if (landed || t.pos.y < -20 || t.life > 8) { scene.remove(t.sprite); throwables.splice(i, 1); continue; }
       t.sprite.position.copy(t.pos);
     }
@@ -17901,6 +18119,7 @@ export function createVoxelGame(
             entity: victim ? { id: victim.id, type: victim.kind } : null,
             block: blockHit ? { x: Math.floor(next.x), y: Math.floor(next.y), z: Math.floor(next.z) } : null,
           });
+          if (blockHit) hitTarget(Math.floor(next.x), Math.floor(next.y), Math.floor(next.z), 10);
           if (p.explosion > 0) explode(p.pos.clone(), p.explosion, p.cause, p.ownerKind ? (mm) => mm.kind === p.ownerKind : undefined, p.maxDamage);
           // effects (the Hollow Tyrant's skulls give Blight): a direct hit, or caught in the blast
           if (p.effect && canBeAttacked() && (playerHit || playerFeet().add(new THREE.Vector3(0, 0.9, 0)).distanceTo(next) < p.explosion * 2)) giveEffect(p.effect.name, p.effect.seconds, p.effect.level);
@@ -17930,7 +18149,7 @@ export function createVoxelGame(
     return t0;
   }
 
-  function raycastWorld(origin: [number, number, number] | null, direction: [number, number, number] | null, maxDist: number, hitEntities: boolean, hitBlocks: boolean): RayHit | null {
+  function raycastWorld(origin: [number, number, number] | null, direction: [number, number, number] | null, maxDist: number, hitEntities: boolean, hitBlocks: boolean, shot = false): RayHit | null {
     const o = origin ? new THREE.Vector3(...origin) : camera.position.clone();
     const d = direction ? new THREE.Vector3(...direction) : (() => { const v = new THREE.Vector3(); camera.getWorldDirection(v); return v; })();
     if (d.lengthSq() < 1e-9) return null;
@@ -17958,6 +18177,7 @@ export function createVoxelGame(
         }
       }
     }
+    if (shot && best && best.type === 'block' && best.block) hitTarget(best.block.x, best.block.y, best.block.z, 10); // a bullet hit a Target
     return best;
   }
 
@@ -18962,7 +19182,7 @@ export function createVoxelGame(
       pendingLoads.sort((a, b) => ((a[0] - pcx) ** 2 + (a[1] - pcz) ** 2) - ((b[0] - pcx) ** 2 + (b[1] - pcz) ** 2));
 
       // Unload chunks outside render distance
-      const unloadMargin = 2;
+      const unloadMargin = lowMemory || graphicsQuality === 'low' ? 1 : 2; // fewer chunks kept in memory on weak machines
       const toUnload: Array<[number, number]> = [];
       for (const k of loadedChunks) {
         const [cx, cz] = k.split(',').map(Number);
@@ -18972,9 +19192,11 @@ export function createVoxelGame(
     }
 
     // Load a few per frame to avoid stutter
-    const MAX_LOADS_PER_FRAME = 3;
+    // ...fewer when the frame rate is already low, and never more than ~7 ms of work in one frame
+    const MAX_LOADS_PER_FRAME = fps > 0 && fps < 24 ? 1 : fps > 0 && fps < 40 ? 2 : 3;
+    const loadStart = performance.now();
     let loaded = 0;
-    while (pendingLoads.length && loaded < MAX_LOADS_PER_FRAME) {
+    while (pendingLoads.length && loaded < MAX_LOADS_PER_FRAME && (loaded === 0 || performance.now() - loadStart < 7)) {
       const [cx, cz] = pendingLoads.shift()!;
       if (loadedChunks.has(world.key(cx, cz))) continue;
       if (Math.sqrt((cx - pcx) ** 2 + (cz - pcz) ** 2) > rd + 0.5) continue; // you've moved on
@@ -19114,6 +19336,12 @@ export function createVoxelGame(
       digSoundTimer = 0; // the scratchy dig sound starts right away
     } else if (e.button === 2) {
       e.preventDefault();
+      if (mode !== 'spectator' && !crouchNow) { // a mod block that wants right-clicks (waystones, furniture...)
+        const uh = raycastBlock();
+        const ub = uh ? world.getWorldBlock(uh.x, uh.y, uh.z) : BLOCK_AIR;
+        const ud = CUSTOM_BLOCKS.get(ub);
+        if (uh && ud?.use) { engineEvent('blockUse', { x: uh.x, y: uh.y, z: uh.z, block: ud.key }); return; }
+      }
       const vill = mode !== 'spectator' ? mobInSight(4) : null;
       const boatHit = mode !== 'spectator' && !riding ? boatInSight(4.5) : null;
       if (boatHit && heldItem !== ITEM_BOAT) { enterBoat(boatHit); return; }
@@ -19140,6 +19368,7 @@ export function createVoxelGame(
         }
       }
       placeBlock();
+      if (heldItem !== null && isBlockId(heldItem) && !isUseBlock(((): number => { const h = raycastBlock(); return h ? world.getWorldBlock(h.x, h.y, h.z) : BLOCK_AIR; })())) { rightHeldRepeat = true; rightRepeatTimer = 0.35; } // hold to keep placing
     }
   }
 
@@ -19310,6 +19539,29 @@ export function createVoxelGame(
     }
     if (heldItem !== null && isSignBlock(heldItem)) { placeSign(hit, target); return; }
     if (heldItem !== null && placeSpecial(hit, target)) return;
+    // Ladders go on the side of a solid wall. Click a ladder with another to carry it up (or down) the same wall.
+    if (heldItem !== null && isLadder(heldItem)) {
+      const full = (b: number) => isSolid(b) && !hasShape(b);
+      const baseId = isIronLadder(heldItem) ? BLOCK_IRON_LADDER : BLOCK_LADDER;
+      let lx: number, ly: number, lz: number, ladder = -1;
+      if (isLadder(target)) {
+        const [wx, wz] = SIDES[ladderSide(target)];
+        lx = hit.x; lz = hit.z; ly = hit.y + (lastHitFrac.y >= 0.5 ? 1 : -1);
+        if (full(world.getWorldBlock(lx + wx, ly, lz + wz))) ladder = baseId + ladderSide(target);
+      } else {
+        lx = hit.placeX; ly = hit.placeY; lz = hit.placeZ;
+        const side = SIDES.findIndex(([a, c]) => a === hit.x - lx && c === hit.z - lz);
+        if (hit.y === ly && side >= 0 && full(target)) ladder = baseId + side;
+      }
+      if (ladder < 0 || !isReplaceable(world.getWorldBlock(lx, ly, lz)) || ly < 0 || ly >= CHUNK_HEIGHT) { showHint('Ladders go on the side of a solid wall'); return; }
+      setBlockAndNotify(lx, ly, lz, ladder);
+      rebuildAround(lx, lz);
+      playBlockSound(isIronLadder(ladder) ? BLOCK_IRON_BLOCK : ITEM_PLANKS, new THREE.Vector3(lx + 0.5, ly + 0.5, lz + 0.5), 'place');
+      blockEventCallback?.('place', lx, ly, lz, ladder);
+      consumeHeld(1);
+      punchPhase = PUNCH_DURATION;
+      return;
+    }
     // Torches stand on the ground, lean on a wall, or hang under a block
     if (heldItem === BLOCK_TORCH) {
       const [tx, ty, tz] = isSoftTarget(target) ? [hit.x, hit.y, hit.z] : [hit.placeX, hit.placeY, hit.placeZ];
@@ -19415,6 +19667,7 @@ export function createVoxelGame(
       leftUseDown = false;
       if (heldItem !== null) engineEvent('itemAttack', { item: heldItem, pressed: false });
     }
+    if (e.button === 2) rightHeldRepeat = false;
     if (e.button === 2 && rightUseDown) {
       rightUseDown = false;
       if (heldItem !== null) engineEvent('itemUseEnd', { item: heldItem });
@@ -19519,7 +19772,13 @@ export function createVoxelGame(
     // Cobwebs: you crawl through them (and fall slowly), until you cut them away
     const webX = Math.floor(camera.position.x), webZ = Math.floor(camera.position.z);
     inWeb = !noclip && !isFlying && (world.getWorldBlock(webX, Math.floor(camera.position.y - PLAYER_EYE + 0.1), webZ) === BLOCK_COBWEB || world.getWorldBlock(webX, Math.floor(camera.position.y - 0.2), webZ) === BLOCK_COBWEB);
-    const fluidSlow = (inFluidNow === 'water' ? 0.6 : inFluidNow === 'lava' ? 0.45 : 1) * (onSoulSand ? 0.55 : 1) * (inWeb ? 0.18 : 1);
+    // Ladders: the player's feet or middle are in a ladder's cell
+    {
+      const ladFeet = camera.position.y - PLAYER_EYE;
+      const lb = !noclip && !isFlying && !riding && !gliding && !dead ? [0.05, 0.9].map((o) => world.getWorldBlock(webX, Math.floor(ladFeet + o), webZ)).find(isLadder) : undefined;
+      onLadder = lb === undefined ? 0 : isIronLadder(lb) ? 2 : 1;
+    }
+    const fluidSlow = (inFluidNow === 'water' ? 0.6 : inFluidNow === 'lava' ? 0.45 : 1) * (onSoulSand ? 0.55 : 1) * (inWeb ? 0.18 : 1) * (onLadder ? 0.6 : 1);
     const speed = isFlying ? FLY_BASE_SPEED * (noclip ? 2.6 : 2.2) * (flySprint ? FLY_SPRINT_MULT : 1) : walkSpeed * fluidSlow;
     const forward = new THREE.Vector3();
     const right = new THREE.Vector3();
@@ -19644,9 +19903,11 @@ export function createVoxelGame(
       if (r.bz) slideVel.z = 0;
     }
     if (gliding) { moveVec.set(0, 0, 0); slideVel.set(0, 0, 0); playerKnock.set(0, 0, 0); }
+    let walkBlocked = false; // pushing against a wall: on a ladder that climbs
     if (moveVec.lengthSq() > 0 && !riding) {
       moveVec.normalize().multiplyScalar(speed * delta);
-      moveHoriz(moveVec.x, moveVec.z, true, stuckInside);
+      const wr = moveHoriz(moveVec.x, moveVec.z, true, stuckInside);
+      walkBlocked = wr.bx || wr.bz;
     }
     // Knockback from mobs and explosions
     if (playerKnock.lengthSq() > 0.01) {
@@ -19735,7 +19996,7 @@ export function createVoxelGame(
     // approach caused a teleport-up glitch: moving even slightly toward a
     // taller neighboring column mid-fall would suddenly report a much
     // higher "floor" and snap the player up into it.
-    if (!inFluidNow && !wasGrounded && down('jump') && !jumpPrev && !inventoryOpen && mode !== 'spectator' && elytraReady() && !inWeb && !arenaFrozen()) {
+    if (!inFluidNow && !wasGrounded && down('jump') && !jumpPrev && !inventoryOpen && mode !== 'spectator' && elytraReady() && !inWeb && !onLadder && !arenaFrozen()) {
       // Jump again in the air with an elytra on: spread the wings
       const gl = new THREE.Vector3(); camera.getWorldDirection(gl);
       const lh = Math.hypot(gl.x, gl.z) || 1;
@@ -19763,6 +20024,14 @@ export function createVoxelGame(
       if (inWeb) { velocityY = Math.max(-1.2, Math.min(velocityY, 1.5)); fallPeakY = camera.position.y; } // stuck in a web: a slow slide, no fall damage
     }
     if (velocityY < -45) velocityY = -45; // terminal velocity
+    if (onLadder && !inFluidNow) {
+      // On a ladder: Space (or walking into the wall) climbs, the crouch key hangs on, otherwise you slide down. No fall damage.
+      const iron = onLadder === 2;
+      if (!inventoryOpen && !arenaFrozen() && (down('jump') || walkBlocked)) velocityY = iron ? IRON_LADDER_UP_SPEED : LADDER_UP_SPEED;
+      else if (crouching) velocityY = 0;
+      else velocityY = -(iron ? IRON_LADDER_SLIDE_SPEED : LADDER_SLIDE_SPEED);
+      fallPeakY = camera.position.y;
+    }
     // Stairs and slabs: walking into one lifts you onto it (no jumping needed)
     if (!inFluidNow && velocityY <= 2) {
       const up = stepUpTop(camera.position.x, camera.position.z, camera.position.y - PLAYER_EYE);
@@ -19818,7 +20087,7 @@ export function createVoxelGame(
     if (isGrounded) {
       camera.position.y = (landTop as number) + PLAYER_EYE;
       velocityY = 0;
-      if (down('jump') && !arenaFrozen()) velocityY = JUMP_FORCE + effectLevel('jump_boost') * 1.8;
+      if (down('jump') && !arenaFrozen() && !onLadder) velocityY = JUMP_FORCE + effectLevel('jump_boost') * 1.8;
     } else {
       camera.position.y = nextY;
     }
@@ -19830,8 +20099,9 @@ export function createVoxelGame(
     // Sprinting burns hunger 3x faster
     hungerTimer += delta * (sprintingNow ? 3 : 1);
     if (hunger >= 18 && health > 0 && health < 20) {
+      // 9 bars: one heart-half every 4 seconds; 9.5 bars or a full bar: every 2 seconds
       regenTimer += delta;
-      if (regenTimer >= 4) { regenTimer = 0; setStats(health + 1, hunger); }
+      if (regenTimer >= (hunger >= 19 ? REGEN_FAST_SECS : REGEN_SLOW_SECS)) { regenTimer = 0; setStats(health + 1, hunger); }
     } else {
       regenTimer = 0;
     }
@@ -19990,7 +20260,7 @@ export function createVoxelGame(
       } else {
         const eatBob = Math.sin(eatTimer * 22) * 0.03 * eatLerp; // the food comes up to your mouth and jiggles as you chew
         heldMesh.position.set(heldBase.x - 0.12 * sw - 0.12 * draw - 0.3 * eatLerp + hbx + idleX + 0.05 * eq, heldBase.y + 0.05 * sw + 0.32 * eatLerp + eatBob + hby + idleY + spY - 0.6 * eq, heldBase.z - 0.25 * sw + 0.12 * draw + 0.28 * eatLerp + 0.03 * sprintLerp);
-        const rest = heldItem === ITEM_BOW ? [0.05 + 0.08 * draw, -0.55 + 0.1 * draw, 0.5] : blockFaces(heldItem!) ? [0.1, Math.PI / 4, 0] : [-0.25, -0.6, 1.0];
+        const rest = heldItem === ITEM_BOW ? [0.05 + 0.08 * draw, -0.35 + 0.1 * draw, 0.42] : blockFaces(heldItem!) ? [0.1, Math.PI / 4, 0] : [-0.25, -0.6, 1.0];
         heldMesh.rotation.set(rest[0] - 0.35 * sw - 0.5 * spR + 0.9 * eq - 0.5 * eatLerp, rest[1] + 0.15 * sw + 0.4 * eatLerp, rest[2] + idleR);
       }
     }
@@ -20063,6 +20333,7 @@ export function createVoxelGame(
     updateFluids(delta);
     updateMobs(delta);
     updateArrows(delta);
+    tickSpikes(delta);
     updateParticles(delta);
     updateBubbleColumns(delta);
     updateFootsteps();
@@ -20079,7 +20350,14 @@ export function createVoxelGame(
 
     // --- Block breaking (mining) ---
     if (!isMining) peelLock = false;
-    if (engaged() && isMining && !peelLock && (mode === 'survival' || mode === 'creative')) {
+    if (breakCooldown > 0) breakCooldown = Math.max(0, breakCooldown - delta);
+    if (!isMining) breakCooldown = Math.min(breakCooldown, 0.05); // a fresh click is never held up for long
+    // Holding right-click keeps placing blocks, like left-click keeps mining (bridging)
+    if (rightHeldRepeat) {
+      if (!engaged() || mode === 'spectator' || heldItem === null || !isBlockId(heldItem) || !slots[selectedSlot] && mode !== 'creative') rightHeldRepeat = false;
+      else { rightRepeatTimer -= delta; if (rightRepeatTimer <= 0) { rightRepeatTimer = 0.2; const rh = raycastBlock(); if (rh && isUseBlock(world.getWorldBlock(rh.x, rh.y, rh.z))) rightHeldRepeat = false; else placeBlock(); } }
+    }
+    if (engaged() && isMining && !peelLock && breakCooldown <= 0 && (mode === 'survival' || mode === 'creative')) {
       const hit = raycastBlock();
       if (hit) {
         if (!miningTarget || hit.x !== miningTarget.x || hit.y !== miningTarget.y || hit.z !== miningTarget.z) {
@@ -20168,6 +20446,7 @@ export function createVoxelGame(
           miningProgress = 0;
           miningFraction = 0;
           crackMesh.visible = false;
+          breakCooldown = mode === 'creative' ? 0.25 : 0.12;
         }
       } else {
         miningTarget = null;
@@ -20274,7 +20553,7 @@ export function createVoxelGame(
   // --- Render distance control ---
 
   function setRenderDistance(rd: number) {
-    renderDistance = Math.max(2, Math.min(12, rd));
+    renderDistance = Math.max(2, Math.min(lowMemory ? LOW_MEMORY_MAX_RENDER_DISTANCE : 12, rd));
     updateFog();
     // Force chunk update on next frame
     currentChunkX = Infinity;
@@ -20509,7 +20788,7 @@ export function createVoxelGame(
     chatOpen = open;
     if (open) {
       for (const k of Object.keys(keys)) keys[k] = false; // stop walking
-      isMining = false;
+      isMining = false; rightHeldRepeat = false;
       miningTarget = null;
       miningProgress = 0;
       crackMesh.visible = false;
@@ -20537,7 +20816,7 @@ export function createVoxelGame(
     wasGrounded = true;
     fallPeakY = camera.position.y;
     fistMesh.visible = m !== 'spectator'; // spectators have no visible body
-    isMining = false;
+    isMining = false; rightHeldRepeat = false;
     crackMesh.visible = false;
     if (m === 'creative' || m === 'spectator') setStats(20, 20);
   }
@@ -20642,7 +20921,7 @@ export function createVoxelGame(
       yaw: (((-yaw * 180) / Math.PI) % 360 + 360) % 360,
       pitch: (-pitch * 180) / Math.PI,
       biome: world.getBiome(bx, bz), dimension, mode, flying: isFlying,
-      loadedChunks: loadedChunks.size, renderDistance, graphics: graphicsQuality, fps,
+      loadedChunks: loadedChunks.size, renderDistance, graphics: graphicsQuality, fps, particles: particles.length,
       target,
       mobs: mobs.length,
       seed: effectiveSeed,

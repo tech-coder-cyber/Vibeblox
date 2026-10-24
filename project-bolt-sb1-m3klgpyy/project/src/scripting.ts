@@ -566,10 +566,10 @@ export const OFFICIAL_MODS: Mod[] = [
     name: 'Guns',
     author: 'VibeBlox',
     official: true,
-    description: 'Ten guns (Pistol, Revolver, Desert Eagle, SMG, AK-47, M4, Pump Shotgun, Sawed-Off, AWP...) plus grenades and flashbangs. Left-click shoots, right-click aims (the AWP scopes in); right-click throws grenades and flashbangs.',
+    description: 'Ten guns (Pistol, Revolver, Desert Eagle, SMG, AK-47, M4, Pump Shotgun, Sawed-Off, AWP...) plus grenades and flashbangs. Shotguns use their own shotgun shells (gunpowder + iron). Left-click shoots, right-click aims (the AWP scopes in); right-click throws grenades and flashbangs.',
     code: `// Guns: Desert Eagle, AK-47, Sawed-Off and AWP, plus grenades and flashbangs.
 // Left-click shoots (hold it with the AK-47), right-click aims; the AWP scopes in.
-// Bullets are crafted from an iron ingot + coal (smelt the ore in a furnace first).
+// Bullets are crafted from an iron ingot + coal (smelt the ore in a furnace first); the shotguns use shotgun shells (gunpowder + iron ingot).
 const PAL = {"K": "#0e1012", "a": "#e6eaef", "A": "#b5bcc5", "z": "#848c97", "Z": "#585f69", "m": "#6d737c", "M": "#454a52", "N": "#26292e", "p": "#55585e", "P": "#33353a", "Q": "#1b1c1f", "w": "#cf8a4c", "W": "#a1612d", "V": "#6e3f1b", "o": "#7c9a52", "O": "#566f38", "U": "#37491f", "y": "#f4d567", "Y": "#c79b2f", "l": "#c8e8ff", "L": "#4e8fec", "I": "#1f4380", "r": "#d9432b"};
 const ART = {
   deagle: [
@@ -738,8 +738,8 @@ const MORE_GUNS = {
     spread: 0.055, aimSpread: 0.025, range: 45, recoil: 0.014, zoom: 0.85, knockback: 0.2,
     lore: ['\\\\gray\\\\Sprays fast at close range.', '\\\\white\\\\Damage: \\\\gold\\\\3 \\\\gray\\\\| Full-auto, \\\\gold\\\\900 RPM', '\\\\white\\\\Hold left-click to spray'] },
   'guns:shotgun': { name: 'Pump Shotgun', art: 'shotgun', hold: 'two_hands', damage: 2.5, cooldown: 950, auto: false, pellets: 7,
-    spread: 0.09, aimSpread: 0.06, range: 22, recoil: 0.1, zoom: 0.9, knockback: 1.3,
-    lore: ['\\\\gray\\\\Pump action.', '\\\\white\\\\Damage: \\\\gold\\\\2.5 x 7 pellets', '\\\\white\\\\Great up close'] },
+    spread: 0.09, aimSpread: 0.06, range: 22, recoil: 0.1, zoom: 0.9, knockback: 1.3, ammo: 'guns:shell',
+    lore: ['\\\\gray\\\\Pump action.', '\\\\white\\\\Damage: \\\\gold\\\\2.5 x 7 pellets', '\\\\white\\\\Great up close', '\\\\yellow\\\\Loads shotgun shells'] },
   'guns:m4': { name: 'M4 Carbine', art: 'm4', hold: 'two_hands', damage: 4, cooldown: 80, auto: true, pellets: 1,
     spread: 0.026, aimSpread: 0.008, range: 90, recoil: 0.018, zoom: 0.72, knockback: 0.35,
     lore: ['\\\\gray\\\\Accurate and quick.', '\\\\white\\\\Damage: \\\\gold\\\\4 \\\\gray\\\\| Full-auto, \\\\gold\\\\750 RPM', '\\\\white\\\\Right-click to aim for tighter spread'] },
@@ -753,8 +753,8 @@ const GUNS = {
     spread: 0.035, aimSpread: 0.012, range: 80, recoil: 0.022, zoom: 0.78, knockback: 0.4,
     lore: ['\\\\gray\\\\Classic assault rifle.', '\\\\white\\\\Damage: \\\\gold\\\\5 \\\\gray\\\\| Full-auto, 600 RPM', '\\\\white\\\\Hold left-click to spray'] },
   'guns:sawed_off': { name: 'Sawed-Off', art: 'sawed', hold: 'two_hands', damage: 3, cooldown: 750, auto: false, pellets: 9,
-    spread: 0.12, aimSpread: 0.085, range: 18, recoil: 0.13, zoom: 0.9, knockback: 1.6,
-    lore: ['\\\\gray\\\\Double barrel, sawn short.', '\\\\white\\\\Damage: \\\\gold\\\\3 x 9 pellets', '\\\\white\\\\Brutal up close, useless far away'] },
+    spread: 0.12, aimSpread: 0.085, range: 18, recoil: 0.13, zoom: 0.9, knockback: 1.6, ammo: 'guns:shell',
+    lore: ['\\\\gray\\\\Double barrel, sawn short.', '\\\\white\\\\Damage: \\\\gold\\\\3 x 9 pellets', '\\\\white\\\\Brutal up close, useless far away', '\\\\yellow\\\\Loads shotgun shells'] },
   'guns:awp': { name: 'AWP', art: 'awp', hold: 'two_hands', damage: 20, cooldown: 1400, auto: false, pellets: 1,
     spread: 0.07, aimSpread: 0, range: 160, recoil: 0.12, zoom: 0.22, scope: true, knockback: 1.2,
     lore: ['\\\\gray\\\\Bolt-action sniper rifle.', '\\\\white\\\\Damage: \\\\gold\\\\20 \\\\gray\\\\| One shot, most mobs', '\\\\white\\\\Right-click to scope in', '\\\\red\\\\Wild without the scope'] },
@@ -766,10 +766,15 @@ game.items.register({ id: 'guns:bullet', name: 'Bullets', maxStack: 64,
   lore: ['\\\\gray\\\\Ammo for every gun.', '\\\\white\\\\Iron ingot + coal = 16'],
   icon: { palette: { b: '#c0c0c0', y: '#e3b341', Y: '#a8801f' }, pixels: [
     '', '', '', '...b....b....b..', '..bbb..bbb..bbb.', '..yyy..yyy..yyy.', '..yyy..yyy..yyy.', '..yyy..yyy..yyy.', '..yyy..yyy..yyy.', '..YYY..YYY..YYY.'] } });
+game.items.register({ id: 'guns:shell', name: 'Shotgun Shells', maxStack: 64,
+  lore: ['\\\\gray\\\\Ammo for the Pump Shotgun and the Sawed-Off.', '\\\\white\\\\Gunpowder + iron ingot = 8'],
+  icon: { palette: { r: '#c0392b', R: '#8e2a20', y: '#e3b341', Y: '#a8801f' }, pixels: [
+    '', '', '', '...r....r....r..', '..rrr..rrr..rrr.', '..rRr..rRr..rRr.', '..rrr..rrr..rrr.', '..rrr..rrr..rrr.', '..yyy..yyy..yyy.', '..YYY..YYY..YYY.'] } });
 for (const [id, g] of Object.entries(GUNS)) {
   game.items.register({ id, name: g.name, maxStack: 1, hold: g.hold, leftClick: 'use', lore: g.lore, icon: { palette: PAL, pixels: ART[g.art] } });
 }
 
+game.recipes.register({ id: 'shotgun_shells', pattern: ['G', 'I'], key: { G: 'gunpowder', I: 'iron_ingot' }, output: 'guns:shell', count: 8 });
 game.recipes.register({ id: 'bullets', pattern: ['I', 'C'], key: { I: 'iron_ingot', C: 'coal' }, output: 'guns:bullet', count: 16 });
 game.recipes.register({ id: 'deagle', pattern: ['III', 'I  '], key: { I: 'iron_ingot' }, output: 'guns:deagle' });
 game.recipes.register({ id: 'ak47', pattern: ['III', 'PIP'], key: { I: 'iron_ingot', P: 'planks' }, output: 'guns:ak47' });
@@ -793,13 +798,14 @@ async function fire(id) {
   const p = await game.player.get();
   if (!p.heldItem || p.heldItem.item !== id) { stopAuto(); return; }
   if (p.mode !== 'creative') {
-    if ((await game.player.countItem('guns:bullet')) < 1) {
+    const ammo = g.ammo || 'guns:bullet';
+    if ((await game.player.countItem(ammo)) < 1) {
       game.sounds.play('click');
-      game.gui.toast('Out of bullets! Craft them from iron ore + coal');
+      game.gui.toast(ammo === 'guns:shell' ? 'Out of shotgun shells! Craft them from gunpowder + iron' : 'Out of bullets! Craft them from iron ore + coal');
       stopAuto();
       return;
     }
-    game.player.removeItem('guns:bullet', 1);
+    game.player.removeItem(ammo, 1);
   }
   const steady = aiming === id;
   game.sounds.play('gunshot');
@@ -811,7 +817,7 @@ async function fire(id) {
     const sp = steady ? g.aimSpread : g.spread;
     const r = () => (Math.random() - 0.5) * 2 * sp;
     const dir = { x: p.look.x + r(), y: p.look.y + r(), z: p.look.z + r() };
-    const hit = await game.world.raycast(p.eye, dir, g.range);
+    const hit = await game.world.raycast(p.eye, dir, g.range, { shot: true });
     const len = Math.hypot(dir.x, dir.y, dir.z);
     const end = hit ? hit.point : { x: p.eye.x + (dir.x / len) * g.range, y: p.eye.y + (dir.y / len) * g.range, z: p.eye.z + (dir.z / len) * g.range };
     game.particles.line(mx, my, mz, end.x, end.y, end.z, { color: '#ffe08a' });
@@ -966,6 +972,275 @@ for (const m of meals) {
   game.items.register({ id: 'farmers:' + m.id, name: m.name, food: m.food, icon: m.icon });
   game.recipes.register({ id: m.id, pattern: m.pattern, key: m.key, output: 'farmers:' + m.id });
 }
+`,
+  },
+  {
+    id: 'waystones',
+    name: 'Waystones',
+    author: 'VibeBlox',
+    official: true,
+    description: 'Craft and place Waystones. Right-click one to wake it up, then right-click again to hop to the next waystone you have found. /waystone list, go, name and remove. Warp Scrolls take you back to the last waystone you used.',
+    code: `// Waystones: a network of teleport stones. Right-click a stone to wake it up; right-click it again to travel to the next one.
+const tex = (pal, fn) => ({ palette: pal, pixels: Array.from({ length: 16 }, (_, y) => Array.from({ length: 16 }, (_, x) => fn(x, y)).join('')) });
+const STONE = { d: '#3f434b', s: '#8a8f98', S: '#767b84', c: '#6fd6ff', C: '#e8fbff' };
+game.blocks.register({ id: 'waystones:waystone', name: 'Waystone', hardness: 3, tier: 1, use: true,
+  texture: tex(STONE, (x, y) => {
+    if (x === 0 || y === 0 || x === 15 || y === 15) return 'd';
+    const a = Math.abs(x - 7.5), b = Math.abs(y - 7.5);
+    if (a + b < 1.6 + 0.1) return 'C';
+    if (a + b > 2.4 && a + b < 4.1) return 'c';
+    return (x + y) % 5 === 0 ? 'S' : 's';
+  }) });
+game.items.register({ id: 'waystones:warp_scroll', name: 'Warp Scroll', maxStack: 16,
+  lore: ['\\\\gray\\\\Right-click to go back to the', '\\\\gray\\\\last waystone you used.', '\\\\white\\\\Used up when you read it'],
+  icon: tex({ p: '#f1e6c4', P: '#cdbd8a', c: '#6fd6ff', r: '#b3552a' }, (x, y) => {
+    if (x < 3 || x > 12 || y < 2 || y > 13) return '.';
+    if (y === 2 || y === 13) return 'P';
+    if (x === 3 || x === 12) return 'r';
+    const a = Math.abs(x - 7.5), b = Math.abs(y - 7.5);
+    return a + b < 3.2 ? 'c' : 'p';
+  }) });
+game.recipes.register({ id: 'waystone', pattern: ['SES', 'SSS'], key: { S: 'stone', E: 'ender_pearl' }, output: 'waystones:waystone' });
+game.recipes.register({ id: 'warp_scroll', pattern: ['P', 'E', 'P'], key: { P: 'paper', E: 'ender_pearl' }, output: 'waystones:warp_scroll', count: 2 });
+
+let ways = []; // { x, y, z, dim, name, on }
+let lastUsed = null; // index key of the last waystone you used
+let cursor = 0;
+let readyAt = 0;
+const keyOf = (w) => w.dim + ':' + w.x + ',' + w.y + ',' + w.z;
+async function load() { const d = await game.storage.get('ways'); if (d) { ways = d.ways || []; lastUsed = d.last || null; } }
+function save() { game.storage.set('ways', { ways, last: lastUsed }); }
+const find = (x, y, z, dim) => ways.find((w) => w.x === x && w.y === y && w.z === z && w.dim === dim);
+async function here() { const p = await game.player.get(); return { p, dim: p.dimension }; }
+
+game.on('scriptLoad', load);
+game.on('blockPlace', async (e) => {
+  if (e.block !== 'waystones:waystone' && e.block !== 'Waystone') return;
+  const { dim } = await here();
+  if (find(e.x, e.y, e.z, dim)) return;
+  ways.push({ x: e.x, y: e.y, z: e.z, dim, name: 'Waystone ' + (ways.length + 1), on: false });
+  save();
+  game.gui.toast('Waystone placed. Right-click it to wake it up.');
+});
+game.on('blockBreak', async (e) => {
+  if (e.block !== 'waystones:waystone') return;
+  const { dim } = await here();
+  const w = find(e.x, e.y, e.z, dim);
+  if (!w) return;
+  ways = ways.filter((o) => o !== w);
+  if (lastUsed === keyOf(w)) lastUsed = null;
+  save();
+  game.chat('\\\\gray\\\\Waystone "' + w.name + '" is gone.');
+});
+
+async function travel(w) {
+  const now = Date.now();
+  if (now < readyAt) { game.gui.toast('The waystone is still humming...'); return; }
+  readyAt = now + 2500;
+  game.world.spawnParticles('portal', w.x + 0.5, w.y + 1, w.z + 0.5, 20, 0.6, 0.5);
+  game.player.teleport(w.x + 0.5, w.y + 1.05, w.z + 0.5);
+  game.sounds.play('teleport');
+  lastUsed = keyOf(w);
+  save();
+  game.gui.title('', '\\\\aqua\\\\' + w.name, 2);
+}
+game.on('blockUse', async (e) => {
+  if (e.block !== 'waystones:waystone') return;
+  const { p, dim } = await here();
+  let w = find(e.x, e.y, e.z, dim);
+  if (!w) { w = { x: e.x, y: e.y, z: e.z, dim, name: 'Waystone ' + (ways.length + 1), on: false }; ways.push(w); }
+  if (!w.on) {
+    w.on = true;
+    lastUsed = keyOf(w);
+    save();
+    game.sounds.play('ding');
+    game.particles.spawn(e.x + 0.5, e.y + 1.2, e.z + 0.5, { color: '#6fd6ff', count: 24, speed: 2.5, size: 0.14, life: 0.8 });
+    game.gui.title('\\\\aqua\\\\Waystone found', w.name, 2.5);
+    game.chat('\\\\aqua\\\\' + w.name + ' \\\\gray\\\\is awake. Use /waystone name <new name> to rename it.');
+    return;
+  }
+  const others = ways.filter((o) => o.on && o.dim === dim && o !== w);
+  if (!others.length) { game.gui.toast('No other waystone is awake yet. Place and wake another one!'); return; }
+  cursor = (cursor + 1) % others.length;
+  const to = others[cursor];
+  travel(to);
+});
+game.on('itemUse', async (e) => {
+  if (e.item !== 'waystones:warp_scroll') return;
+  const { p, dim } = await here();
+  const w = ways.find((o) => keyOf(o) === lastUsed && o.dim === dim);
+  if (!w) { game.gui.toast('The scroll fizzles: no waystone to go back to here.'); return; }
+  if (p.mode !== 'creative') game.player.removeItem('waystones:warp_scroll', 1);
+  readyAt = 0;
+  travel(w);
+});
+
+game.commands.register('waystone', 'Waystones: /waystone list | go <number or name> | name <new name> | remove', async (args) => {
+  const sub = (args[0] || 'list').toLowerCase();
+  const { p, dim } = await here();
+  const mine = ways.filter((w) => w.on && w.dim === dim);
+  const near = mine.find((w) => Math.hypot(w.x + 0.5 - p.x, w.y - p.y, w.z + 0.5 - p.z) < 4);
+  if (sub === 'list') {
+    if (!mine.length) { game.chat('\\\\gray\\\\No waystones found here yet.'); return; }
+    mine.forEach((w, i) => game.chat('\\\\gold\\\\' + (i + 1) + '. \\\\white\\\\' + w.name + ' \\\\gray\\\\(' + w.x + ', ' + w.y + ', ' + w.z + ')'));
+    return;
+  }
+  if (sub === 'go') {
+    if (!near) { game.chat('\\\\red\\\\Stand next to an awake waystone first.'); return; }
+    const q = args.slice(1).join(' ').toLowerCase();
+    const n = Number(q);
+    const to = Number.isInteger(n) && n >= 1 ? mine[n - 1] : mine.find((w) => w.name.toLowerCase() === q) || mine.find((w) => w.name.toLowerCase().includes(q));
+    if (!to || !q) { game.chat('\\\\red\\\\No waystone like that. Try /waystone list'); return; }
+    travel(to);
+    return;
+  }
+  if (sub === 'name') {
+    const nm = args.slice(1).join(' ').slice(0, 24).trim();
+    if (!near || !nm) { game.chat('\\\\red\\\\Stand next to a waystone and type /waystone name <new name>'); return; }
+    near.name = nm; save(); game.chat('\\\\aqua\\\\Renamed to ' + nm);
+    return;
+  }
+  if (sub === 'remove') {
+    if (!near) { game.chat('\\\\red\\\\Stand next to the waystone you want to forget.'); return; }
+    near.on = false; save(); game.chat('\\\\gray\\\\The stone goes quiet. Right-click it to wake it again.');
+    return;
+  }
+  game.chat('\\\\gray\\\\/waystone list | go <number or name> | name <new name> | remove');
+});
+`,
+  },
+  {
+    id: 'furniture',
+    name: 'Furniture',
+    author: 'VibeBlox',
+    official: true,
+    description: 'Seven pieces to decorate with: Chair, Table, Sofa, Lamp, Clock, Cupboard and TV. Right-click a chair or sofa to sit and rest (a little healing), a clock to read the time, a TV to change channel.',
+    code: `// Furniture: decorate your house. Chairs and sofas let you rest, the clock tells the time, the TV has channels.
+const tex = (pal, fn) => ({ palette: pal, pixels: Array.from({ length: 16 }, (_, y) => Array.from({ length: 16 }, (_, x) => fn(x, y)).join('')) });
+const W = { w: '#b98a4e', W: '#9a6f3a', d: '#5e4020', l: '#d4a867', r: '#b32d2d', R: '#8a1f1f', k: '#1d1d22', b: '#3a7bd5', y: '#ffe07a', Y: '#d9a93a', g: '#9aa0a6', G: '#5e646b', c: '#f2f2ec', n: '#2a2a30' };
+const woodBase = (x, y) => (y % 4 === 3 ? 'W' : (x + y * 3) % 7 === 0 ? 'l' : 'w');
+const edge = (x, y) => x === 0 || y === 0 || x === 15 || y === 15;
+const PIECES = {
+  chair:    { name: 'Wooden Chair', use: true, hard: 1, tex: (x, y) => edge(x, y) ? 'd' : (y < 6 && x > 3 && x < 12) ? 'W' : (y > 9 && (x < 3 || x > 12)) ? 'd' : (y >= 6 && y <= 9) ? 'l' : woodBase(x, y) },
+  table:    { name: 'Wooden Table', use: false, hard: 1, tex: (x, y) => edge(x, y) ? 'd' : (y < 5) ? 'l' : (y === 5) ? 'd' : (x < 3 || x > 12) ? 'W' : 'w' },
+  sofa:     { name: 'Sofa', use: true, hard: 0.8, tex: (x, y) => edge(x, y) ? 'R' : (y < 5) ? 'R' : (y < 6) ? 'k' : ((x === 3 || x === 12) && y > 6) ? 'R' : (x < 3 || x > 12) ? 'R' : (x + y) % 6 === 0 ? 'R' : 'r' },
+  lamp:     { name: 'Lamp', use: false, hard: 0.5, tex: (x, y) => edge(x, y) ? 'Y' : (x > 4 && x < 11 && y > 2 && y < 12) ? ((x + y) % 4 === 0 ? 'y' : 'y') : (y > 12) ? 'd' : 'Y' },
+  clock:    { name: 'Wall Clock', use: true, hard: 0.8, tex: (x, y) => { if (edge(x, y)) return 'd'; const a = x - 7.5, b = y - 7.5, r = Math.hypot(a, b); if (r > 6) return 'W'; if (r > 5) return 'k'; if (Math.abs(a) < 0.8 && b < 0 && b > -4) return 'k'; if (Math.abs(b) < 0.8 && a > 0 && a < 3) return 'k'; return 'c'; } },
+  cupboard: { name: 'Cupboard', use: true, hard: 1.2, tex: (x, y) => edge(x, y) ? 'd' : (x === 7 || x === 8) ? 'd' : (y > 6 && y < 9 && (x === 5 || x === 10)) ? 'y' : (y % 8 === 0) ? 'W' : woodBase(x, y) },
+  tv:       { name: 'TV', use: true, hard: 1, tex: (x, y) => edge(x, y) || x === 1 || y === 1 || x === 14 || y === 14 ? 'n' : ((x + y) % 7 === 0 ? 'b' : (x * 3 + y) % 5 === 0 ? 'g' : 'k') },
+};
+for (const [key, f] of Object.entries(PIECES)) {
+  game.blocks.register({ id: 'furniture:' + key, name: f.name, hardness: f.hard, use: f.use, texture: tex(W, f.tex) });
+}
+game.recipes.register({ id: 'chair', pattern: ['S  ', 'SPP', 'S S'], key: { S: 'stick', P: 'planks' }, output: 'furniture:chair', count: 2 });
+game.recipes.register({ id: 'table', pattern: ['PPP', 'S S'], key: { S: 'stick', P: 'planks' }, output: 'furniture:table' });
+game.recipes.register({ id: 'sofa', pattern: ['W  ', 'WWW', 'P P'], key: { W: 'white_wool', P: 'planks' }, output: 'furniture:sofa' });
+game.recipes.register({ id: 'lamp', pattern: ['G', 'T', 'S'], key: { G: 'glass', T: 'torch', S: 'stick' }, output: 'furniture:lamp' });
+game.recipes.register({ id: 'clock', pattern: ['PPP', 'PGP', 'PPP'], key: { G: 'gold_ingot', P: 'planks' }, output: 'furniture:clock' });
+game.recipes.register({ id: 'cupboard', pattern: ['PSP', 'P P', 'PPP'], key: { S: 'stick', P: 'planks' }, output: 'furniture:cupboard' });
+game.recipes.register({ id: 'tv', pattern: ['III', 'IGI', 'III'], key: { I: 'iron_ingot', G: 'glass' }, output: 'furniture:tv' });
+
+let restAt = 0;
+const SHOWS = ['Cooking show: how to bake bread', 'News: a creeper was seen near the village', 'Cartoon: a pig learns to fly', 'Weather: sunny with a chance of zombies', 'Quiz show: what do you get from cows?', 'Nature: the secret life of chickens'];
+const STUFF = ['It smells of old wood.', 'Neatly stacked plates.', 'Just a spare candle and a sock.', 'A tin of cookies (empty).', 'Folded blankets.'];
+game.on('blockUse', async (e) => {
+  if (!e.block || e.block.indexOf('furniture:') !== 0) return;
+  const kind = e.block.slice(10);
+  if (kind === 'chair' || kind === 'sofa') {
+    const now = Date.now();
+    game.player.teleport(e.x + 0.5, e.y + 0.95, e.z + 0.5);
+    if (now < restAt) { game.gui.toast('You sit down.'); return; }
+    restAt = now + 15000;
+    game.player.applyEffect('regeneration', 6, 1);
+    game.world.spawnParticles('heart', e.x + 0.5, e.y + 1.6, e.z + 0.5, 3, 0.4, 0.1);
+    game.gui.toast('You sit down and rest a moment...');
+  } else if (kind === 'clock') {
+    const t = await game.world.getTime();
+    const mins = Math.floor(((t / 1000 + 6) % 24) * 60);
+    const hh = String(Math.floor(mins / 60)).padStart(2, '0'), mm = String(mins % 60).padStart(2, '0');
+    game.sounds.play('click');
+    game.gui.toast('The clock says ' + hh + ':' + mm);
+  } else if (kind === 'tv') {
+    game.sounds.play('click');
+    game.gui.toast('TV: ' + game.util.choice(SHOWS));
+  } else if (kind === 'cupboard') {
+    game.sounds.play('click');
+    game.gui.toast(game.util.choice(STUFF));
+  }
+});
+`,
+  },
+  {
+    id: 'throwables',
+    name: 'Throwables',
+    author: 'VibeBlox',
+    official: true,
+    description: 'Five things to throw with right-click: Throwing Knives, Shuriken, Fire Bombs, Ice Balls and Confetti Poppers. They can hit a Target block to switch on redstone.',
+    code: `// Throwables: right-click to throw. Knives and shuriken fly straight, bombs explode, ice balls chill, poppers just celebrate.
+const tex = (pal, fn) => ({ palette: pal, pixels: Array.from({ length: 16 }, (_, y) => Array.from({ length: 16 }, (_, x) => fn(x, y)).join('')) });
+const disc = (cx, cy, r) => (x, y) => Math.hypot(x - cx, y - cy) <= r;
+const ITEMS = {
+  knife: { name: 'Throwing Knife', speed: 30, grav: 6, damage: 7, size: 0.12, color: '#d8dde3', cd: 350, lore: ['\\\\white\\\\Damage: \\\\gold\\\\7', '\\\\gray\\\\Flies fast and straight'],
+    icon: tex({ b: '#e6eaef', B: '#9aa0a6', h: '#6b4a2b', k: '#1d1d22' }, (x, y) => { const d = x + (15 - y); if (Math.abs(x - y) <= 1 && x > 5) return x - y === 0 ? 'b' : 'B'; if (Math.abs(x - y) <= 1 && x >= 2) return 'h'; return '.'; }),
+    recipe: { id: 'throwing_knife', pattern: ['I', 'S'], key: { I: 'iron_ingot', S: 'stick' }, count: 4 } },
+  shuriken: { name: 'Shuriken', speed: 34, grav: 3, damage: 4, size: 0.1, color: '#b8c0c8', cd: 250, lore: ['\\\\white\\\\Damage: \\\\gold\\\\4', '\\\\gray\\\\Quick and light'],
+    icon: tex({ s: '#c8d0d8', S: '#7a828c', k: '#1d1d22' }, (x, y) => { const a = Math.abs(x - 7.5), b = Math.abs(y - 7.5); if (a < 1.2 && b < 1.2) return 'k'; if ((a < 1.3 && b < 7) || (b < 1.3 && a < 7)) return 's'; if (Math.abs(a - b) < 1.3 && a < 6) return 'S'; return '.'; }),
+    recipe: { id: 'shuriken', pattern: ['I I', ' I ', 'I I'], key: { I: 'iron_ingot' }, count: 6 } },
+  firebomb: { name: 'Fire Bomb', speed: 17, grav: 20, damage: 3, size: 0.22, color: '#ff7a1a', cd: 900, explosion: 1.2, lore: ['\\\\white\\\\Bursts into flames where it lands', '\\\\red\\\\Breaks blocks!'],
+    icon: tex({ o: '#e8601a', O: '#a83c0c', y: '#ffd34a', k: '#1d1d22', f: '#c8c8c8' }, (x, y) => { if (y < 4 && x === 8) return 'f'; if (y < 4 && x === 9 && y > 1) return 'y'; if (disc(7.5, 9.5, 5.5)(x, y)) return Math.hypot(x - 6, y - 8) < 2.5 ? 'y' : (x + y) % 5 === 0 ? 'O' : 'o'; return '.'; }),
+    recipe: { id: 'fire_bomb', pattern: ['GBG', 'GGG'], key: { G: 'gunpowder', B: 'blaze_powder' }, count: 3 } },
+  iceball: { name: 'Ice Ball', speed: 20, grav: 14, damage: 3, size: 0.2, color: '#bfe6ff', cd: 500, knock: 2, lore: ['\\\\white\\\\Damage: \\\\gold\\\\3', '\\\\aqua\\\\Shoves what it hits'],
+    icon: tex({ i: '#bfe6ff', I: '#7fc4ee', w: '#ffffff' }, (x, y) => { if (!disc(7.5, 7.5, 6)(x, y)) return '.'; if (x + y < 10 && x + y > 7 && x < 8) return 'w'; return (x * 2 + y) % 5 === 0 ? 'I' : 'i'; }),
+    recipe: { id: 'ice_ball', pattern: ['S', 'I', 'S'], key: { S: 'snowball', I: 'ice' }, count: 3 } },
+  popper: { name: 'Confetti Popper', speed: 16, grav: 20, damage: 0, size: 0.18, color: '#ff4fa3', cd: 400, lore: ['\\\\white\\\\Pops into confetti. No harm done.'],
+    icon: tex({ p: '#ff4fa3', y: '#ffe07a', b: '#4fa8ff', g: '#5fd66b', w: '#f2f2ec' }, (x, y) => { if (y > 3 && y < 13 && Math.abs(x - 7.5) < (y - 3) * 0.55 + 0.5) return (x + y) % 3 === 0 ? 'y' : 'p'; if (y <= 3 && (x * 7 + y * 3) % 11 === 0) return 'b'; if (y <= 3 && (x * 5 + y) % 9 === 0) return 'g'; return '.'; }),
+    recipe: { id: 'confetti_popper', pattern: ['P', 'G'], key: { P: 'paper', G: 'gunpowder' }, count: 3 } },
+};
+for (const [key, t] of Object.entries(ITEMS)) {
+  game.items.register({ id: 'throwables:' + key, name: t.name, maxStack: 16, hold: 'item', lore: ['\\\\gray\\\\Right-click to throw.'].concat(t.lore), icon: t.icon });
+  game.recipes.register(Object.assign({ output: 'throwables:' + key }, t.recipe));
+}
+const IN_AIR = {};
+const readyAt = {};
+async function throwIt(key) {
+  const t = ITEMS[key];
+  const now = Date.now();
+  if (now < (readyAt[key] || 0)) return;
+  readyAt[key] = now + t.cd;
+  const p = await game.player.get();
+  if (p.mode !== 'creative') {
+    if ((await game.player.countItem('throwables:' + key)) < 1) return;
+    game.player.removeItem('throwables:' + key, 1);
+  }
+  game.sounds.play('throw');
+  const spec = { x: p.eye.x + p.look.x * 0.6, y: p.eye.y + p.look.y * 0.6, z: p.eye.z + p.look.z * 0.6,
+    vx: p.look.x * t.speed, vy: p.look.y * t.speed + (key === 'knife' || key === 'shuriken' ? 0.6 : 3), vz: p.look.z * t.speed,
+    gravity: t.grav, damage: t.damage, knockback: t.knock || 1, lifetime: 5, explosion: t.explosion || 0, color: t.color, size: t.size };
+  const id = await game.world.spawnProjectile(spec);
+  IN_AIR[id] = key;
+}
+game.on('itemUse', (e) => {
+  if (!e.item || e.item.indexOf('throwables:') !== 0) return;
+  throwIt(e.item.slice(11));
+});
+game.on('projectileHit', (e) => {
+  const key = IN_AIR[e.projectileId];
+  if (!key) return;
+  delete IN_AIR[e.projectileId];
+  if (key === 'firebomb') {
+    game.particles.spawn(e.x, e.y + 0.3, e.z, { color: '#ff7a1a', count: 30, speed: 4, size: 0.2, life: 0.7 });
+    game.particles.spawn(e.x, e.y + 0.3, e.z, { color: '#ffd34a', count: 18, speed: 2.5, size: 0.14, life: 0.9 });
+  } else if (key === 'iceball') {
+    game.particles.spawn(e.x, e.y + 0.2, e.z, { color: '#dff3ff', count: 22, speed: 3, size: 0.12, life: 0.6 });
+    game.sounds.play('glass');
+  } else if (key === 'popper') {
+    for (const c of ['#ff4fa3', '#ffe07a', '#4fa8ff', '#5fd66b']) game.particles.spawn(e.x, e.y + 0.4, e.z, { color: c, count: 12, speed: 4, size: 0.1, life: 1 });
+    game.sounds.play('pop');
+  } else {
+    game.particles.spawn(e.x, e.y, e.z, { color: '#c8d0d8', count: 4, speed: 1.2 });
+    game.sounds.play('arrowHit');
+  }
+});
 `,
   },
   {
@@ -1339,7 +1614,7 @@ export const API_DOCS: ApiDoc[] = [
   ['world.setTime', '(time)', '"sunrise" | "day" | "noon" | "sunset" | "night" | "midnight" | 0-24000.'],
   ['world.getWeather', '()', '"clear", "rain", "snow" or "thunder".'],
   ['world.setWeather', '(weather)', '"clear" | "rain" | "snow". Snow weather puts snow on the ground (snowy grass, snow layers).'],
-  ['world.raycast', '(origin?, direction?, maxDistance?, { entities, blocks }?)', 'Defaults to your eye and look direction. Returns null or { type:"block"|"entity", point:{x,y,z}, distance, block:{x,y,z,name}|null, entity:{id,type}|null }.'],
+  ['world.raycast', '(origin?, direction?, maxDistance?, { entities, blocks, shot }?)', 'shot: true counts as a bullet (it can hit a Target block). Defaults to your eye and look direction. Returns null or { type:"block"|"entity", point:{x,y,z}, distance, block:{x,y,z,name}|null, entity:{id,type}|null }.'],
   ['world.spawnProjectile', '(spec) or (name, x, y, z, vx, vy, vz)', 'spec = { x, y, z, vx, vy, vz, gravity, damage, color, size, lifetime, explosion, knockback }. Returns an id and later fires the projectileHit event.'],
   ['world.removeProjectile', '(id)', 'Delete a projectile.'],
   ['world.getDimension', '()', 'Name of the current dimension.'],
@@ -1382,7 +1657,7 @@ export const API_DOCS: ApiDoc[] = [
   // ---- new items, blocks and recipes ----
   ['items.register', '({ id, name, maxStack, food, lore, hold, leftClick, icon })', 'id is "mymod:thing". hold: "item" | "one_hand" | "two_hands". leftClick: "use" makes left-click fire the itemAttack event instead of mining. icon = { pixels: [16 or 32 rows of characters], palette: { char: "#hex" } } where "." is see-through. lore is a list of lines (color codes work). food = hunger points restored on right-click.'],
   ['items.exists', '(name)', 'Synchronous: true if the item name is known.'],
-  ['blocks.register', '({ id, name, shape, solid, drops, hardness, tier, hidden, texture })', 'id is "mymod:thing". shape: "cube" | "cross" (plants). drops: omit for itself, null for nothing, or an item name. texture works like icon. At most 40 custom blocks.'],
+  ['blocks.register', '({ id, name, shape, solid, drops, hardness, tier, hidden, texture, use })', 'id is "mymod:thing". use: true makes right-click fire the blockUse event (crouch + right-click still places blocks against it). shape: "cube" | "cross" (plants). drops: omit for itself, null for nothing, or an item name. texture works like icon. At most 40 custom blocks.'],
   ['recipes.register', '({ id, pattern, key, output, count, table })', 'pattern is up to 3 rows of 3 characters, key maps each character to an item name. Example: pattern ["III", " S ", " S "], key { I: "iron_ore", S: "stick" }. table: true requires a crafting table (default: needed when bigger than 2x2).'],
 
   // ---- effects, sound and screen ----
@@ -1437,6 +1712,8 @@ export const EVENTS_HELP = `Events (game.on(name, fn); fn gets one data object):
   itemUse: { item, x, y, z, block, placeX, placeY, placeZ }   right-click held (x/block are null when aiming at air)
   itemUseEnd: { item }                       right-click released
   itemAttack: { item, pressed }              left-click, only for items registered with leftClick: "use"
+  blockUse: { x, y, z, block }               right-click on a block registered with use: true (block is its id, e.g. "mymod:thing")
+  targetHit: { x, y, z }                     an arrow, bullet or thrown item hit a Target block (it gives redstone power for a moment)
   playerHit: { target: { id, type }, damage } the player hit a mob
   playerDamage: { amount, cause }   playerDeath: { cause }   playerRespawn: {}
   entityDeath: { id, type, x, y, z }
@@ -1608,7 +1885,7 @@ game.on('itemUse', (e) => { if (e.item === 'mymod:wand') game.player.launch(0, 1
 game.items.register({ id: 'mymod:pistol', name: 'Pistol', maxStack: 1, hold: 'one_hand', leftClick: 'use', icon: { color: '#888888' } });
 game.on('itemAttack', async (e) => {
   if (e.item !== 'mymod:pistol' || !e.pressed) return;
-  const hit = await game.world.raycast(null, null, 60);
+  const hit = await game.world.raycast(null, null, 60, { shot: true });
   if (hit && hit.type === 'entity') game.entities.damage(hit.entity.id, 6, 0.5);
   game.sounds.play('gunshot');
 });

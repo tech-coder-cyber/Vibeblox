@@ -181,3 +181,17 @@ export function anvilResult(left: ItemStack | null, right: ItemStack | null, nam
   if (cost >= ANVIL_MAX_COST) return { ok: false, error: 'Too Expensive!' };
   return { ok: true, out, cost: Math.max(1, cost), useRight };
 }
+
+/** Two worn tools or armor pieces of the same kind in the crafting grid make one: their durability adds up (plus 5%).
+ *  Enchanted or renamed ones are not combined here (use the anvil, which keeps the enchantments). Returns null when it doesn't apply. */
+export function combineWorn(a: ItemStack | null | undefined, b: ItemStack | null | undefined): ItemStack | null {
+  if (!a || !b || a.id !== b.id || a.count !== 1 || b.count !== 1) return null;
+  const max = maxDurability(a.id);
+  if (!(max > 0)) return null;
+  if (!(a.damage || b.damage)) return null; // two new ones: nothing to repair
+  const odd = (s: ItemStack) => !!s.name || (!!s.ench && Object.keys(s.ench).length > 0);
+  if (odd(a) || odd(b)) return null;
+  const remain = (max - (a.damage ?? 0)) + (max - (b.damage ?? 0)) + Math.floor(max * 0.05);
+  const dmg = Math.max(0, max - remain);
+  return dmg > 0 ? { id: a.id, count: 1, damage: dmg } : { id: a.id, count: 1 };
+}

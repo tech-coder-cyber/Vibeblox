@@ -11,7 +11,7 @@ export const BG_DEFAULT: BgPrefs = { mode: 'default', dim: 0.55, custom: '' };
 const KEY = 'vb-bg';
 
 /** Names tried (in this order) inside public/images for the default background. */
-export const DEFAULT_BG_FILES = ['background', 'bg', 'default-background', 'menu-background'].flatMap((n) => ['jpg', 'jpeg', 'png', 'webp', 'gif'].map((e) => `/images/${n}.${e}`));
+export const DEFAULT_BG_FILES = ['background', 'bg', 'default-background', 'menu-background'].flatMap((n) => ['jpg', 'jpeg', 'png', 'webp', 'gif'].map((e) => `images/${n}.${e}`));
 
 export function cleanBg(o: unknown): BgPrefs {
   const out = { ...BG_DEFAULT };

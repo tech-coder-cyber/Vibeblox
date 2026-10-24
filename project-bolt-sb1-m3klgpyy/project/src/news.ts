@@ -2,11 +2,55 @@
 // a small update to the current one is a point release (Indev 26.1, 26.2...), a big one is the next number.
 //
 // The News page in the sidebar shows this list, and a dot appears on it until the newest one has been read.
-export const GAME_VERSION = 33;
+export const GAME_VERSION = 35.2;
 
 export type NewsEntry = { version: number; date: string; title: string; changes: string[] };
 
 export const NEWS: NewsEntry[] = [
+  {
+    version: 35.2,
+    date: 'October 24, 2026',
+    title: 'Ladders and Iron Ladders',
+    changes: [
+      'Ladder: 7 sticks in an H shape (at a crafting table) make 3. Click the side of a wall to put one up, then hold Space (or walk into the wall) to climb. Hold the crouch key to hang on; let go and you slide down slowly, without fall damage.',
+      'Iron Ladder: 6 iron ingots around a stick make 4. You climb and slide faster, and it looks sturdier.',
+      'Click a ladder with another ladder to carry it up (top half) or down (bottom half) the same wall. Break the wall behind a ladder and it drops.',
+    ],
+  },
+  {
+    version: 35.1,
+    date: 'October 23, 2026',
+    title: 'Golden apples, trap blocks, combining gear, steadier performance',
+    changes: [
+      'Golden Apple (8 gold ingots around an apple) and Enchanted Golden Apple (8 gold blocks around an apple): eat them even when you are full. Regeneration II, and the enchanted one also gives Resistance and Fire Resistance.',
+      'Health now comes back faster: one heart-half every 2 seconds with 9.5 or 10 food bars (every 4 seconds at 9 bars, as before).',
+      'Two worn tools or armor pieces of the same kind in the crafting grid combine into one with their durability added up (enchanted or renamed ones: use the anvil).',
+      'Arrow Trap: give it redstone power and it shoots at the nearest hostile mob (or at you) within 14 blocks. Spike Block: hurts whatever stands on it. Build traps with pressure plates and levers.',
+      'Already in the game and still there: the Brewing Stand with every potion (Healing too), beds that set your respawn, armor that wears down, and the Anvil for repairs.',
+      'Smoother on small computers: fewer particles on Low and Medium, chunks load in smaller steps when the frame rate dips, mobs far away in the fog are not drawn, and a computer with 4 GB of memory or less loads a shorter view.',
+      'For CrazyGames and Poki: "Sign in with Google" only shows on our own website, and ads come from their own SDK (already the case).',
+    ],
+  },
+  {
+    version: 34,
+    date: 'October 21, 2026',
+    title: 'Targets, waystones, furniture, shotgun shells, new touch layouts and CrazyGames basics',
+    changes: [
+      'New players start playing straight away as a guest: no sign-up screen first. You can make an account later from your profile.',
+      'Press P to open the pause menu (the same as Esc). You can change it in Settings > Keybinds.',
+      'Target block: hit it with an arrow, a bullet, a thrown item or a potion and it gives redstone power for a moment. Craft it from redstone and wheat.',
+      'Holding left-click now breaks blocks at a steady pace (a short pause after each one), and holding right-click keeps placing blocks, so you can bridge.',
+      'Wooden Sword: "Wood Sword" is now called Wooden Sword (id wooden_sword; the old name still works in commands and scripts).',
+      'New hand poses: the sword, the bow and the tools are held big and upright in the bottom-right, like in the Minecraft screenshot.',
+      'Touch controls: pick a layout in Settings > Controls: Classic, Dynamic (floating joystick and a crosshair), D-pad or Tap to interact. Every button now works while you are walking.',
+      'Waystones mod: place and wake waystones, then right-click to hop between them. /waystone list, go, name and remove. Warp Scrolls take you back to the last one you used.',
+      'Furniture mod: Chair, Table, Sofa, Lamp, Wall Clock, Cupboard and TV. Sit down to rest, read the time, change channel.',
+      'Throwables mod: Throwing Knives, Shuriken, Fire Bombs, Ice Balls and Confetti Poppers.',
+      'Guns mod: the Pump Shotgun and the Sawed-Off now use Shotgun Shells (gunpowder + iron ingot) instead of bullets.',
+      'Scripts: blocks.register has use: true and a blockUse event, world.raycast has shot: true, and there is a targetHit event.',
+      'For CrazyGames and other hosts: every file the game loads now uses a relative path.',
+    ],
+  },
   {
     version: 33,
     date: 'October 20, 2026',
