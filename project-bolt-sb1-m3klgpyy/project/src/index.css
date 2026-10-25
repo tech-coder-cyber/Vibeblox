@@ -147,3 +147,7 @@ html.vb-gray .vb-themed .hover\:bg-\[\#1a2230\]:hover { background-color: #3a3d4
 }
 @keyframes vb-rotate-phone { 0%, 30% { transform: rotate(0deg); } 60%, 100% { transform: rotate(-90deg); } }
 .vb-rotate-phone { animation: vb-rotate-phone 1.8s ease-in-out infinite alternate; }
+
+/* CrazyGames: no accidental text selection while playing (inputs and chat stay selectable) */
+body { -webkit-user-select: none; user-select: none; }
+input, textarea, [contenteditable="true"], [data-testid="legal-text"] { -webkit-user-select: text; user-select: text; }

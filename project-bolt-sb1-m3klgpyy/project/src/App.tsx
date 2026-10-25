@@ -2,6 +2,8 @@ import { setBgInterval, clearBgInterval } from './bgTimer';
 import { useState, useEffect, useRef, useMemo, useCallback, useSyncExternalStore, createContext, useContext, type FormEvent, type ChangeEvent, type MouseEvent as ReactMouseEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
 import { ADVANCEMENT_TABS, rewardText, advancementsFor, checkItems, checkEvent, loadAdvancements, saveAdvancements, clearAdvancements, type Advancement, type AdvancementTab } from './advancements';
 import { SKINS, CAPES, CUSTOM_SKIN_ID, CUSTOM_CAPE_ID, isCustomSkinData, type PlayerLook } from '@/cosmetics';
+import { LegalText, LegalFirstVisit } from './LegalNotice';
+import { onCrazyGames, cgShowLogin, syncCrazyGamesAccount, cgWatchLogins, cgSettings, cgWatchSettings } from '@/crazygames';
 import { CAN_LINK_OUT, CAN_SELL_RANKS, ADS_POSSIBLE, PLATFORM, initAds, triggerRewardedAd, setGameplayActive, reportLoadingFinished, setAdsBlocked, maybeInterstitial, lastAdResult } from '@/adEconomy';
 import {
   getProgress, subscribeProgress, onLevelUp, setCustomSkin, setCustomCape, addActiveSeconds, rewardAdCoins, rewardAdBooster, claimCoins, claimBooster, claimStatus, COIN_CLAIMS_PER_HOUR, buyCosmetic, equipCosmetic, currentLook, reloadProgress, progressForAccount, mergeAccountProgress,
@@ -1816,16 +1818,11 @@ function SettingsView({
             onClick={() => setShowPrivacy((v) => !v)}
             className="flex items-center justify-between px-4 py-2.5 rounded-xl bg-[#0a0e14] border border-[#243044] text-[#8ea0b8] text-sm transition-all duration-200 hover:border-[#364860] hover:text-white"
           >
-            Privacy Policy
+            Terms of Use &amp; Privacy Policy
             <span className="text-xs">{showPrivacy ? '▲' : '▼'}</span>
           </button>
           {showPrivacy && (
-            <div className="px-4 py-3 rounded-xl bg-[#0a0e14] border border-[#243044] text-[#5a6b80] text-xs leading-relaxed">
-              VibeBlox stores your username, world saves, and settings locally in your browser — nothing is sent to
-              an external server. Any soundtrack file you upload stays in memory for the session and is never
-              transmitted anywhere. This is a hobby/indie project, not a commercial product, and this notice is a
-              placeholder — replace it with real terms before any public launch.
-            </div>
+            <div className="px-4 py-3 rounded-xl bg-[#0a0e14] border border-[#243044]"><LegalText /></div>
           )}
 
           <button
@@ -2890,7 +2887,7 @@ function ProfilePanel({ username, onOpenLeaderboard, onSignIn }: { username: str
         {guest && (
           <div className="mt-1" data-testid="guest-signup">
             <p className="text-[#8ea0b8] text-[11px] mb-2">Sign up to save your worlds, level up and make friends.</p>
-            <button onClick={onSignIn} data-testid="panel-signup" className="w-full py-2 rounded-xl bg-gradient-to-r from-[#00e676] to-[#00b248] text-[#0a0e14] text-xs font-bold active:scale-95 transition-transform">Sign up / Log in</button>
+            <button onClick={onSignIn} data-testid="panel-signup" className="w-full py-2 rounded-xl bg-gradient-to-r from-[#00e676] to-[#00b248] text-[#0a0e14] text-xs font-bold active:scale-95 transition-transform">{onCrazyGames ? 'Login with CrazyGames' : 'Sign up / Log in'}</button>
           </div>
         )}
         {!guest && <div data-testid="level-block">
@@ -6141,7 +6138,22 @@ function ModsPanel({ official, custom, enabled, starred, onToggle, onStar, onFor
 export default function App() {
   useLanguage();
   const [username, setUsername] = useState<string | null>(null);
-  const [showModal, setShowModal] = useState(false);
+  const [showModal, setShowModalRaw] = useState(false);
+  /** Opens the sign-in window. On CrazyGames there is no sign-in window of ours (no email, no Google): it opens CrazyGames' own log in instead. */
+  const setShowModal = (open: boolean) => { if (open && onCrazyGames) { void cgShowLogin(); return; } setShowModalRaw(open); };
+  /** On CrazyGames the logged-in player is found before the guest start (so a CrazyGames player never starts as a guest first) */
+  const [cgSyncDone, setCgSyncDone] = useState(!onCrazyGames);
+  const [cgChatOff, setCgChatOff] = useState(() => onCrazyGames && cgSettings().disableChat);
+  const cgChatOffRef = useRef(cgChatOff);
+  cgChatOffRef.current = cgChatOff;
+  useEffect(() => {
+    if (!onCrazyGames) return;
+    let dead = false;
+    void syncCrazyGamesAccount().finally(() => { if (!dead) setCgSyncDone(true); });
+    const stopLogins = cgWatchLogins(() => { /* the session arrives through useAccount */ });
+    const stopSettings = cgWatchSettings((st) => setCgChatOff(st.disableChat));
+    return () => { dead = true; stopLogins(); stopSettings(); };
+  }, []);
   const [autoPlay, setAutoPlay] = useState(false);
   const [ready, setReady] = useState(false);
   const [view, setView] = useState<View>('home');
@@ -6880,7 +6892,7 @@ export default function App() {
       setUsername(account.username);
       setShowModal(false);
       try { localStorage.setItem(STORAGE_KEY, account.username); } catch { /* storage blocked */ }
-    } else if ((accountChecked || authWaitOver || !hasStoredSession()) && !username) {
+    } else if ((accountChecked || authWaitOver || !hasStoredSession()) && cgSyncDone && !username) {
       // A brand-new player drops straight into a game as a guest: no sign-up screen first (they can make an account later from the profile)
       const g = randomGuestName();
       handleGuest(g);
@@ -6888,7 +6900,7 @@ export default function App() {
       try { first = !localStorage.getItem('vb-visited'); localStorage.setItem('vb-visited', '1'); } catch { /* storage blocked */ }
       if (first) setAutoPlay(true);
     }
-  }, [ready, account, accountChecked, authWaitOver, username]);
+  }, [ready, account, accountChecked, authWaitOver, username, cgSyncDone]);
 
   // First visit ever: start a quick survival game as soon as the guest name is ready
   useEffect(() => {
@@ -7125,7 +7137,7 @@ export default function App() {
       handle.setShaderPrefs(getShaders());
       // First time ever in a world (not a minigame): the tutorial
       if (!tutorialDone() && activeWorldType !== 'eggwars' && activeWorldType !== 'bridge') setShowTutorial(true);
-      if (touchOnRef.current) { try { const el = document.documentElement; if (!document.fullscreenElement && el.requestFullscreen) void el.requestFullscreen().then(() => (screen.orientation as unknown as { lock?: (o: string) => Promise<void> })?.lock?.('landscape')).catch(() => {}); } catch { /* not allowed */ } }
+      if (touchOnRef.current && !onCrazyGames) { try { const el = document.documentElement; if (!document.fullscreenElement && el.requestFullscreen) void el.requestFullscreen().then(() => (screen.orientation as unknown as { lock?: (o: string) => Promise<void> })?.lock?.('landscape')).catch(() => {}); } catch { /* not allowed */ } }
       handle.onSleep((st) => {
         sleepingRef.current = st.sleeping;
         setSleeping(st.sleeping);
@@ -8724,6 +8736,7 @@ export default function App() {
   }
 
   function openChat(prefix: string) {
+    if (cgChatOffRef.current && !prefix.startsWith('/')) prefix = '/'; // chat is switched off in your CrazyGames settings: commands still work
     chatOpenRef.current = true;
     setChatInitial(prefix);
     setChatSession((n) => n + 1);
@@ -8771,6 +8784,8 @@ export default function App() {
         openPanel();
         return;
       }
+    } else if (text && cgChatOffRef.current) {
+      pushMessage('Chat is switched off in your CrazyGames settings. Commands (starting with /) still work.', '#ff6b6b');
     } else if (text && chatChannelRef.current && channelSeenRef.current[chatChannelRef.current.toLowerCase()]) {
       const ch = channelSeenRef.current[chatChannelRef.current.toLowerCase()];
       touchChannel(ch.name); // writing in a channel keeps it open
@@ -9836,7 +9851,8 @@ export default function App() {
           netError={netError}
         />
         {!compactLayout && <ProfilePanel username={currentUsername} onOpenLeaderboard={() => handleNavClick('leaderboard')} onSignIn={() => setShowModal(true)} />}
-        {showModal && <LoginOverlay onGuest={handleGuest} onClose={username ? () => setShowModal(false) : undefined} />}
+        <LegalFirstVisit />
+        {showModal && !onCrazyGames && <LoginOverlay onGuest={handleGuest} onClose={username ? () => setShowModal(false) : undefined} />}
         {profileName && <ProfileModal name={profileName} me={account} onClose={() => setProfileName(null)} />}
       </div>
 

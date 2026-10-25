@@ -10,3 +10,5 @@ VibeBlox - how to build (Windows)
    (index.html, assets, images, music) - that is what CrazyGames wants.
 
 To try it on your PC first:  npm run dev   (then open the address it prints)
+
+CrazyGames (Indev 35.3): see CRAZYGAMES_SETUP.md. The folder "functions" is a Cloudflare Pages Function (automatic CrazyGames login); it needs 4 variables set in Cloudflare Pages.

@@ -1,5 +1,6 @@
 // Your account: see who you are signed in as, change your email and your password, and (for admins) open the Admin panel.
 import { useContext, useEffect, useState, type FormEvent } from 'react';
+import { onCrazyGames } from './crazygames';
 
 type Info = { email: string | null; pendingEmail?: string | null; providers: string[]; error: string | null };
 type Auth = typeof import('./auth/supabaseAuth');
@@ -88,17 +89,17 @@ export default function AccountPanel({ summary }: { summary: AccountSummary }) {
             {summary.isOwner && <span className="ml-2 px-1.5 py-0.5 rounded bg-[#ffd700] text-[#0a0e14] text-[10px] font-bold">OWNER</span>}
             {!summary.isOwner && summary.isAdmin && <span className="ml-2 px-1.5 py-0.5 rounded bg-[#ffd700]/20 text-[#ffd700] text-[10px] font-bold">ADMIN</span>}
           </div>
-          <div>Email: <span className="text-white" data-testid="account-email">{info ? (info.email ?? 'unknown') : 'loading…'}</span>
+          {onCrazyGames ? <div>Signed in with your CrazyGames account.</div> : <div>Email: <span className="text-white" data-testid="account-email">{info ? (info.email ?? 'unknown') : 'loading…'}</span>
             {info?.pendingEmail && <span className="text-[#ffb347]"> (waiting for you to confirm {info.pendingEmail})</span>}
-          </div>
-          {!!info?.providers.length && <div>Sign-in method: {info.providers.join(', ')}</div>}
+          </div>}
+          {!onCrazyGames && !!info?.providers.length && <div>Sign-in method: {info.providers.join(', ')}</div>}
         </div>
         {summary.isAdmin && summary.inPanel ? null : summary.isAdmin
           ? <button className={`${btn} mt-3`} onClick={summary.openAdmin} data-testid="open-admin">Open the Admin panel</button>
           : <p className="text-[#5a6b80] text-[11px] mt-3">The Admin panel is for the owner and admins. The owner signs in as Master.</p>}
       </section>
 
-      <section className={card}>
+      {!onCrazyGames && <section className={card}>
         <h2 className="text-white text-sm font-medium mb-1">Change email</h2>
         <p className="text-[#5a6b80] text-xs mb-3">We send a confirmation link to the new address. {google ? 'This account signs in with Google; the new email is used for notices only.' : ''}</p>
         <form noValidate onSubmit={submitEmail} className="flex gap-2">
@@ -106,9 +107,9 @@ export default function AccountPanel({ summary }: { summary: AccountSummary }) {
           <button className={btn} disabled={busy || !newEmail.trim()} data-testid="change-email">Change</button>
         </form>
         {note(emailMsg)}
-      </section>
+      </section>}
 
-      <section className={card}>
+      {!onCrazyGames && <section className={card}>
         <h2 className="text-white text-sm font-medium mb-1">Change password</h2>
         <p className="text-[#5a6b80] text-xs mb-3">At least 6 characters. {google ? 'Setting a password lets you sign in with your email too.' : ''}</p>
         <form noValidate onSubmit={submitPassword} className="flex flex-col gap-2">
@@ -117,7 +118,7 @@ export default function AccountPanel({ summary }: { summary: AccountSummary }) {
           <div><button className={btn} disabled={busy || !pw1} data-testid="change-password">Change password</button></div>
         </form>
         {note(pwMsg)}
-      </section>
+      </section>}
 
       <section className="rounded-2xl border border-red-500/50 bg-red-950/20 p-6" data-testid="danger-zone">
         <h2 className="text-red-400 text-sm font-bold mb-1">Danger zone</h2>

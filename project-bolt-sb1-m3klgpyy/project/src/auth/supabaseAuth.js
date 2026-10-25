@@ -104,6 +104,21 @@ export async function signInWithEmail(email, password) {
   }
 }
 
+/**
+ * Start a session from tokens that our own server made (CrazyGames players are logged in this way, see src/crazygames.ts).
+ * @returns {Promise<{ error: string | null }>}
+ */
+export async function signInWithTokens(accessToken, refreshToken) {
+  if (!accessToken || !refreshToken) return { error: 'No session.' };
+  try {
+    const supabase = await getSupabase();
+    const { error } = await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+    return { error: error ? error.message : null };
+  } catch {
+    return { error: OFFLINE };
+  }
+}
+
 /** Who is signed in: their email and how they signed in. */
 export async function getAccountInfo() {
   try {

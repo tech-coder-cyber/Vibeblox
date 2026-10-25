@@ -8,6 +8,7 @@ import { t } from './i18n';
 import { creatorTier, CREATOR_PLAYS, CREATOR_NAMES, badgeTags } from './ranks';
 import { FancyText } from './fancytext';
 import { openProfile } from './profileBus';
+import { onCrazyGames } from './crazygames';
 
 type Props = {
   account: Account | null;
@@ -168,7 +169,7 @@ export default function SocialView({ account, checking, isAdmin, onOpenPanel, un
           <h2 className="text-white font-bold text-lg mb-1">Sign in to use Social</h2>
           <p className="text-[#8ea0b8] text-sm mb-5">Guests can play and join servers, but friends and private messages need an account.</p>
           <button onClick={onSignIn} className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-[#00e676] text-[#0a0e14] font-bold text-sm hover:bg-[#00e676]/90 active:scale-95 transition-all">
-            <LogIn className="w-4 h-4" />Sign in or create an account
+            <LogIn className="w-4 h-4" />{onCrazyGames ? 'Login with CrazyGames' : 'Sign in or create an account'}
           </button>
         </div>
       </div>
@@ -216,9 +217,9 @@ export default function SocialView({ account, checking, isAdmin, onOpenPanel, un
             {unreadTotal > 0 && <span className="ml-2 text-[#ff8a80]">· {unreadTotal} unread</span>}
           </p>
         </div>
-        <button onClick={onSignOut} className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-[#243044] text-[#8ea0b8] text-sm hover:text-white hover:border-[#3a4a60] transition-colors">
+        {!onCrazyGames && <button onClick={onSignOut} data-testid="sign-out" className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-[#243044] text-[#8ea0b8] text-sm hover:text-white hover:border-[#3a4a60] transition-colors">
           <LogOut className="w-4 h-4" />Sign out
-        </button>
+        </button>}
       </div>
 
       {renaming && (

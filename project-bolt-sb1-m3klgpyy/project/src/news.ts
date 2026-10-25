@@ -2,11 +2,21 @@
 // a small update to the current one is a point release (Indev 26.1, 26.2...), a big one is the next number.
 //
 // The News page in the sidebar shows this list, and a dot appears on it until the newest one has been read.
-export const GAME_VERSION = 35.2;
+export const GAME_VERSION = 35.3;
 
 export type NewsEntry = { version: number; date: string; title: string; changes: string[] };
 
 export const NEWS: NewsEntry[] = [
+  {
+    version: 35.3,
+    date: 'October 24, 2026',
+    title: 'CrazyGames ready',
+    changes: [
+      'CrazyGames players are logged in automatically with their CrazyGames account (no email or Google there). Guests can play at once and press "Login with CrazyGames" any time.',
+      'On CrazyGames your progress and settings are saved in your CrazyGames account, so they follow you between devices. Worlds stay in your browser.',
+      'New Terms of Use and Privacy Policy (Settings > About), with a small notice for new players. If CrazyGames switches chat off for you, chat messages are blocked (commands still work).',
+    ],
+  },
   {
     version: 35.2,
     date: 'October 24, 2026',

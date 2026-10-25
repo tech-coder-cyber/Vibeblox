@@ -126,7 +126,8 @@ export function adStatus(): AdStatus {
 export async function triggerRewardedAd(hooks: { onStart?: () => void; onEnd?: () => void } = {}): Promise<boolean> {
   if (adsBlocked || adRunning || !(await initAds())) return false;
   adRunning = true;
-  hooks.onStart?.();
+  // CrazyGames: the sound is only muted when the ad really starts playing (adStarted), not when it is requested
+  if (PLATFORM !== 'crazygames') hooks.onStart?.();
   try {
     if (PLATFORM === 'web') {
       return await new Promise<boolean>((resolve) => {
@@ -144,7 +145,7 @@ export async function triggerRewardedAd(hooks: { onStart?: () => void; onEnd?: (
     if (PLATFORM === 'poki') { const ok = !!(await w.PokiSDK.rewardedBreak()); lastResult = ok ? 'viewed' : 'notReady'; return ok; }
     return await new Promise<boolean>((resolve) => {
       w.CrazyGames.SDK.ad.requestAd('rewarded', {
-        adStarted: () => {},
+        adStarted: () => { hooks.onStart?.(); },
         adFinished: () => { lastResult = 'viewed'; resolve(true); },
         adError: (e?: { code?: string }) => { lastResult = e?.code ?? 'error'; resolve(false); }, // also fires when no ad was available
       });
@@ -184,19 +185,16 @@ export function reportLoadingFinished() {
   });
 }
 
-/** Key/value storage: the player's CrazyGames account when on CrazyGames (synced across devices), else this browser. */
+/**
+ * Key/value storage. On CrazyGames, src/crazygames.ts routes every progress key of localStorage through the CrazyGames data
+ * module (synced across devices for logged-in players), so plain localStorage is all this needs.
+ */
 export const portalStorage = {
   get(key: string): string | null {
-    try {
-      if (PLATFORM === 'crazygames' && w.CrazyGames?.SDK?.data) return w.CrazyGames.SDK.data.getItem(key);
-      return localStorage.getItem(key);
-    } catch { return null; }
+    try { return localStorage.getItem(key); } catch { return null; }
   },
   set(key: string, value: string) {
-    try {
-      if (PLATFORM === 'crazygames' && w.CrazyGames?.SDK?.data) w.CrazyGames.SDK.data.setItem(key, value);
-      localStorage.setItem(key, value); // keep a local copy too
-    } catch { /* storage blocked */ }
+    try { localStorage.setItem(key, value); } catch { /* storage blocked */ }
   },
 };
 
