@@ -68,7 +68,7 @@ export const ADVANCEMENTS: Advancement[] = [
   { id: 'monster_hunter', title: 'Monster Hunter', description: 'Kill any hostile monster', icon: ITEM_WOOD_SWORD, tab: 'adventure', event: (n, d) => n === 'entityDeath' && d.byPlayer === true && HOSTILE.has(String(d.type)) },
   { id: 'what_a_deal', title: 'What a Deal!', description: 'Successfully trade with a Villager', icon: ITEM_EMERALD, tab: 'adventure', event: (n) => n === 'playerTrade' },
   { id: 'sweet_dreams', title: 'Sweet Dreams', description: 'Sleep in a bed through the night', icon: ITEM_BED, tab: 'adventure', event: (n) => n === 'playerSleep' },
-  { id: 'teleport', title: 'Pearl of Wisdom', description: 'Get your hands on an Ender Pearl', icon: ITEM_ENDER_PEARL, tab: 'adventure', item: is(ITEM_ENDER_PEARL) },
+  { id: 'teleport', title: 'Pearl of Wisdom', description: 'Get your hands on a Teleportation Pearl', icon: ITEM_ENDER_PEARL, tab: 'adventure', item: is(ITEM_ENDER_PEARL) },
   { id: 'is_it_a_bird', title: 'Is It a Bird?', description: 'Look at something through a Spyglass', icon: ITEM_SPYGLASS, tab: 'adventure', experimental: true, event: (n, d) => n === 'zoomChange' && d.spyglass === true },
 
   // ---- Husbandry ----

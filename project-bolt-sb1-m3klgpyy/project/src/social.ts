@@ -12,7 +12,7 @@ import { filterProfanity } from './profanity';
 export const SUPABASE_URL = 'https://okhtosecqytklgwouwxv.supabase.co';
 export const SUPABASE_ANON_KEY = 'sb_publishable_kyklbTdQk64bRSdGSrEX0w_1lKAD4X0';
 
-export type Account = { userId: string; username: string; token: string; /** 'none' | 'vanguard' | 'elite' | 'champion' (set by the database, never by the player) */ rank?: string; /** When a temporary rank runs out (ISO time), or null/undefined if it lasts for good */ rankUntil?: string | null; /** When the name was last changed (you can change it once a week) */ nameChangedAt?: string | null; /** 'helper' | 'mod' (set by the owner in the Admin panel) or null */ staff?: string | null; /** Had OG back when it could be earned: kept for good */ og?: boolean; /** 'youtube' (given by the owner) or null */ special?: string | null; /** [YOUTUBE] only: /undercover is on, so the tags are hidden from other players */ undercover?: boolean };
+export type Account = { ownedRanks?: string[]; userId: string; username: string; token: string; /** 'none' | 'vanguard' | 'elite' | 'champion' (set by the database, never by the player) */ rank?: string; /** When a temporary rank runs out (ISO time), or null/undefined if it lasts for good */ rankUntil?: string | null; /** When the name was last changed (you can change it once a week) */ nameChangedAt?: string | null; /** 'helper' | 'mod' (set by the owner in the Admin panel) or null */ staff?: string | null; /** Had OG back when it could be earned: kept for good */ og?: boolean; /** 'youtube' (given by the owner) or null */ special?: string | null; /** [YOUTUBE] only: /undercover is on, so the tags are hidden from other players */ undercover?: boolean };
 export type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string };
 
 type Config = {
@@ -155,12 +155,13 @@ async function profilesById(ids: string[]): Promise<Map<string, Profile>> {
 
 /** Makes sure the signed-in user has a profile (the database trigger normally does it) and returns their account. */
 export async function loadAccount(userId: string, token: string, wantedName: string): Promise<Account> {
-  type Full = Profile & { rank?: string; rank_until?: string | null; username_changed_at?: string | null; staff?: string | null; og?: boolean; special?: string | null; undercover?: boolean };
+  type Full = Profile & { owned_ranks?: string[] | null; rank?: string; rank_until?: string | null; username_changed_at?: string | null; staff?: string | null; og?: boolean; special?: string | null; undercover?: boolean };
   const id = encodeURIComponent(userId);
   // Temporary ranks that ran out are taken away first (older databases just don't have this function)
   await rest('POST', 'rpc/expire_ranks', {}, {}, token).catch(() => undefined);
   // Older databases do not have the rank_until / rank / username_changed_at columns yet: fall back step by step
-  let r = await rest('GET', `profiles?select=id,username,rank,rank_until,username_changed_at,staff,og,special,undercover&id=eq.${id}&limit=1`, undefined, {}, token);
+  let r = await rest('GET', `profiles?select=id,username,rank,rank_until,username_changed_at,staff,og,special,undercover,owned_ranks&id=eq.${id}&limit=1`, undefined, {}, token); // (owned_ranks: Indev 36)
+  if (!r.ok) r = await rest('GET', `profiles?select=id,username,rank,rank_until,username_changed_at,staff,og,special,undercover&id=eq.${id}&limit=1`, undefined, {}, token);
   if (!r.ok) r = await rest('GET', `profiles?select=id,username,rank,rank_until,username_changed_at,staff,og,special&id=eq.${id}&limit=1`, undefined, {}, token);
   if (!r.ok) r = await rest('GET', `profiles?select=id,username,rank,rank_until,username_changed_at,staff,og&id=eq.${id}&limit=1`, undefined, {}, token);
   if (!r.ok) r = await rest('GET', `profiles?select=id,username,rank,rank_until,username_changed_at,staff&id=eq.${id}&limit=1`, undefined, {}, token);
@@ -168,7 +169,7 @@ export async function loadAccount(userId: string, token: string, wantedName: str
   if (!r.ok) r = await rest('GET', `profiles?select=id,username,rank,username_changed_at&id=eq.${id}&limit=1`, undefined, {}, token);
   if (!r.ok) r = await rest('GET', `profiles?select=id,username&id=eq.${id}&limit=1`, undefined, {}, token);
   const row = r.ok ? (r.data as Full[])[0] : undefined;
-  if (row) return { userId, username: row.username, token, rank: row.rank ?? 'none', rankUntil: row.rank_until ?? null, nameChangedAt: row.username_changed_at ?? null, staff: row.staff === 'helper' || row.staff === 'mod' ? row.staff : null, og: row.og === true, special: row.special === 'youtube' ? 'youtube' : null, undercover: row.special === 'youtube' && row.undercover === true };
+  if (row) return { userId, username: row.username, token, rank: row.rank ?? 'none', ownedRanks: ownedList(row.owned_ranks, row.rank), rankUntil: row.rank_until ?? null, nameChangedAt: row.username_changed_at ?? null, staff: row.staff === 'helper' || row.staff === 'mod' ? row.staff : null, og: row.og === true, special: row.special === 'youtube' ? 'youtube' : null, undercover: row.special === 'youtube' && row.undercover === true };
   // No profile yet (the SQL trigger was not installed, or this account is older): make one
   let name = wantedName.replace(/[^A-Za-z0-9_]/g, '').slice(0, 16);
   if (name.length < 3) name = 'Player' + Math.floor(Math.random() * 9000 + 1000);
@@ -346,48 +347,6 @@ export function cleanWorldImage(img?: string): string | null {
   if (/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(img) && img.length <= 60_000) return img;
   return null;
 }
-// ---------------- Sleeping worlds (join even when the host has left) ----------------
-// While a world is hosted its snapshot is saved to the database (vibeblox_indev29.sql). When nobody runs it any more the
-// world is "sleeping": the first player who joins wakes it up and hosts it from the snapshot.
-export type SleepingWorld = { id: string; name: string; owner: string; mode: string; worldType: string; privacy: 'public' | 'accounts' | 'friends'; max: number; updatedAt: string };
-export type WorldSnapshotData = Record<string, unknown> & { seed: number; changes: Array<[number, number, number, number]> };
-export type WokenWorld = { id: string; name: string; owner: string; mode: string; worldType: string; privacy: 'public' | 'accounts' | 'friends'; maxPlayers: number; data: WorldSnapshotData };
-/** Snapshots bigger than this are not saved (the world then simply goes away with its host, like before). */
-export const MAX_SNAPSHOT_CHARS = 2_500_000;
-let snapshotsAvailable = true;
-export async function saveWorldSnapshot(w: { id: string; name: string; mode: string; worldType: string; privacy: string; max: number; data: WorldSnapshotData }): Promise<Result<{ saved: boolean }>> {
-  if (!snapshotsAvailable || !HOSTED_ID_RE.test(w.id)) return fail('not available');
-  if (JSON.stringify(w.data).length > MAX_SNAPSHOT_CHARS) return fail('The world is too big to keep while nobody is hosting it');
-  const r = await rest('POST', 'rpc/save_world_snapshot', { p_id: w.id, p_name: w.name.slice(0, 40) || 'World', p_mode: w.mode, p_world_type: w.worldType === 'superflat' ? 'superflat' : 'default', p_privacy: w.privacy, p_max: w.max, p_data: w.data });
-  if (!r.ok && r.status === 404) { snapshotsAvailable = false; return fail('Sleeping worlds are not set up yet (run vibeblox_indev29.sql in Supabase)'); }
-  return r.ok ? { ok: true, saved: r.data === true } : fail(r.error);
-}
-/** The host left for good: the world goes to sleep. */
-export async function releaseWorld(id: string): Promise<void> { if (snapshotsAvailable && HOSTED_ID_RE.test(id)) await rest('POST', 'rpc/release_world', { p_id: id }); }
-/** Delete the saved copy of a world you own. */
-export async function deleteWorldSnapshot(id: string): Promise<void> { if (snapshotsAvailable && HOSTED_ID_RE.test(id)) await rest('POST', 'rpc/delete_world_snapshot', { p_id: id }); }
-export async function listSleepingWorlds(): Promise<Result<{ worlds: SleepingWorld[] }>> {
-  if (!snapshotsAvailable) return { ok: true, worlds: [] };
-  const r = await rest('POST', 'rpc/list_sleeping_worlds', {});
-  if (!r.ok && r.status === 404) { snapshotsAvailable = false; return { ok: true, worlds: [] }; }
-  if (!r.ok) return fail(r.error);
-  const rows = (Array.isArray(r.data) ? r.data : []) as Array<{ id: string; name: string; owner_name: string; mode: string; world_type: string; privacy: string; max_players: number; updated_at: string }>;
-  return { ok: true, worlds: rows.map((x) => ({ id: x.id, name: x.name, owner: x.owner_name, mode: x.mode, worldType: x.world_type, privacy: x.privacy === 'friends' || x.privacy === 'accounts' ? x.privacy : 'public', max: Number(x.max_players) || 18, updatedAt: x.updated_at })) };
-}
-/** Wake a sleeping world: you get its snapshot and you are the one hosting it from now on. */
-export async function claimWorld(id: string): Promise<Result<{ world: WokenWorld }>> {
-  if (!HOSTED_ID_RE.test(id)) return fail('Bad world id');
-  const r = await rest('POST', 'rpc/claim_world', { p_id: id });
-  if (!r.ok) {
-    const m = /world is awake|no such world|sign in first/.exec(String(r.error));
-    return fail(m ? ({ 'world is awake': 'Someone just woke that world up. Look for it in the open worlds.', 'no such world': 'That world is not there any more.', 'sign in first': 'Sign in to join worlds.' } as Record<string, string>)[m[0]] : r.error);
-  }
-  const x = r.data as { id: string; name: string; owner: string; mode: string; worldType: string; privacy: string; maxPlayers: number; data: WorldSnapshotData } | null;
-  if (!x || !x.data || typeof x.data.seed !== 'number') return fail('That world could not be loaded.');
-  return { ok: true, world: { id: x.id, name: x.name, owner: x.owner, mode: x.mode, worldType: x.worldType, privacy: x.privacy === 'friends' || x.privacy === 'accounts' ? x.privacy : 'public', maxPlayers: Number(x.maxPlayers) || 18, data: x.data } };
-}
-/** A leaving host passes the saved world to the player who takes over. */
-export async function transferWorld(id: string, toName: string): Promise<void> { if (snapshotsAvailable && HOSTED_ID_RE.test(id)) await rest('POST', 'rpc/transfer_world', { p_id: id, p_to: toName }); }
 export async function unpublishHostedWorld(id: string): Promise<void> {
   if (!HOSTED_ID_RE.test(id)) return;
   await rest('DELETE', `hosted_worlds?id=eq.${id}`);
@@ -935,4 +894,19 @@ export function startPolling(account: Account | null, handlers: PollHandlers, ev
   const timer = setInterval(() => { void run(); }, everyMs);
   void run();
   return { stop: () => { stopped = true; clearInterval(timer); }, refresh: run };
+}
+
+/** The paid ranks an account owns, best last (older databases only know the one rank they have on). */
+export function ownedList(owned: unknown, rank: unknown): string[] {
+  const set = new Set<string>();
+  if (Array.isArray(owned)) for (const r of owned) if (r === 'vanguard' || r === 'elite' || r === 'champion') set.add(String(r));
+  if (rank === 'vanguard' || rank === 'elite' || rank === 'champion') set.add(String(rank));
+  return ['vanguard', 'elite', 'champion'].filter((r) => set.has(r));
+}
+/** Switch which of your owned ranks is on (Shop). Resolves an error message, or null when it worked. */
+export async function switchRank(rank: string, token: string): Promise<string | null> {
+  const r = await rest('POST', 'rpc/switch_rank', { p_rank: rank }, {}, token);
+  if (r.ok) return null;
+  if (r.status === 404) return 'Switching ranks is not set up on the server yet (run vibeblox_indev36.sql in Supabase).';
+  return 'Could not switch ranks. Try again.';
 }

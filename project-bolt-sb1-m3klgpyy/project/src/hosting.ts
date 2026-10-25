@@ -17,7 +17,7 @@ export const ROOM_PROTOCOL = 17;
 export type Privacy = 'private' | 'friends' | 'accounts' | 'public';
 export const PRIVACY_LABELS: Record<Privacy, string> = { private: 'Private', friends: 'Friends only', accounts: 'Signed-in players', public: 'Public' };
 type NetBlock = [number, number, number, number];
-type Settings = { difficulty: 'peaceful' | 'easy' | 'normal' | 'hard'; keepInventory: boolean; scripts: boolean; mods: boolean; commands: boolean; pvp?: boolean; /** the sky stays at midday */ alwaysDay?: boolean; /** false = the weather stays as it is */ weatherCycle?: boolean; /** who may run scripts */ scriptPerm?: 'off' | 'all' | 'admin' | 'owner' };
+type Settings = { difficulty: 'peaceful' | 'easy' | 'normal' | 'hard'; keepInventory: boolean; scripts: boolean; mods: boolean; commands: boolean; pvp?: boolean; /** the sky stays at midday */ alwaysDay?: boolean; /** false = the weather stays as it is */ weatherCycle?: boolean; /** who may run scripts */ scriptPerm?: 'off' | 'all' | 'admin' | 'owner' ; mobSpawning?: boolean; mobGriefing?: boolean };
 /** Roles the world's owner hands out (lowercase name -> role). The owner is always 'owner'. */
 export type RoleMap = Record<string, 'admin' | 'coowner'>;
 type Role = 'owner' | 'coowner' | 'admin' | null;
@@ -91,6 +91,8 @@ export type RoomOptions = {
   experimental?: boolean;
   privacy: Privacy;
   hostName: string;
+  /** The world's owner left and this player only keeps it running: they get no host powers (only the roles they were given). */
+  caretaker?: boolean;
   maxPlayers: number;
   bans?: string[];
   services: RoomServices;
@@ -376,7 +378,7 @@ export class HostRoom {
     const shown = target?.name ?? name.slice(0, 16);
     this.sendRoles();
     if (to === 'none') this.system(`${shown} is no longer ${cur === 'coowner' ? 'a co-owner' : 'an admin'}`);
-    else this.system(`${shown} was promoted to ${to === 'coowner' ? 'Co-owner' : 'Admin'} by ${byName}`);
+    else this.system(`${shown} has been promoted to ${to === 'coowner' ? 'co-owner' : 'admin'}`);
     if (target && to === 'coowner') target.conn.send({ t: 'acset', settings: this.anticheat.settings });
     return to === 'none' ? `${shown} has no role now` : `${shown} is now ${to === 'coowner' ? 'a co-owner' : 'an admin'}`;
   }
@@ -463,15 +465,15 @@ export class HostRoom {
   private kickById(by: Player, id: number, ban: boolean) {
     const target = this.players.get(id);
     if (!target || !target.joined || target.id === by.id || target.conn.local) return;
-    const byHost = by.id === this.hostId;
+    const byHost = by.id === this.hostId && !this.opts.caretaker;
     if (!byHost && !(roleLevel(this.roleOf(by)) >= 1 && roleLevel(this.roleOf(by)) > roleLevel(this.roleOf(target)))) { by.conn.send({ t: 'system', text: "You can't remove that player" }); return; }
     if (this.roleOf(target) === 'owner') { by.conn.send({ t: 'system', text: "You can't remove the owner" }); return; }
     if (ban) {
       const n = target.name.toLowerCase();
       if (!this.bans.includes(n)) { this.bans.push(n); this.opts.onBans?.(this.bans.slice()); }
     }
-    const who = by.id === this.hostId && !this.roleOf(by) ? 'the host' : by.name;
-    this.system(`${target.name} was ${ban ? 'banned' : 'kicked'} by ${who}`);
+    const who = by.name;
+    this.system(`${target.name} has been ${ban ? 'banned' : 'kicked'} by ${who}`);
     target.conn.close(ban ? 4005 : 4004, ban ? `You were banned from this world by ${who}` : `You were kicked by ${who}`);
   }
 
@@ -489,7 +491,7 @@ export class HostRoom {
         if (!target) { reply(`No player named ${String(msg.name || '').slice(0, 16)} here`); return; }
         if (target.id === p.id || target.conn.local || target.badge?.owner) { reply("You can't remove that player"); return; }
         if (msg.action === 'ban') { const n = target.name.toLowerCase(); if (!this.bans.includes(n)) { this.bans.push(n); this.opts.onBans?.(this.bans.slice()); } }
-        this.system(`${target.name} was ${msg.action === 'ban' ? 'banned' : 'kicked'} by an admin`);
+        this.system(`${target.name} has been ${msg.action === 'ban' ? 'banned' : 'kicked'} by ${p.name}`);
         target.conn.close(msg.action === 'ban' ? 4005 : 4004, msg.action === 'ban' ? 'You were banned by an admin' : 'You were kicked by an admin');
         return;
       case 'unban': {
@@ -529,7 +531,7 @@ export class HostRoom {
 
   private async handle(p: Player, msg: Record<string, unknown>) {
     if (!p.joined && msg.t !== 'hello') return;
-    const isHost = p.id === this.hostId;
+    const isHost = p.id === this.hostId && !this.opts.caretaker;
     const lvl = roleLevel(this.roleOf(p));
     switch (msg.t) {
       case 'hello': await this.hello(p, msg); return;
@@ -598,7 +600,7 @@ export class HostRoom {
         const s = (msg.settings ?? {}) as Partial<Settings>;
         const next = { ...this.settings };
         if (DIFFICULTIES.includes(String(s.difficulty))) next.difficulty = s.difficulty as Settings['difficulty'];
-        for (const k of ['keepInventory', 'scripts', 'mods', 'commands', 'pvp', 'alwaysDay', 'weatherCycle'] as const) if (typeof s[k] === 'boolean') next[k] = s[k] as boolean;
+        for (const k of ['keepInventory', 'scripts', 'mods', 'commands', 'pvp', 'alwaysDay', 'weatherCycle', 'mobSpawning', 'mobGriefing'] as const) if (typeof s[k] === 'boolean') next[k] = s[k] as boolean;
         if (SCRIPT_PERMS.includes(String(s.scriptPerm))) next.scriptPerm = s.scriptPerm;
         this.settings = next;
         this.broadcast({ t: 'settings', settings: next });
@@ -950,7 +952,7 @@ export class HostRoom {
     const state = this.snapshot();
     next.conn.send({ t: 'becomeHost', room: newRoomId, state });
     for (const o of this.players.values()) if (o.joined && !o.conn.local && o !== next) o.conn.send({ t: 'migrate', room: newRoomId, host: next.name });
-    this.system(`${this.opts.hostName} left. ${next.name} is keeping the world open.`);
+    this.system(`${this.opts.hostName} left. ${next.name} keeps the world running (they are not the host).`);
     // give the (big) hand-over message time to arrive before the connections close
     this.stopped = true;
     for (const t of this.timers) clearBgInterval(t);

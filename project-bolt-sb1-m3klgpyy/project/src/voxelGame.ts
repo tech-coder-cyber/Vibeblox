@@ -2416,6 +2416,60 @@ function drawBridgeEggIcon(): HTMLCanvasElement {
   return c;
 }
 
+// ---- Indev 36 art ----
+function drawWindChargeIcon(): HTMLCanvasElement {
+  const c = makeCanvas(16, 16), ctx = c.getContext('2d')!;
+  blobPx(ctx, 8, 8, 5.2, 5.2, '#d9eeff', '#7fb2dd', '#ffffff');
+  // a swirl of wind across the ball
+  for (const [x, y] of [[5, 6], [6, 5], [7, 5], [8, 5], [9, 6], [9, 7], [8, 8], [7, 8], [6, 9], [7, 10], [8, 10], [9, 10], [10, 9]]) setPx(ctx, x, y, '#6aa3d4');
+  setPx(ctx, 6, 6, '#ffffff'); setPx(ctx, 12, 4, '#e8f6ff'); setPx(ctx, 3, 11, '#e8f6ff');
+  return c;
+}
+function drawShieldIcon(): HTMLCanvasElement {
+  const c = makeCanvas(16, 16), ctx = c.getContext('2d')!;
+  const rows = ['..hhhhhhhhhhhh..', '.hwwwwwwwwwwwwh.', '.hwwwwwwwwwwwwh.', '.hwwwwwiiwwwwwh.', '.hwwwwwiiwwwwwh.', '.hwwiiiiiiiiwwh.', '.hwwiiiiiiiiwwh.', '.hwwwwwiiwwwwwh.', '..hwwwwiiwwwwh..', '..hwwwwiiwwwwh..', '...hwwwwwwwwh...', '....hwwwwwwh....', '.....hwwwwh.....', '......hwwh......', '.......hh.......'];
+  const col: Record<string, string> = { h: '#4a3418', w: '#a8793e', i: '#c9ced4' };
+  rows.forEach((r, y) => [...r].forEach((ch, x) => { if (col[ch]) setPx(ctx, x, y + 1, col[ch]); }));
+  for (let y = 2; y <= 8; y++) setPx(ctx, 2, y, '#c0925a'); // lit left edge
+  setPx(ctx, 7, 5, '#eef0f2'); setPx(ctx, 8, 5, '#9aa0a8');
+  return c;
+}
+/** A box block face: a shulker-style lid band (top third) over a body, with a latch on the side. */
+function drawBoxFace(big: boolean, part: 'top' | 'side'): HTMLCanvasElement {
+  const c = makeCanvas(16, 16), ctx = c.getContext('2d')!;
+  const base = big ? '#7a5aa8' : '#b98a4e', dark = big ? '#4b3570' : '#7d5629', light = big ? '#9d7fcc' : '#d8ad73', mid = big ? '#6a4c96' : '#a07440';
+  ctx.fillStyle = base; ctx.fillRect(0, 0, 16, 16);
+  if (part === 'top') {
+    ctx.fillStyle = light; ctx.fillRect(1, 1, 14, 14);
+    ctx.fillStyle = mid; ctx.fillRect(3, 3, 10, 10);
+    ctx.fillStyle = light; ctx.fillRect(4, 4, 8, 8);
+    ctx.fillStyle = dark; for (let i = 0; i < 16; i++) { setPx(ctx, i, 0, dark); setPx(ctx, i, 15, dark); setPx(ctx, 0, i, dark); setPx(ctx, 15, i, dark); }
+    return c;
+  }
+  ctx.fillStyle = light; ctx.fillRect(0, 0, 16, 5); // the lid
+  ctx.fillStyle = dark; ctx.fillRect(0, 5, 16, 1); ctx.fillRect(0, 15, 16, 1); ctx.fillRect(0, 0, 1, 16); ctx.fillRect(15, 0, 1, 16);
+  ctx.fillStyle = mid; ctx.fillRect(1, 6, 14, 1);
+  ctx.fillStyle = '#f0d36a'; ctx.fillRect(7, 3, 2, 5); ctx.fillStyle = '#9b7a1c'; ctx.fillRect(7, 7, 2, 1); // the latch
+  return c;
+}
+function drawBoxIcon(big: boolean): HTMLCanvasElement {
+  const c = makeCanvas(16, 16), ctx = c.getContext('2d')!;
+  const base = big ? '#7a5aa8' : '#b98a4e', dark = big ? '#4b3570' : '#7d5629', light = big ? '#9d7fcc' : '#d8ad73';
+  ctx.fillStyle = dark; ctx.fillRect(2, 4, 12, 10);
+  ctx.fillStyle = base; ctx.fillRect(3, 5, 10, 8);
+  ctx.fillStyle = light; ctx.fillRect(3, 5, 10, 1);
+  ctx.fillStyle = dark; ctx.fillRect(2, 7, 12, 1); // the lid line
+  ctx.fillStyle = '#f0d36a'; ctx.fillRect(7, 7, 2, 3); ctx.fillStyle = '#9b7a1c'; ctx.fillRect(7, 9, 2, 1); // the latch
+  if (big) { ctx.fillStyle = dark; ctx.fillRect(1, 3, 14, 1); ctx.fillRect(1, 14, 14, 1); }
+  return c;
+}
+function drawBarrierIcon(): HTMLCanvasElement {
+  const c = makeCanvas(16, 16), ctx = c.getContext('2d')!;
+  for (let a = 0; a < 360; a += 6) setPx(ctx, Math.round(8 + 6 * Math.cos(a * Math.PI / 180)), Math.round(8 + 6 * Math.sin(a * Math.PI / 180)), '#d33a3a');
+  for (let i = 3; i <= 12; i++) setPx(ctx, i, 15 - i, '#d33a3a');
+  return c;
+}
+
 // ---- Indev 33 art: snow, paths, coarse dirt, eggs, snowballs, shovels, signs ----
 const SNOW_WHITE = '#f4f8fc', SNOW_SHADE = '#dbe6f1';
 function drawEggIcon(): HTMLCanvasElement {
@@ -2604,6 +2658,7 @@ function drawNewFaces(): Record<string, HTMLCanvasElement> {
     spawner: drawSpawnerCanvas(),
     ...Object.fromEntries(TERRA_DYED.map((t) => [`tc_${t.key}`, terracottaCanvas(t.color)])),
     enderChestTop: drawEnderChestCanvas(true), enderChestSide: drawEnderChestCanvas(false),
+    boxPocketTop: drawBoxFace(false, 'top'), boxPocketSide: drawBoxFace(false, 'side'), boxStorageTop: drawBoxFace(true, 'top'), boxStorageSide: drawBoxFace(true, 'side'),
     cobweb: drawCobwebCanvas(), cinderLog: drawCinderCanvas('log'), cinderLogTop: drawCinderCanvas('logTop'), cinderPlanks: drawCinderCanvas('planks'), cinderLeaves: drawCinderCanvas('leaves'),
     snowyGrassSide: drawSnowyGrassSide(), coarseDirt: drawCoarseDirt(), targetOff: drawTargetCanvas(false), targetOn: drawTargetCanvas(true), arrowTrapOff: drawArrowTrapCanvas(false), arrowTrapOn: drawArrowTrapCanvas(true), spikes: drawSpikesCanvas(), pathTop: drawPathTop(), pathSide: drawPathSide(), ladder: drawLadderCanvas(false), ironLadder: drawLadderCanvas(true),
     ...Object.fromEntries(WOODS.map((_, w) => [`snowyLeaves${w}`, drawSnowyLeaves(w)])),
@@ -3062,6 +3117,7 @@ export function blockFaces(id: number): FaceSet | null {
   if (isMineralBlock(id)) return all(f[MINERAL_TEX[id]]);
   if (id === BLOCK_SPAWNER) return all(f.spawner);
   if (isDyedTerracotta(id)) return all(f[`tc_${TERRA_DYED[id - TERRA_DYED_FIRST].key}`]);
+  if (isBoxBlock(id)) { const k = id === BLOCK_STORAGE_BOX ? 'boxStorage' : 'boxPocket'; return { top: f[`${k}Top`], side: f[`${k}Side`], bottom: f[`${k}Side`] }; }
   if (id === BLOCK_ENDER_CHEST) return { top: f.enderChestTop, side: f.enderChestSide, bottom: f.enderChestTop };
   if (id === BLOCK_CINDER_LOG) return { top: f.cinderLogTop, side: f.cinderLog, bottom: f.cinderLogTop };
   if (id === BLOCK_CINDER_PLANKS) return all(f.cinderPlanks);
@@ -3144,9 +3200,44 @@ const TOOL_PALETTES: Record<ToolInfo['material'], Record<string, string>> = {
 };
 
 /** Flat pixel art for non-block items (sticks, tools). */
+const polishedItems = new Map<number, HTMLCanvasElement>();
+/**
+ * Indev 36 item polish: every 16x16 item picture gets a faint dark outline and light on its top-left edge and shade on
+ * its bottom-right edge, so flat shapes read as objects. Blocks are left alone.
+ */
+function polishItem(id: number, src: HTMLCanvasElement): HTMLCanvasElement {
+  if (src.width !== 16 || src.height !== 16 || isBlockId(id)) return src;
+  const hit = polishedItems.get(id);
+  if (hit) return hit;
+  try {
+    const sctx = src.getContext('2d')!;
+    const img = sctx.getImageData(0, 0, 16, 16);
+    const d = img.data;
+    const solid = (x: number, y: number) => x >= 0 && y >= 0 && x < 16 && y < 16 && d[(y * 16 + x) * 4 + 3] > 40;
+    const out = makeCanvas(16, 16), octx = out.getContext('2d')!;
+    const res = octx.createImageData(16, 16);
+    const r = res.data;
+    for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+      const i = (y * 16 + x) * 4;
+      if (solid(x, y)) {
+        let k = 1;
+        if (!solid(x, y - 1) || !solid(x - 1, y)) k = 1.14; // lit edge, top-left
+        else if (!solid(x, y + 1) || !solid(x + 1, y)) k = 0.88; // shaded edge, bottom-right
+        r[i] = Math.min(255, d[i] * k); r[i + 1] = Math.min(255, d[i + 1] * k); r[i + 2] = Math.min(255, d[i + 2] * k); r[i + 3] = d[i + 3];
+      } else if (solid(x + 1, y) || solid(x - 1, y) || solid(x, y + 1) || solid(x, y - 1)) {
+        r[i] = 20; r[i + 1] = 16; r[i + 2] = 24; r[i + 3] = 110; // soft outline
+      }
+    }
+    octx.putImageData(res, 0, 0);
+    polishedItems.set(id, out);
+    return out;
+  } catch { return src; }
+}
+
 function itemCanvas(id: number): HTMLCanvasElement | null {
   if (isDye(id)) return drawDyeIcon(DYE_COLORS[id - ITEM_DYE_FIRST].color);
-  const base = itemCanvasBase(id);
+  const base0 = itemCanvasBase(id);
+  const base = base0 && !CUSTOM_ITEMS.has(id) && !CUSTOM_BLOCKS.has(id) ? polishItem(id, base0) : base0;
   // Items and blocks that mods bring are the author's art and stay exactly as drawn
   if (!base || textureRes !== 32 || CUSTOM_ITEMS.has(id) || CUSTOM_BLOCKS.has(id)) return base;
   let hi = enhancedItemCache.get(id);
@@ -3177,6 +3268,10 @@ function itemCanvasBase(id: number): HTMLCanvasElement | null {
   if (id === BLOCK_BREWING_STAND) return drawBrewingStandIcon();
   if (id === ITEM_HOLLOW_STAR) return drawHollowStarIcon();
   if (id === ITEM_BRIDGE_EGG) return drawBridgeEggIcon();
+  if (id === ITEM_WIND_CHARGE) return drawWindChargeIcon();
+  if (id === ITEM_SHIELD) return drawShieldIcon();
+  if (id === ITEM_POCKET_BOX || id === ITEM_STORAGE_BOX) return drawBoxIcon(id === ITEM_STORAGE_BOX);
+  if (id === BLOCK_BARRIER) return drawBarrierIcon();
   if (id >= BLOCK_TORCH_WALL && id < BLOCK_TORCH_CEILING) return drawTorchIcon();
   if (isLadder(id)) return drawLadderCanvas(isIronLadder(id));
   if (isEgg(id)) return drawEggCanvas(TEAM_COLORS[id - BLOCK_EGG].color);
@@ -3486,6 +3581,11 @@ class PerlinNoise {
 
 export const CHUNK_SIZE = 16;
 export const CHUNK_HEIGHT = 64;
+/** The highest you can build: blocks go up to y = 319. You can walk and fly higher than that, there is just nothing to place there. */
+export const BUILD_LIMIT = 320;
+/** Chunks start CHUNK_HEIGHT tall and only grow (in steps of 64) when somebody builds higher, so a normal world costs nothing extra. */
+let topY = CHUNK_HEIGHT;
+export const worldTopY = (): number => topY;
 const SEA_LEVEL = 30;
 
 export const BLOCK_AIR = 0;
@@ -3694,6 +3794,8 @@ export const ITEM_ELYTRA = 1423, ITEM_FIREWORK = 1424;
 export const ELYTRA_DURABILITY = 432;
 ARMOR[ITEM_ELYTRA] = { slot: 1, material: 'leather', points: 0, elytra: true };
 export const ITEM_BRIDGE_EGG = 1460;
+export const ITEM_WIND_CHARGE = 1461, ITEM_SHIELD = 1462;
+export const SHIELD_DURABILITY = 336;
 /** Spawn eggs: + index into SPAWN_EGG_KINDS. */
 export const ITEM_SPAWN_EGG = 1430;
 export const CONCRETE_EXTRA = [
@@ -3858,7 +3960,16 @@ export const isLadder = (b: number): boolean => b >= BLOCK_LADDER && b < BLOCK_I
 export const ladderSide = (b: number): number => (b - BLOCK_LADDER) & 3;
 /** Blocks per second: climbing up (Space, or walking into the wall), sliding down when you do nothing, and the fastest slide. */
 export const LADDER_UP_SPEED = 3.0, IRON_LADDER_UP_SPEED = 4.6, LADDER_SLIDE_SPEED = 2.4, IRON_LADDER_SLIDE_SPEED = 3.4;
-export const LAST_BUILTIN_BLOCK = BLOCK_IRON_LADDER + 3; // 1383
+/** Only /give can hand you one. Solid and invisible, and nothing in survival can break it. */
+export const BLOCK_BARRIER = 1384;
+/** Boxes work like shulker boxes: place one down, open it, and when you break it the box drops with everything still inside. */
+export const BLOCK_POCKET_BOX = 1385, BLOCK_STORAGE_BOX = 1386;
+export const ITEM_POCKET_BOX = BLOCK_POCKET_BOX, ITEM_STORAGE_BOX = BLOCK_STORAGE_BOX;
+/** Pocket Box: 9 slots. Storage Box: 27 slots. */
+export const BOX_SLOTS: Record<number, number> = { [BLOCK_POCKET_BOX]: 9, [BLOCK_STORAGE_BOX]: 27 };
+export const isBoxBlock = (b: number | null | undefined): boolean => b === BLOCK_POCKET_BOX || b === BLOCK_STORAGE_BOX;
+export const isBoxItem = isBoxBlock;
+export const LAST_BUILTIN_BLOCK = BLOCK_STORAGE_BOX; // 1386
 /** The five trees. Index 0 is oak (its blocks keep the old ids); 1-4 use the 1010/1020/1030 families. */
 export const WOODS = [
   { key: 'oak', name: 'Oak', color: '#c19a5b' }, { key: 'spruce', name: 'Spruce', color: '#73532f' }, { key: 'birch', name: 'Birch', color: '#d4c48a' },
@@ -4010,7 +4121,7 @@ export const SIDES: ReadonlyArray<readonly [number, number]> = [[0, -1], [1, 0],
 export const ITEM_BLAZE_ROD = 186;
 export const ITEM_WAND = 187;
 export type Difficulty = 'peaceful' | 'easy' | 'normal' | 'hard';
-export type GameRules = { difficulty: Difficulty; keepInventory: boolean; hardcore: boolean; /** The sky stays at midday (Manage Server) */ alwaysDay?: boolean; /** false = the weather stays as it is */ weatherCycle?: boolean };
+export type GameRules = { difficulty: Difficulty; keepInventory: boolean; hardcore: boolean; /** The sky stays at midday (Manage Server) */ alwaysDay?: boolean; /** false = the weather stays as it is */ weatherCycle?: boolean; /** false = no wild mobs spawn on their own (Manage Server) */ mobSpawning?: boolean; /** false = creepers, ghasts and other mobs do not break blocks */ mobGriefing?: boolean };
 export const DEFAULT_RULES: GameRules = { difficulty: 'normal', keepInventory: false, hardcore: false };
 const DIFFICULTY_DAMAGE: Record<Difficulty, number> = { peaceful: 0.5, easy: 0.5, normal: 1, hard: 1.5 };
 export const ITEM_FLINT = 182;
@@ -4540,6 +4651,7 @@ function flowLevel(b: number): number {
 const BLOCK_FLAGS = new Uint8Array(MAX_BLOCK_ID); // bit 1 = solid, bit 2 = opaque
 /** Newer blocks: 'cube' = solid and opaque, 'see' = solid but not a full cube, 'pass' = you walk through it. */
 function newBlockKind(b: number): 'cube' | 'see' | 'pass' | null {
+  if (b === BLOCK_BARRIER) return 'see'; // solid, but not a cube you can see
   if (isLadder(b)) return 'pass'; // you walk into a ladder (and climb it)
   if (b >= BLOCK_SNOW_LAYER && b <= LAST_BUILTIN_BLOCK) return b === BLOCK_SNOW_LAYER ? 'pass' : isTarget(b) ? 'cube' : isSnowyLeaves(b) || b === BLOCK_DIRT_PATH ? 'see' : 'cube'; // (a dirt path is a bit lower than a block: solid, but its neighbours still draw their faces)
   if (b < 1094 || b > LAST_BUILTIN_BLOCK) return null;
@@ -4594,19 +4706,25 @@ export type Enchants = Record<string, number>;
  * A stack of items. Tools, armor, bows and enchanted books can also carry wear (`damage`),
  * enchantments and a name from an anvil; those never stack, so stacks never mix data.
  */
-export type ItemStack = { id: number; count: number; damage?: number; ench?: Enchants; name?: string };
+export type ItemStack = { id: number; count: number; damage?: number; ench?: Enchants; name?: string; box?: Array<ItemStack | null> };
 /** The same item (keeping its wear, enchantments and name) with a new count. */
 export function withCount(st: ItemStack, count: number): ItemStack { return { ...st, count }; }
 export function hasItemData(st: ItemStack | null | undefined): boolean {
-  return !!st && (!!st.damage || !!st.name || (!!st.ench && Object.keys(st.ench).length > 0));
+  return !!st && (!!st.damage || !!st.name || !!st.box || (!!st.ench && Object.keys(st.ench).length > 0));
 }
 /** Only what's real survives a save or a mod: unknown fields and broken values are dropped. */
-export function cleanStack(st: unknown): ItemStack | null {
+export function cleanStack(st: unknown, depth = 0): ItemStack | null {
   if (!st || typeof st !== 'object') return null;
   const o = st as Record<string, unknown>;
-  const id = Number(o.id), count = Math.floor(Number(o.count));
+  let id = Number(o.id);
+  const count = Math.floor(Number(o.count));
+  if (id === 1463) id = BLOCK_POCKET_BOX; else if (id === 1464) id = BLOCK_STORAGE_BOX; // (the Indev 36 box items became blocks)
   if (!Number.isInteger(id) || !(count > 0)) return null;
   const out: ItemStack = { id, count };
+  if (isBoxBlock(id) && Array.isArray(o.box) && depth < 1) { // a box keeps what is inside it (a box can't hold another box's contents)
+    const inner = (o.box as unknown[]).slice(0, BOX_SLOTS[id]).map((x) => { const c = cleanStack(x, depth + 1); return c && !isBoxBlock(c.id) ? c : null; });
+    if (inner.some(Boolean)) out.box = inner;
+  }
   if (maxDurability(id) > 0 && Number.isFinite(Number(o.damage)) && Number(o.damage) > 0) out.damage = Math.min(maxDurability(id) - 1, Math.floor(Number(o.damage)));
   if (o.ench && typeof o.ench === 'object') {
     const e: Enchants = {};
@@ -4634,6 +4752,7 @@ export function maxDurability(id: number): number {
   const t = TOOLS[id];
   if (t) return TOOL_DURABILITY[t.material] ?? 0;
   if (id === ITEM_ELYTRA) return ELYTRA_DURABILITY;
+  if (id === ITEM_SHIELD) return SHIELD_DURABILITY;
   const a = ARMOR[id];
   if (a) return ARMOR_DURABILITY_BASE[a.slot] * (ARMOR_DURABILITY_FACTOR[a.material] ?? 10);
   if (id === ITEM_BOW) return 384;
@@ -4752,7 +4871,7 @@ export const CHEST_SIZE = 27;
 export function maxStack(id: number): number {
   if (id === ITEM_ENDER_PEARL || id === ITEM_EGG || id === ITEM_SNOWBALL) return 16;
   if (isSignBlock(id)) return 16;
-  if (id === ITEM_BUCKET || id === ITEM_WATER_BUCKET || id === ITEM_LAVA_BUCKET) return 1;
+  if (id === ITEM_BUCKET || id === ITEM_WATER_BUCKET || id === ITEM_LAVA_BUCKET || isBoxBlock(id)) return 1;
   if (TOOLS[id] || ARMOR[id] || id === ITEM_FLINT_AND_STEEL || id === ITEM_SHEARS || id === ITEM_FISHING_ROD) return 1; // tools and armor don't stack
   if (id === ITEM_XP_BOTTLE) return 16;
   if (isPotionItem(id)) return 1;
@@ -4860,7 +4979,7 @@ export const ITEM_INFO: Record<number, { name: string; color: string; hidden?: b
   [ITEM_BUCKET]: { name: 'Bucket', color: '#b8b8b8' },
   [ITEM_WATER_BUCKET]: { name: 'Water Bucket', color: '#3a6fd8' },
   [ITEM_LAVA_BUCKET]: { name: 'Lava Bucket', color: '#ff7a1a' },
-  [ITEM_ENDER_PEARL]: { name: 'Ender Pearl', color: '#1f8a7a' },
+  [ITEM_ENDER_PEARL]: { name: 'Teleportation Pearl', color: '#1f8a7a' },
   [ITEM_GOLD_PICKAXE]: { name: 'Gold Pickaxe', color: '#ffe066' },
   [ITEM_GOLD_SWORD]: { name: 'Gold Sword', color: '#ffe066' },
   [ITEM_GOLD_AXE]: { name: 'Gold Axe', color: '#ffe066' },
@@ -5087,6 +5206,7 @@ ITEM_INFO[BLOCK_LADDER] = { name: 'Ladder', color: '#a98250', lore: ['Click the 
 ITEM_INFO[BLOCK_IRON_LADDER] = { name: 'Iron Ladder', color: '#b9bec4', lore: ['A sturdier ladder: you climb and slide faster.', 'Click the side of a wall to put it up.'] };
 for (let i = 1; i < 4; i++) { ITEM_INFO[BLOCK_LADDER + i] = { name: 'Ladder', color: '#a98250', hidden: true }; ITEM_INFO[BLOCK_IRON_LADDER + i] = { name: 'Iron Ladder', color: '#b9bec4', hidden: true }; }
 ITEM_INFO[BLOCK_SPIKES] = { name: 'Spike Block', color: '#6a6a6a', lore: ['Whatever stands on it gets hurt (1 heart every half second).', 'Hide it under a carpet of... nothing. It is a trap.'] };
+ITEM_INFO[BLOCK_BARRIER] = { name: 'Barrier', color: '#d33a3a', lore: ['Invisible and unbreakable.', 'Only /give can get you one.'] };
 ITEM_INFO[BLOCK_DIRT_PATH] = { name: 'Dirt Path', color: '#9a7e4b', lore: ['Right-click grass or dirt with a shovel.'] };
 WOODS.forEach((wd, w) => {
   ITEM_INFO[snowyLeavesId(w)] = { name: `Snowy ${wd.name} Leaves`, color: '#cfe0d4' };
@@ -5106,7 +5226,11 @@ WOODS.forEach((wd, w) => {
 ITEM_INFO[ITEM_EGG] = { name: 'Egg', color: '#f2e7d2', lore: ['Throw it. Sometimes a baby chicken hatches!'] };
 ITEM_INFO[ITEM_SNOWBALL] = { name: 'Snowball', color: '#f4f8fc', lore: ['Throw it. Break snow with a shovel to get more.'] };
 Object.assign(ITEM_INFO, {
-  [ITEM_BOAT]: { name: 'Boat', color: '#a8793e', lore: ['Put it on water (or on land) and right-click it to get in.', 'W/S: forward and back, A/D: turn, Shift: get out.', 'It flies across ice. Throw an ender pearl from it to pull it along.'] },
+  [ITEM_BOAT]: { name: 'Boat', color: '#a8793e', lore: ['Put it on water (or on land) and right-click it to get in.', 'W/S: forward and back, A/D: turn, Shift: get out.', 'It flies across ice. Throw a teleportation pearl from it to pull it along.'] },
+  [ITEM_WIND_CHARGE]: { name: 'Wind Charge', color: '#bfe4ff', lore: ['Right-click: a burst of wind throws you up.', 'You take no fall damage from the landing.'] },
+  [ITEM_SHIELD]: { name: 'Shield', color: '#8a6a3a', lore: ['Hold right-click to block hits from the front.', 'It wears out every time it takes a hit.'] },
+  [ITEM_POCKET_BOX]: { name: 'Pocket Box', color: '#b98a4e', lore: ['9 slots. Place it down and right-click to open it.', 'Break it and it drops with everything still inside.'] },
+  [ITEM_STORAGE_BOX]: { name: 'Storage Box', color: '#7a5aa8', lore: ['27 slots. Place it down and right-click to open it.', 'Break it and it drops with everything still inside.'] },
   [ITEM_BRIDGE_EGG]: { name: 'Bridge Egg', color: '#f4ecd0', lore: ['Throw it: a bridge of wool builds itself behind the egg.', 'It stops when it hits something.'] },
   [ITEM_HOLLOW_STAR]: { name: 'Hollow Star', color: '#cfe8ff', lore: ['Dropped by the Hollow Tyrant.', 'It hums faintly. It does nothing... for now.'] },
 });
@@ -5230,6 +5354,8 @@ CROSS_MAT[BLOCK_WHEAT_1] = 37;
 CROSS_MAT[BLOCK_WHEAT_2] = 38;
 CROSS_MAT[BLOCK_DEAD_BUSH] = 53;
 
+/** The keys of every modded item and block that is registered right now. */
+export function customKeyList(): string[] { return [...CUSTOM_KEYS.keys()]; }
 export function customIdForKey(key: string): number | null {
   return CUSTOM_KEYS.get(key) ?? null;
 }
@@ -5533,7 +5659,7 @@ RECIPES.push(
   { id: 'bread', name: 'Bread', pattern: [ITEM_WHEAT, ITEM_WHEAT, ITEM_WHEAT], width: 3, height: 1, output: { id: ITEM_BREAD, count: 1 }, needsTable: false },
 );
 // Phase 2: wood types, torches, TNT, beds, iron doors, flint
-RECIPES.push({ id: 'cinder_planks', name: 'cinderwood planks', pattern: [BLOCK_CINDER_LOG], width: 1, height: 1, output: { id: BLOCK_CINDER_PLANKS, count: 4 }, needsTable: false });
+RECIPES.push({ id: 'cinder_planks', name: 'Cinderwood Planks', pattern: [BLOCK_CINDER_LOG], width: 1, height: 1, output: { id: BLOCK_CINDER_PLANKS, count: 4 }, needsTable: false });
 WOOD_TYPES.forEach((t, i) => RECIPES.push({ id: `${t}_planks`, name: `${t.replace('_', ' ')} planks`, pattern: [LOG_ID(i)], width: 1, height: 1, output: { id: PLANKS_ID(i), count: 4 }, needsTable: false }));
 RECIPES.push(
   { id: 'sandstone', name: 'Sandstone', pattern: [BLOCK_SAND, BLOCK_SAND, BLOCK_SAND, BLOCK_SAND], width: 2, height: 2, output: { id: BLOCK_SANDSTONE, count: 1 }, needsTable: false },
@@ -5701,6 +5827,17 @@ for (const b of [BLOCK_COAL_ORE, BLOCK_DIAMOND_ORE, BLOCK_EMERALD_ORE, BLOCK_QUA
   Object.assign(SMELTING, { [BLOCK_CACTUS]: D('green'), [BLOCK_LAPIS_ORE]: ITEM_LAPIS, [BLOCK_REDSTONE_ORE]: ITEM_REDSTONE });
 }
 
+// ---- Indev 36 recipes ----
+RECIPES.push(
+  { id: 'wind_charge', name: 'Wind Charge', pattern: [ITEM_FEATHER, ITEM_FEATHER, ITEM_BLAZE_POWDER], width: 3, height: 1, output: { id: ITEM_WIND_CHARGE, count: 2 }, needsTable: false, shapeless: true },
+  { id: 'shield', name: 'Shield', pattern: [ITEM_PLANKS, ITEM_IRON_INGOT, ITEM_PLANKS, ITEM_PLANKS, ITEM_PLANKS, ITEM_PLANKS, null, ITEM_PLANKS, null], width: 3, height: 3, output: { id: ITEM_SHIELD, count: 1 }, needsTable: true },
+  { id: 'pocket_box', name: 'Pocket Box', pattern: [null, ITEM_LEATHER, null, ITEM_LEATHER, BLOCK_CHEST, ITEM_LEATHER, null, ITEM_LEATHER, null], width: 3, height: 3, output: { id: ITEM_POCKET_BOX, count: 1 }, needsTable: true },
+  { id: 'storage_box', name: 'Storage Box', pattern: [ITEM_GOLD_INGOT, ITEM_ENDER_PEARL, ITEM_GOLD_INGOT, ITEM_LEATHER, ITEM_POCKET_BOX, ITEM_LEATHER, ITEM_GOLD_INGOT, BLOCK_CHEST, ITEM_GOLD_INGOT], width: 3, height: 3, output: { id: ITEM_STORAGE_BOX, count: 1 }, needsTable: true },
+);
+/** Every recipe name starts each word with a capital ("Spruce Planks", not "spruce planks"). */
+const titleCase = (n: string): string => n.replace(/\b([a-z])/g, (m) => m.toUpperCase());
+for (const r of RECIPES) r.name = titleCase(r.name);
+
 const EXPERIMENTAL_RECIPES: Recipe[] = [
   { id: 'spyglass', name: 'Spyglass', pattern: [BLOCK_GLASS, ITEM_GOLD_INGOT, ITEM_GOLD_INGOT], width: 1, height: 3, output: { id: ITEM_SPYGLASS, count: 1 }, needsTable: false },
 ];
@@ -5834,12 +5971,24 @@ class Chunk {
     this.blocks = new Uint16Array(CHUNK_SIZE * CHUNK_HEIGHT * CHUNK_SIZE);
   }
 
+  /** How many layers this chunk holds (the layout is by layer, so growing just adds empty layers on top). */
+  height = CHUNK_HEIGHT;
+  private grow(y: number) {
+    const h = Math.min(BUILD_LIMIT, Math.ceil((y + 1) / 64) * 64);
+    if (h <= this.height) return;
+    const next = new Uint16Array(CHUNK_SIZE * h * CHUNK_SIZE);
+    next.set(this.blocks);
+    this.blocks = next;
+    this.height = h;
+    if (h > topY) topY = h;
+  }
+
   idx(x: number, y: number, z: number): number {
     return (y * CHUNK_SIZE + z) * CHUNK_SIZE + x;
   }
 
   get(x: number, y: number, z: number): number {
-    if (x < 0 || x >= CHUNK_SIZE || z < 0 || z >= CHUNK_SIZE || y < 0 || y >= CHUNK_HEIGHT) return BLOCK_AIR;
+    if (x < 0 || x >= CHUNK_SIZE || z < 0 || z >= CHUNK_SIZE || y < 0 || y >= this.height) return BLOCK_AIR;
     return this.blocks[this.idx(x, y, z)];
   }
 
@@ -5847,7 +5996,8 @@ class Chunk {
   spawners: Array<[number, number, number]> | null = null;
 
   set(x: number, y: number, z: number, v: number) {
-    if (x < 0 || x >= CHUNK_SIZE || z < 0 || z >= CHUNK_SIZE || y < 0 || y >= CHUNK_HEIGHT) return;
+    if (x < 0 || x >= CHUNK_SIZE || z < 0 || z >= CHUNK_SIZE || y < 0 || y >= BUILD_LIMIT) return;
+    if (y >= this.height) { if (v === BLOCK_AIR) return; this.grow(y); }
     this.blocks[this.idx(x, y, z)] = v;
     if (v === BLOCK_SPAWNER && !this.spawners?.some((s) => s[0] === x && s[1] === y && s[2] === z)) (this.spawners ??= []).push([x, y, z]);
   }
@@ -6235,6 +6385,7 @@ const NEW_FACE_KEYS: string[] = [
   'snowyGrassSide', 'coarseDirt', 'targetOff', 'targetOn', 'arrowTrapOff', 'arrowTrapOn', 'spikes', 'pathTop', 'pathSide', ...WOODS.map((_, w) => `snowyLeaves${w}`),
   ...[1, 2, 3, 4].flatMap((w) => [`door${w}Lo`, `door${w}Hi`, `trap${w}`]),
   'ladder', 'ironLadder',
+  'boxPocketTop', 'boxPocketSide', 'boxStorageTop', 'boxStorageSide',
 ];
 const MINERAL_TEX: Record<number, string> = {}; // filled right below (the block ids are defined above)
 MINERAL_TEX[BLOCK_DIAMOND_BLOCK] = 'mDiamond'; MINERAL_TEX[BLOCK_GOLD_BLOCK] = 'mGold'; MINERAL_TEX[BLOCK_COAL_BLOCK] = 'mCoal';
@@ -6266,13 +6417,14 @@ function matIndexFor(block: number, f: number): number {
   const top = f === 2, bottom = f === 3;
   if (isDyedBed(block)) { const k = DYE_COLORS[bedColor(block)].key; return top ? NF(bedIsHead(block) ? `bedHead_${k}` : `bedFoot_${k}`) : bottom ? 63 : NF(`bedSide_${k}`); }
   if (block >= BLOCK_SNOW_LAYER && block <= LAST_BUILTIN_BLOCK) {
-    if (block === BLOCK_SNOW_LAYER) return 16;
+    if (block === BLOCK_SNOW_LAYER || block === BLOCK_BARRIER) return 16;
     if (block === BLOCK_SNOWY_GRASS) return top ? 16 : bottom ? 0 : NF('snowyGrassSide');
     if (block === BLOCK_COARSE_DIRT) return NF('coarseDirt');
     if (isTarget(block)) return NF(block === BLOCK_TARGET ? 'targetOff' : 'targetOn');
     if (isArrowTrap(block)) return NF(block === BLOCK_ARROW_TRAP ? 'arrowTrapOff' : 'arrowTrapOn');
     if (block === BLOCK_SPIKES) return NF('spikes');
     if (isLadder(block)) return NF(isIronLadder(block) ? 'ironLadder' : 'ladder');
+    if (isBoxBlock(block)) return NF(`${block === BLOCK_STORAGE_BOX ? 'boxStorage' : 'boxPocket'}${top || bottom ? 'Top' : 'Side'}`);
     if (block === BLOCK_DIRT_PATH) return top ? NF('pathTop') : bottom ? 0 : NF('pathSide');
     return NF(`snowyLeaves${block - BLOCK_SNOWY_LEAVES_FIRST}`);
   }
@@ -6783,7 +6935,7 @@ class World {
   /** Redstone parts in this world ("x,y,z"), kept up to date as blocks change (worldgen never makes any). */
   redstone = new Set<string>();
   setWorldBlock(wx: number, wy: number, wz: number, v: number) {
-    if (wy < 0 || wy >= CHUNK_HEIGHT) return;
+    if (wy < 0 || wy >= BUILD_LIMIT) return;
     if (isRedstoneComponent(v)) this.redstone.add(`${wx},${wy},${wz}`);
     else if (this.redstone.size) this.redstone.delete(`${wx},${wy},${wz}`);
     const cx = Math.floor(wx / CHUNK_SIZE);
@@ -8073,7 +8225,7 @@ class World {
       { dir: [0, 0, -1], corners: [[0, 0, 0], [0, 1, 0], [1, 1, 0], [1, 0, 0]] },
     ];
     for (let x = 0; x < CHUNK_SIZE; x++) {
-      for (let y = 0; y < CHUNK_HEIGHT; y++) {
+      for (let y = 0; y < chunk.height; y++) {
         for (let z = 0; z < CHUNK_SIZE; z++) {
           const b = chunk.get(x, y, z);
           const k = kindOf(b);
@@ -8124,7 +8276,7 @@ class World {
   // Fluids treat chunks that aren't generated as solid, so they never flow into the unknown
   private fget(x: number, y: number, z: number): number {
     if (y < 0) return BLOCK_BEDROCK;
-    if (y >= CHUNK_HEIGHT) return BLOCK_AIR;
+    if (y >= topY) return BLOCK_AIR;
     const cx = Math.floor(x / CHUNK_SIZE), cz = Math.floor(z / CHUNK_SIZE);
     const c = this.getChunk(cx, cz);
     if (!c || !c.generated) return BLOCK_STONE;
@@ -8230,7 +8382,7 @@ class World {
 
   // Sample a block from world coordinates (may query neighboring chunks)
   getWorldBlock(wx: number, wy: number, wz: number): number {
-    if (wy < 0 || wy >= CHUNK_HEIGHT) return BLOCK_AIR;
+    if (wy < 0 || wy >= topY) return BLOCK_AIR;
     const cx = Math.floor(wx / CHUNK_SIZE);
     const cz = Math.floor(wz / CHUNK_SIZE);
     const chunk = this.getChunk(cx, cz);
@@ -8250,7 +8402,7 @@ class World {
     if (!chunk || !chunk.generated) return SEA_LEVEL + 12;
     const lx = wx - cx * CHUNK_SIZE;
     const lz = wz - cz * CHUNK_SIZE;
-    for (let y = CHUNK_HEIGHT - 1; y >= 0; y--) {
+    for (let y = chunk.height - 1; y >= 0; y--) {
       const b = chunk.get(lx, y, lz);
       if (isSolid(b)) return y; // top solid block (ignores water, lava and plants)
     }
@@ -8262,9 +8414,11 @@ class World {
   // see-through gaps between adjacent chunks that haven't been built yet.
   // ---- Light: computed for a chunk plus a 14-block margin around it ----
   private lightBuf: { blocks: Uint16Array; sky: Uint8Array; blk: Uint8Array } | null = null;
-  computeLight(chunk: Chunk): { sky: Uint8Array; blk: Uint8Array; W: number } {
-    const M = LIGHT_MARGIN, W = CHUNK_SIZE + 2 * M, H = CHUNK_HEIGHT, N = W * W * H, WW = W * W;
-    if (!this.lightBuf) this.lightBuf = { blocks: new Uint16Array(N), sky: new Uint8Array(N), blk: new Uint8Array(N) };
+  computeLight(chunk: Chunk): { sky: Uint8Array; blk: Uint8Array; W: number; H: number } {
+    let H = chunk.height; // as tall as the tallest chunk around it (light reaches 14 blocks in, so only the neighbours count)
+    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) { const nc = this.getChunk(chunk.cx + dx, chunk.cz + dz); if (nc && nc.height > H) H = nc.height; }
+    const M = LIGHT_MARGIN, W = CHUNK_SIZE + 2 * M, N = W * W * H, WW = W * W;
+    if (!this.lightBuf || this.lightBuf.blocks.length < N) this.lightBuf = { blocks: new Uint16Array(N), sky: new Uint8Array(N), blk: new Uint8Array(N) };
     const { blocks, sky, blk } = this.lightBuf;
     const ox = chunk.cx * CHUNK_SIZE - M, oz = chunk.cz * CHUNK_SIZE - M;
     for (let z = 0; z < W; z++) {
@@ -8274,7 +8428,7 @@ class World {
         const c = ccx === chunk.cx && ccz === chunk.cz ? chunk : this.getChunk(ccx, ccz);
         const lx = wx - ccx * CHUNK_SIZE, lz = wz - ccz * CHUNK_SIZE;
         const col = z * W + x;
-        if (c && c.generated) for (let y = 0; y < H; y++) blocks[y * WW + col] = c.blocks[(y * CHUNK_SIZE + lz) * CHUNK_SIZE + lx];
+        if (c && c.generated) { const ch = c.height; for (let y = 0; y < H; y++) blocks[y * WW + col] = y < ch ? c.blocks[(y * CHUNK_SIZE + lz) * CHUNK_SIZE + lx] : 0; }
         else for (let y = 0; y < H; y++) blocks[y * WW + col] = 0; // not loaded yet: treat as open air
       }
     }
@@ -8315,7 +8469,7 @@ class World {
       if (e > 0) { blk[i] = e; q.push(i); }
     }
     spread(blk);
-    return { sky, blk, W };
+    return { sky, blk, W, H };
   }
 
   buildChunkGeometry(
@@ -8363,8 +8517,8 @@ class World {
     const lightDark: number[] = [];
     const blockLight: number[] = [];
     const lIdx = (lx: number, ly: number, lz: number) => ly * LWW + (lz + LM) * LW + (lx + LM);
-    const skyAt = (lx: number, ly: number, lz: number) => (ly >= CHUNK_HEIGHT ? 15 : ly < 0 ? 0 : light.sky[lIdx(lx, ly, lz)]);
-    const blkAt = (lx: number, ly: number, lz: number) => (ly >= CHUNK_HEIGHT || ly < 0 ? 0 : light.blk[lIdx(lx, ly, lz)]);
+    const skyAt = (lx: number, ly: number, lz: number) => (ly >= light.H ? 15 : ly < 0 ? 0 : light.sky[lIdx(lx, ly, lz)]);
+    const blkAt = (lx: number, ly: number, lz: number) => (ly >= light.H || ly < 0 ? 0 : light.blk[lIdx(lx, ly, lz)]);
     const pushLight = (sk: number, bl: number, n: number) => { const d = 1 - lightCurve(sk), b = bl > 0 ? lightCurve(bl) : 0; for (let k = 0; k < n; k++) { lightDark.push(d); blockLight.push(b); } };
     const AO_CURVE = [0.5, 0.68, 0.84, 1.0];
     const tintOn = this.kind === 'overworld' && !this.flat && !this.airWorld;
@@ -8377,7 +8531,7 @@ class World {
     const ao = [0, 0, 0, 0];
 
     for (let x = 0; x < CHUNK_SIZE; x++) {
-      for (let y = 0; y < CHUNK_HEIGHT; y++) {
+      for (let y = 0; y < chunk.height; y++) {
         for (let z = 0; z < CHUNK_SIZE; z++) {
           const block = chunk.get(x, y, z);
           if (block === BLOCK_AIR || isFluid(block)) continue; // fluids get their own mesh
@@ -8400,6 +8554,7 @@ class World {
             continue;
           }
 
+          if (block === BLOCK_BARRIER) continue; // invisible
           // Doors and glass panes are thin boxes rather than whole cubes
           const shape = hasShape(block) ? shapeBoxes(block, (ddx, ddy, ddz) => get(x + ddx, y + ddy, z + ddz)) : null;
           if (shape) {
@@ -9402,7 +9557,7 @@ export function createVoxelGame(
     let c = precipCache.get(key);
     if (c && weatherClock - c.at < 1.5) return c;
     let top = -1;
-    for (let y = CHUNK_HEIGHT - 1; y >= 0; y--) if (world.getWorldBlock(x, y, z) !== BLOCK_AIR) { top = y; break; }
+    for (let y = topY - 1; y >= 0; y--) if (world.getWorldBlock(x, y, z) !== BLOCK_AIR) { top = y; break; }
     if (!c) {
       if (precipCache.size > 12000) precipCache.clear();
       const b = world.getBiome(x, z) as string;
@@ -10202,7 +10357,7 @@ export function createVoxelGame(
     [BLOCK_EMERALD_ORE]: 2.8,
     [BLOCK_OBSIDIAN]: 10,
     [BLOCK_TALL_GRASS]: 0,
-    [BLOCK_CHEST]: 1.0, [BLOCK_ENDER_CHEST]: 3.5,
+    [BLOCK_CHEST]: 1.0, [BLOCK_ENDER_CHEST]: 3.5, [BLOCK_POCKET_BOX]: 1.0, [BLOCK_STORAGE_BOX]: 1.2,
     [ITEM_PLANKS]: 0.75,
     [BLOCK_NETHERRACK]: 0.4,
     [BLOCK_SOUL_SAND]: 0.5,
@@ -10307,7 +10462,7 @@ export function createVoxelGame(
       || b === BLOCK_COAL_ORE || b === BLOCK_DIAMOND_ORE || b === BLOCK_EMERALD_ORE || b === BLOCK_QUARTZ_ORE || b === BLOCK_LAPIS_ORE || b === BLOCK_REDSTONE_ORE || isIce(b);
   }
   function dropsFor(block: number, tooWeak: boolean, tool: ItemStack | null = null): Array<[number, number]> {
-    if (tooWeak) return [];
+    if (tooWeak || isBoxBlock(block)) return []; // (a box drops itself, with its contents, when it is broken: see dropBoxBlock)
     if (tool?.id === ITEM_SHEARS && (isLeaves(block) || block === BLOCK_TALL_GRASS || block === BLOCK_DEAD_BUSH || block === BLOCK_COBWEB)) return [[block, 1]]; // shears keep leaves, grass and cobwebs whole (like Silk Touch)
     if (block === BLOCK_COBWEB) return TOOLS[tool?.id ?? -1]?.kind === 'sword' || enchLevel(tool, 'silk_touch') > 0 ? (enchLevel(tool, 'silk_touch') > 0 ? [[BLOCK_COBWEB, 1]] : [[ITEM_STRING, 1]]) : []; // string with a sword; nothing by hand
     if (block === BLOCK_SNOW || block === BLOCK_SNOW_LAYER || block === BLOCK_SNOWY_GRASS || isSnowyLeaves(block)) {
@@ -10455,12 +10610,28 @@ export function createVoxelGame(
 
   function getChest(key: string): Slots {
     let c = chests.get(key);
-    if (!c) { c = emptySlots(CHEST_SIZE); if (key !== 'ender') fillLoot(key, c); chests.set(key, c); }
+    if (!c) { c = emptySlots(key.startsWith('box:p:') ? BOX_SLOTS[BLOCK_POCKET_BOX] : key.startsWith('box:s:') ? BOX_SLOTS[BLOCK_STORAGE_BOX] : CHEST_SIZE); if (key !== 'ender' && !key.startsWith('box:')) fillLoot(key, c); chests.set(key, c); }
     return c.map((st) => (st ? { ...st } : null));
   }
 
   function setChest(key: string, next: Slots) {
-    chests.set(key, next.map((st) => (st ? { ...st } : null)));
+    let out = next.map((st) => (st ? { ...st } : null));
+    if (key.startsWith('box:')) { // a box can't hold another box: it goes back to you
+      out = out.map((st) => { if (st && isBoxBlock(st.id)) { dropFromPlayer(st); return null; } return st; });
+    }
+    chests.set(key, out);
+  }
+  /** The chest key of a placed box ("p" = Pocket, "s" = Storage). */
+  const boxKey = (b: number, x: number, y: number, z: number) => `box:${b === BLOCK_STORAGE_BOX ? 's' : 'p'}:${x},${y},${z}`;
+  /** A broken box drops as the box itself, with everything still inside (nothing spills out). */
+  function dropBoxBlock(bx: number, by: number, bz: number, b: number, giveItem = true) {
+    const key = boxKey(b, bx, by, bz);
+    const contents = chests.get(key);
+    chests.delete(key);
+    if (!giveItem) return;
+    const stack: ItemStack = { id: b, count: 1 };
+    if (contents && contents.some(Boolean)) stack.box = contents.map((st) => (st ? { ...st } : null));
+    spawnSharedDrop(b, 1, new THREE.Vector3(bx + 0.5, by + 0.5, bz + 0.5), new THREE.Vector3(+((Math.random() - 0.5) * 2).toFixed(2), 3, +((Math.random() - 0.5) * 2).toFixed(2)), 0.3, stack);
   }
 
   let selectedSlotCallback: ((i: number) => void) | null = null;
@@ -10690,18 +10861,19 @@ export function createVoxelGame(
       if (st.damage) extra.damage = st.damage;
       if (st.ench) extra.ench = st.ench;
       if (st.name) extra.name = st.name;
+      if (st.box) extra.box = st.box;
       dropThrownCb({ n: net, item: st.id, count: st.count, x: +pos.x.toFixed(2), y: +pos.y.toFixed(2), z: +pos.z.toFixed(2), vx: +vel.x.toFixed(2), vy: +vel.y.toFixed(2), vz: +vel.z.toFixed(2), ...(Object.keys(extra).length ? { d: JSON.stringify(extra) } : {}) });
     }
     spawnDroppedItem(st.id, st.count, pos, vel, 1.5, st, net);
   }
   /** A drop everyone online should see (a block you broke): shared like a thrown item, or just here when playing alone. */
-  function spawnSharedDrop(id: number, count: number, pos: THREE.Vector3, vel: THREE.Vector3, pickupDelay: number) {
+  function spawnSharedDrop(id: number, count: number, pos: THREE.Vector3, vel: THREE.Vector3, pickupDelay: number, data?: ItemStack) {
     let net: string | undefined;
     if (netEnabled && dropThrownCb) {
       net = Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-5);
-      dropThrownCb({ n: net, item: id, count, x: +pos.x.toFixed(2), y: +pos.y.toFixed(2), z: +pos.z.toFixed(2), vx: +vel.x.toFixed(2), vy: +vel.y.toFixed(2), vz: +vel.z.toFixed(2) });
+      dropThrownCb({ n: net, item: id, count, x: +pos.x.toFixed(2), y: +pos.y.toFixed(2), z: +pos.z.toFixed(2), vx: +vel.x.toFixed(2), vy: +vel.y.toFixed(2), vz: +vel.z.toFixed(2), ...(data?.box ? { d: JSON.stringify({ box: data.box }) } : {}) });
     }
-    spawnDroppedItem(id, count, pos, vel, pickupDelay, undefined, net);
+    spawnDroppedItem(id, count, pos, vel, pickupDelay, data, net);
   }
 
   /** Online: somebody else threw an item. */
@@ -10715,6 +10887,7 @@ export function createVoxelGame(
         if (typeof o.damage === 'number') data.damage = o.damage;
         if (o.ench && typeof o.ench === 'object') data.ench = o.ench;
         if (typeof o.name === 'string') data.name = o.name.slice(0, 40);
+        if (isBoxBlock(d.item) && o.box) { const cs = cleanStack({ id: d.item, count: 1, box: o.box }); if (cs?.box) data.box = cs.box; }
       } catch { data = undefined; }
     }
     spawnDroppedItem(d.item, d.count, new THREE.Vector3(d.x, d.y, d.z), new THREE.Vector3(d.vx, d.vy, d.vz), 0.8, data, d.n);
@@ -11445,6 +11618,11 @@ export function createVoxelGame(
     playerHurtCooldown = 0.5; // brief invulnerability, like Minecraft
     lastDamageCause = cause;
     if (sleeping) wakeUp(false); // getting hurt wakes you up
+    if (from && shieldCovers(from.x - camera.position.x, from.z - camera.position.z)) { // a raised shield stops hits from the front
+      wearShield(Math.max(1, Math.ceil(amount / 2)));
+      playSfx('click', null);
+      return false;
+    }
     if (blockLerp > 0.5 && from) { amount *= 0.5; knock *= 0.4; } // blocking with a sword
     if (from) amount *= DIFFICULTY_DAMAGE[rules.difficulty]; // monsters hit harder on hard, softer on easy
     // Armor soaks up damage (Minecraft's formula): 20 points = 80% less. Resistance adds 20% per level.
@@ -11873,8 +12051,8 @@ export function createVoxelGame(
       for (let y = Math.floor(m.pos.y) - (down ? 1 : 0); y <= Math.floor(m.pos.y + h); y++) { // digs down too when that's where it's going
         for (let z = Math.floor(m.pos.z - 1); z <= Math.floor(m.pos.z + 1); z++) {
           const b = world.getWorldBlock(x, y, z);
-          if (b === BLOCK_AIR || isFluid(b) || b === BLOCK_BEDROCK || b === BLOCK_OBSIDIAN || b === BLOCK_NETHER_PORTAL || isCommandBlock(b) || b === BLOCK_INFERNIUM_ORE) continue;
-          if (b === BLOCK_CHEST) spillChest(x, y, z);
+          if (b === BLOCK_AIR || isFluid(b) || b === BLOCK_BEDROCK || b === BLOCK_OBSIDIAN || b === BLOCK_NETHER_PORTAL || isCommandBlock(b) || b === BLOCK_BARRIER || b === BLOCK_INFERNIUM_ORE) continue;
+          if (b === BLOCK_CHEST) spillChest(x, y, z); else if (isBoxBlock(b)) dropBoxBlock(x, y, z, b);
           if (b === BLOCK_FURNACE || b === BLOCK_BREWING_STAND) spillFurnace(x, y, z);
           setBlockAndNotify(x, y, z, BLOCK_AIR);
           markDirty(x, z, dirty);
@@ -12580,6 +12758,7 @@ export function createVoxelGame(
   function hurtByPlayer(dmg: number, kx: number, kz: number, name: string, by: number, extra?: HitExtra) {
     if (mg && mg.online && mg.phase !== 'playing') return;
     lastAttacker = { id: by, name, at: performance.now() };
+    if (shieldCovers(-kx, -kz)) { wearShield(Math.max(1, Math.ceil(dmg / 2))); playSfx('click', null); return; }
     const blocked = blockLerp > 0.5 && swordBlocking; // blocking with a sword works against players too: half the damage, a lot less push
     if (!hurtPlayer(blocked ? dmg * 0.5 : dmg, null, 0, name, extra?.breach)) return;
     const len = Math.hypot(kx, kz) || 1;
@@ -13168,6 +13347,7 @@ export function createVoxelGame(
   }
 
   function trySpawnMob() {
+    if (rules.mobSpawning === false) return; // switched off in Manage Server
     if (arenaKind || worldType === 'oneblock') return; // the OneBlock only spawns what the block gives you
  // minigame arenas have no wildlife
     if (dimension === 'nether') { trySpawnStrider(); trySpawnNetherMob(); return; }
@@ -13233,7 +13413,7 @@ export function createVoxelGame(
 
   function skyAbove(pos: THREE.Vector3, height: number): boolean {
     const x = Math.floor(pos.x), z = Math.floor(pos.z);
-    for (let y = Math.floor(pos.y + height); y < CHUNK_HEIGHT; y++) {
+    for (let y = Math.floor(pos.y + height); y < topY; y++) {
       if (world.getWorldBlock(x, y, z) !== BLOCK_AIR) return false;
     }
     return true;
@@ -13351,6 +13531,30 @@ export function createVoxelGame(
     windSafe = true;
     playSfx('windburst', null);
     spawnParticles(playerFeet().add(new THREE.Vector3(0, 0.2, 0)), ['#ffffff', '#cfe9ff', '#9bd0ff'], 22, 4, 0.1, 0.7);
+  }
+  let windChargeAt = 0;
+  /** Wind Charge: a burst of wind throws you up, and the landing doesn't hurt. */
+  function useWindCharge() {
+    const now = performance.now();
+    if (now - windChargeAt < 600) return;
+    windChargeAt = now;
+    windBurst(2);
+    consumeHeld(1);
+    punchPhase = PUNCH_DURATION;
+  }
+  /** Is a raised shield facing this direction (dx, dz point from you toward the attacker)? */
+  function shieldCovers(dx: number, dz: number): boolean {
+    if (!(blockLerp > 0.5 && swordBlocking) || !(heldItem === ITEM_SHIELD || offhand?.id === ITEM_SHIELD)) return false;
+    const f = new THREE.Vector3(); camera.getWorldDirection(f);
+    const len = Math.hypot(dx, dz) || 1, fl = Math.hypot(f.x, f.z) || 1;
+    return (f.x * dx + f.z * dz) / (len * fl) > 0.1;
+  }
+  function wearShield(n: number) {
+    if (mode === 'creative') return;
+    if (heldItem === ITEM_SHIELD) { wearHeld(n); return; }
+    const st = offhand;
+    if (st && st.id === ITEM_SHIELD && wearStack(st, n)) { offhand = null; itemBroke(st); }
+    notifyInventory();
   }
   /** What happens around a hit: the crit sparkle, the sprint stop, the mace shockwave. */
   function afterStrike(s: Strike, at: THREE.Vector3, victim?: Mob) {
@@ -14108,6 +14312,7 @@ export function createVoxelGame(
 
   // ---- Explosions (creepers) ----
   function dropFromExplosion(b: number): number | null {
+    if (isBoxBlock(b)) return null; // (a box drops itself with its things: see dropBoxBlock)
     if (b === BLOCK_LEAVES || isSnowyLeaves(b) || b === BLOCK_SNOW_LAYER) return null;
     if (b === BLOCK_GRASS || b === BLOCK_SNOWY_GRASS || b === BLOCK_DIRT_PATH) return BLOCK_DIRT;
     if (isDoor(b)) return isDoorBottom(b) ? dropFor(b) : null;
@@ -14121,7 +14326,8 @@ export function createVoxelGame(
   function explode(center: THREE.Vector3, power: number, cause = 'Explosion', spare?: (m: Mob) => boolean, maxDamage = 18) {
     const dirty = new Set<string>();
     const cx = Math.floor(center.x), cy = Math.floor(center.y), cz = Math.floor(center.z);
-    for (let dx = -power; dx <= power; dx++) {
+    const noBlocks = rules.mobGriefing === false && (spare !== undefined || cause === 'Creeper explosion'); // a mob's blast hurts, but breaks nothing
+    for (let dx = -power; dx <= (noBlocks ? -power - 1 : power); dx++) {
       for (let dy = -power; dy <= power; dy++) {
         for (let dz = -power; dz <= power; dz++) {
           const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
@@ -14132,7 +14338,7 @@ export function createVoxelGame(
           if (b === BLOCK_TNT) { igniteTnt(bx, by, bz, 0.5 + Math.random()); continue; } // chain reaction
           const strength = power * 4 * (1 - dist / (power + 0.5)) * (0.7 + Math.random() * 0.6);
           if (strength <= blastResistance(b)) continue; // obsidian and the like survive
-          if (b === BLOCK_CHEST) spillChest(bx, by, bz);
+          if (b === BLOCK_CHEST) spillChest(bx, by, bz); else if (isBoxBlock(b)) dropBoxBlock(bx, by, bz, b);
           if (b === BLOCK_FURNACE || b === BLOCK_BREWING_STAND) spillFurnace(bx, by, bz);
           setBlockAndNotify(bx, by, bz, BLOCK_AIR);
           markDirty(bx, bz, dirty);
@@ -14705,7 +14911,7 @@ export function createVoxelGame(
     if (dimension !== 'overworld') return 1;
     const x = Math.floor(m.pos.x), z = Math.floor(m.pos.z), y = Math.floor(m.pos.y + infoOf(m).height * 0.6);
     let open = true;
-    for (let yy = y + 1; yy < CHUNK_HEIGHT; yy++) if (isOpaque(world.getWorldBlock(x, yy, z))) { open = false; break; }
+    for (let yy = y + 1; yy < topY; yy++) if (isOpaque(world.getWorldBlock(x, yy, z))) { open = false; break; }
     if (open) return 1;
     let lvl = 0; // the strongest nearby light, fading 1 per block
     for (let dx = -6; dx <= 6; dx++) for (let dz = -6; dz <= 6; dz++) for (let dy = -3; dy <= 3; dy++) {
@@ -15694,6 +15900,9 @@ export function createVoxelGame(
   const rsCompOut = new Map<string, number>(); // each comparator's output strength (0-15)
 
   // ---- Command blocks: settings by dimension and position; the app runs the actual commands ----
+  const MAX_CMD_LINES = 10;
+  /** A command block holds up to 10 commands, one per line. */
+  const cleanCmdLines = (raw: string): string => raw.split('\n').map((l) => l.slice(0, 512)).slice(0, MAX_CMD_LINES).join('\n').slice(0, 5200);
   type CmdData = { cmd: string; auto: boolean; conditional: boolean; last: string; success: boolean; wasActive: boolean; active: boolean };
   const cmdBlocks = new Map<string, CmdData>();
   let commandRunner: ((cmd: string, at: { x: number; y: number; z: number }) => CommandResult) | null = null;
@@ -15723,7 +15932,7 @@ export function createVoxelGame(
     const b = world.getWorldBlock(x, y, z);
     if (!isCommandBlock(b) || !COMMAND_TYPES.includes(cfg.type)) return false;
     const d = cmdData(x, y, z);
-    d.cmd = String(cfg.cmd ?? '').slice(0, 512);
+    d.cmd = cleanCmdLines(String(cfg.cmd ?? ''));
     d.auto = !!cfg.auto;
     d.conditional = !!cfg.conditional;
     const next = makeCommandBlock(cfg.type, commandFacing(b));
@@ -15782,11 +15991,18 @@ export function createVoxelGame(
         const back = world.getWorldBlock(cx - dx, cy - dy, cz - dz);
         ok = isCommandBlock(back) && cmdData(cx - dx, cy - dy, cz - dz).success;
       }
-      if (ok && d.cmd.trim() && commandRunner) {
-        let r: CommandResult;
-        try { r = commandRunner(d.cmd.trim().replace(/^\/?/, '/'), { x: cx, y: cy, z: cz }); } catch (e) { r = { success: false, output: String((e as Error)?.message ?? e) }; }
-        d.success = !!r.success;
-        d.last = String(r.output ?? '').slice(0, 300);
+      const lines = d.cmd.split('\n').map((l) => l.trim()).filter(Boolean);
+      if (ok && lines.length && commandRunner) {
+        // up to 10 commands in one block, run one after the other
+        let all = true; const outs: string[] = [];
+        for (const line of lines.slice(0, MAX_CMD_LINES)) {
+          let r: CommandResult;
+          try { r = commandRunner(line.replace(/^\/?/, '/'), { x: cx, y: cy, z: cz }); } catch (e) { r = { success: false, output: String((e as Error)?.message ?? e) }; }
+          if (!r.success) all = false;
+          outs.push(String(r.output ?? ''));
+        }
+        d.success = all;
+        d.last = outs.filter(Boolean).join(' | ').slice(0, 300);
       } else {
         d.success = false;
       }
@@ -15816,7 +16032,7 @@ export function createVoxelGame(
     cmdBlocks.clear();
     for (const [k, v] of Object.entries(d ?? {})) {
       if (!/^[a-z0-9_:]+\|-?\d+,\d+,-?\d+$/.test(k) || !v) continue;
-      cmdBlocks.set(k, { cmd: String(v.cmd ?? '').slice(0, 512), auto: !!v.auto, conditional: !!v.conditional, last: String(v.last ?? '').slice(0, 300), success: !!v.success, wasActive: !!v.wasActive, active: false });
+      cmdBlocks.set(k, { cmd: cleanCmdLines(String(v.cmd ?? '')), auto: !!v.auto, conditional: !!v.conditional, last: String(v.last ?? '').slice(0, 300), success: !!v.success, wasActive: !!v.wasActive, active: false });
     }
   }
 
@@ -16114,7 +16330,7 @@ export function createVoxelGame(
   // ---- Pistons ----
   /** Things a piston can't shove: anything with its own saved data, bedrock-like blocks, doors and beds, other pistons' arms. */
   function pistonImmovable(b: number, x: number, y: number, z: number): boolean {
-    if (b === BLOCK_BEDROCK || b === BLOCK_OBSIDIAN || b === BLOCK_CHEST || b === BLOCK_ENDER_CHEST || b === BLOCK_FURNACE || b === BLOCK_BREWING_STAND || b === BLOCK_CAMPFIRE || b === BLOCK_NETHER_PORTAL) return true;
+    if (b === BLOCK_BEDROCK || b === BLOCK_OBSIDIAN || b === BLOCK_CHEST || isBoxBlock(b) || b === BLOCK_ENDER_CHEST || b === BLOCK_FURNACE || b === BLOCK_BREWING_STAND || b === BLOCK_CAMPFIRE || b === BLOCK_NETHER_PORTAL) return true;
     if (isCommandBlock(b) || isPistonHead(b) || isDoor(b) || isBed(b) || isEgg(b) || (isPiston(b) && pistonExtended(b))) return true;
     return worldType === 'oneblock' && dimension === 'overworld' && x === ONEBLOCK_POS[0] && y === ONEBLOCK_POS[1] && z === ONEBLOCK_POS[2];
   }
@@ -16133,7 +16349,7 @@ export function createVoxelGame(
         let end = -1;
         for (let i = 1; i <= PISTON_PUSH_LIMIT + 1; i++) {
           const [cx, cy, cz] = at(i);
-          if (cy < 0 || cy >= CHUNK_HEIGHT) return false;
+          if (cy < 0 || cy >= BUILD_LIMIT) return false;
           const cb = world.getWorldBlock(cx, cy, cz);
           if (!isSolid(cb)) { end = i; break; } // air, a plant, a wire or water: it gets pushed out of the way
           if (pistonImmovable(cb, cx, cy, cz)) return false;
@@ -16156,7 +16372,7 @@ export function createVoxelGame(
         if (isPistonHead(hb) && pistonHeadFacing(hb) === f) {
           setBlockAndNotify(hx, hy, hz, BLOCK_AIR);
           const [qx, qy, qz] = at(2), qb = world.getWorldBlock(qx, qy, qz);
-          if (sticky && qy >= 0 && qy < CHUNK_HEIGHT && isSolid(qb) && !pistonImmovable(qb, qx, qy, qz) && !playerOverlapsBlock(hx, hy, hz)) { // a sticky piston takes the block in front of it back with it
+          if (sticky && qy >= 0 && qy < BUILD_LIMIT && isSolid(qb) && !pistonImmovable(qb, qx, qy, qz) && !playerOverlapsBlock(hx, hy, hz)) { // a sticky piston takes the block in front of it back with it
             setBlockAndNotify(hx, hy, hz, qb);
             setBlockAndNotify(qx, qy, qz, BLOCK_AIR);
             touch(qx, qy, qz);
@@ -17538,6 +17754,7 @@ export function createVoxelGame(
       fog.near = renderDistance * CHUNK_SIZE * 0.4;
       fog.far = renderDistance * CHUNK_SIZE * 0.9;
     }
+    if (!video.fog && !isWater(head) && !isLava(head)) { fog.near = 1e6; fog.far = 2e6; } // fog switched off in Settings
     waterUniforms.uTime.value += dt;
     waterUniforms.uSunDir.value.copy(sunDir.y > 0 ? sunDir : moonDir);
     setRGB(waterUniforms.uSkyTop.value, skyTop);
@@ -18347,7 +18564,7 @@ export function createVoxelGame(
     const dirty = new Set<string>();
     let n = 0;
     for (const [x, y, z, b] of list) {
-      if (y < 0 || y >= CHUNK_HEIGHT) continue;
+      if (y < 0 || y >= BUILD_LIMIT) continue;
       const c = world.getChunk(Math.floor(x / CHUNK_SIZE), Math.floor(z / CHUNK_SIZE));
       if (!c || !c.generated) continue;
       setBlockAndNotify(x, y, z, b);
@@ -18360,7 +18577,7 @@ export function createVoxelGame(
 
   function readBlocks(ax: number, ay: number, az: number, bx: number, by: number, bz: number) {
     const x0 = Math.floor(Math.min(ax, bx)), y0 = Math.max(0, Math.floor(Math.min(ay, by))), z0 = Math.floor(Math.min(az, bz));
-    const x1 = Math.floor(Math.max(ax, bx)), y1 = Math.min(CHUNK_HEIGHT - 1, Math.floor(Math.max(ay, by))), z1 = Math.floor(Math.max(az, bz));
+    const x1 = Math.floor(Math.max(ax, bx)), y1 = Math.min(BUILD_LIMIT - 1, Math.floor(Math.max(ay, by))), z1 = Math.floor(Math.max(az, bz));
     const w = x1 - x0 + 1, h = y1 - y0 + 1, d = z1 - z0 + 1;
     const ids: number[] = [];
     let unloaded = 0;
@@ -19308,7 +19525,7 @@ export function createVoxelGame(
 
   /** Blocks that right-click opens or uses (a sword, spear or mace does not start its own action on them). */
   function isUseBlock(b: number): boolean {
-    return b === BLOCK_CHEST || b === BLOCK_ENDER_CHEST || b === BLOCK_CRAFTING_TABLE || b === BLOCK_FURNACE || isDoor(b) || isOpenable(b) || b === BLOCK_ENCHANTING_TABLE || isAnvil(b) || isLever(b) || isButton(b) || isRepeater(b) || isItemFrame(b) || isComparator(b) || isCommandBlock(b) || isBed(b) || b === BLOCK_BREWING_STAND;
+    return b === BLOCK_CHEST || isBoxBlock(b) || b === BLOCK_ENDER_CHEST || b === BLOCK_CRAFTING_TABLE || b === BLOCK_FURNACE || isDoor(b) || isOpenable(b) || b === BLOCK_ENCHANTING_TABLE || isAnvil(b) || isLever(b) || isButton(b) || isRepeater(b) || isItemFrame(b) || isComparator(b) || isCommandBlock(b) || isBed(b) || b === BLOCK_BREWING_STAND;
   }
   function onMouseDown(e: MouseEvent) {
     if (chatOpen || dead || sleeping || tradeOpen) return;
@@ -19350,6 +19567,12 @@ export function createVoxelGame(
       if (vill && vill.kind === 'villager' && vill.deathTime < 0) { if (vill.baby) showHint('Babies do not trade yet'); else openTrade(vill); return; }
       if (vill && vill.kind !== 'villager' && useOnMob(vill)) return; // shears, dye or food for an animal
       if (heldItem === ITEM_WAND) { wandClick(2); return; }
+      if (heldItem === ITEM_WIND_CHARGE && mode !== 'spectator') { useWindCharge(); return; }
+      if (mode !== 'spectator' && (heldItem === ITEM_SHIELD || (offhand?.id === ITEM_SHIELD && (heldItem === null || TOOLS[heldItem] !== undefined)))) {
+        const h = raycastBlock();
+        const b = h ? world.getWorldBlock(h.x, h.y, h.z) : BLOCK_AIR;
+        if (!isUseBlock(b)) { swordBlocking = true; return; } // hold right-click to raise the shield
+      }
       if (heldItem === ITEM_BOW && mode !== 'spectator') { startDrawingBow(); return; }
       if (heldItem === ITEM_SPYGLASS) { spyglassZoom = true; scriptZoom = 0.2; engineEvent('zoomChange', { zoom: scriptZoom, spyglass: true }); return; }
       if (heldItem !== null && TOOLS[heldItem]?.kind === 'sword' && mode !== 'spectator') {
@@ -19422,17 +19645,19 @@ export function createVoxelGame(
 
     const hit = raycastBlock();
     const target = hit ? world.getWorldBlock(hit.x, hit.y, hit.z) : BLOCK_AIR;
+    // Crouch (shift) while holding a block: place it against doors, chests, command blocks and so on instead of using them
+    const useTarget = hit && heldItem !== null && isBlockId(heldItem) && (down('crouch') || down('sprint')) ? BLOCK_AIR : target; // Shift (or the crouch key) places a block against a lever, chest or command block instead of opening it
     if (mg && hit && heldItem !== null && isBlockId(heldItem) && !arenaCanPlace(hit.placeX, hit.placeY, hit.placeZ)) return;
     // Signs: right-click to write on one
-    if (hit && isSignBlock(target)) { openSignEditor(hit.x, hit.y, hit.z); punchPhase = PUNCH_DURATION; return; }
+    if (hit && isSignBlock(useTarget)) { openSignEditor(hit.x, hit.y, hit.z); punchPhase = PUNCH_DURATION; return; }
     // Doors open and close (adventure players can use them too)
-    if (hit && isDoor(target)) { toggleDoor(hit.x, hit.y, hit.z); punchPhase = PUNCH_DURATION; return; }
-    if (hit && isOpenable(target)) { toggleOpenable(hit.x, hit.y, hit.z, target); punchPhase = PUNCH_DURATION; return; }
-    if (hit && target === BLOCK_CAMPFIRE && heldItem !== null && campfireCooks(heldItem)) { addToCampfire(hit.x, hit.y, hit.z); return; }
-    if (hit && isBed(target)) { useBed(hit.x, hit.y, hit.z); return; }
+    if (hit && isDoor(useTarget)) { toggleDoor(hit.x, hit.y, hit.z); punchPhase = PUNCH_DURATION; return; }
+    if (hit && isOpenable(useTarget)) { toggleOpenable(hit.x, hit.y, hit.z, target); punchPhase = PUNCH_DURATION; return; }
+    if (hit && useTarget === BLOCK_CAMPFIRE && heldItem !== null && campfireCooks(heldItem)) { addToCampfire(hit.x, hit.y, hit.z); return; }
+    if (hit && isBed(useTarget)) { useBed(hit.x, hit.y, hit.z); return; }
     // Levers, buttons and repeaters; item frames take an item or turn it
-    if (hit && mode !== 'adventure' && useRedstoneOrFrame(hit.x, hit.y, hit.z, target)) { punchPhase = PUNCH_DURATION; return; }
-    const interactive = target === BLOCK_CRAFTING_TABLE || target === BLOCK_CHEST || target === BLOCK_ENDER_CHEST || target === BLOCK_FURNACE || target === BLOCK_BREWING_STAND || target === BLOCK_ENCHANTING_TABLE || isAnvil(target);
+    if (hit && mode !== 'adventure' && useRedstoneOrFrame(hit.x, hit.y, hit.z, useTarget)) { punchPhase = PUNCH_DURATION; return; }
+    const interactive = useTarget === BLOCK_CRAFTING_TABLE || useTarget === BLOCK_CHEST || isBoxBlock(useTarget) || useTarget === BLOCK_ENDER_CHEST || useTarget === BLOCK_FURNACE || useTarget === BLOCK_BREWING_STAND || useTarget === BLOCK_ENCHANTING_TABLE || isAnvil(useTarget);
     if (!interactive && heldItem === ITEM_FISHING_ROD) { castRod(); return; }
     if (!interactive && heldItem === ITEM_GLASS_BOTTLE) { useGlassBottle(); return; }
     if (!interactive && heldItem !== null && isPotionItem(heldItem)) { drinkPotion(); return; }
@@ -19443,12 +19668,12 @@ export function createVoxelGame(
     if (interactive) {
       inventoryOpen = true;
       atCraftingTable = target === BLOCK_CRAFTING_TABLE;
-      openChestKey = target === BLOCK_CHEST ? `${hit.x},${hit.y},${hit.z}` : target === BLOCK_ENDER_CHEST ? 'ender' : null;
+      openChestKey = target === BLOCK_CHEST ? `${hit.x},${hit.y},${hit.z}` : isBoxBlock(target) ? boxKey(target, hit.x, hit.y, hit.z) : target === BLOCK_ENDER_CHEST ? 'ender' : null;
       openFurnaceKey = target === BLOCK_FURNACE ? `${hit.x},${hit.y},${hit.z}` : target === BLOCK_BREWING_STAND ? `B|${hit.x},${hit.y},${hit.z}` : null;
       openStation = target === BLOCK_ENCHANTING_TABLE ? { kind: 'enchanting', shelves: countBookshelves(hit.x, hit.y, hit.z) } : isAnvil(target) ? { kind: 'anvil', shelves: 0 } : null;
       inventoryOpenCallback?.(true, atCraftingTable, openChestKey, openFurnaceKey, openStation);
       if (document.pointerLockElement) document.exitPointerLock();
-      if (target === BLOCK_CHEST || target === BLOCK_ENDER_CHEST) playBlockSound(BLOCK_CHEST, new THREE.Vector3(hit.x + 0.5, hit.y + 0.5, hit.z + 0.5), 'place');
+      if (target === BLOCK_CHEST || target === BLOCK_ENDER_CHEST || isBoxBlock(target)) playBlockSound(BLOCK_CHEST, new THREE.Vector3(hit.x + 0.5, hit.y + 0.5, hit.z + 0.5), 'place');
       return;
     }
 
@@ -19553,7 +19778,7 @@ export function createVoxelGame(
         const side = SIDES.findIndex(([a, c]) => a === hit.x - lx && c === hit.z - lz);
         if (hit.y === ly && side >= 0 && full(target)) ladder = baseId + side;
       }
-      if (ladder < 0 || !isReplaceable(world.getWorldBlock(lx, ly, lz)) || ly < 0 || ly >= CHUNK_HEIGHT) { showHint('Ladders go on the side of a solid wall'); return; }
+      if (ladder < 0 || !isReplaceable(world.getWorldBlock(lx, ly, lz)) || ly < 0 || ly >= BUILD_LIMIT) { showHint('Ladders go on the side of a solid wall'); return; }
       setBlockAndNotify(lx, ly, lz, ladder);
       rebuildAround(lx, lz);
       playBlockSound(isIronLadder(ladder) ? BLOCK_IRON_BLOCK : ITEM_PLANKS, new THREE.Vector3(lx + 0.5, ly + 0.5, lz + 0.5), 'place');
@@ -19583,6 +19808,7 @@ export function createVoxelGame(
       return;
     }
     if (heldItem === null || !isBlockId(heldItem)) return; // ids 100-999 are items, not placeable blocks
+    if (hit.placeY >= BUILD_LIMIT && !(isSoftTarget(target))) { showHint(`You can't build higher than ${BUILD_LIMIT} blocks`); return; }
     // Two slabs of one material make the whole block: click the open side of a slab with another of the same
     if (isSlabBlock(heldItem) && isSlabBlock(target) && stepMaterial(target) === stepMaterial(heldItem) && hit.placeX === hit.x && hit.placeZ === hit.z
       && ((hit.placeY === hit.y + 1 && !stepUpsideDown(target)) || (hit.placeY === hit.y - 1 && stepUpsideDown(target)))) {
@@ -19637,6 +19863,13 @@ export function createVoxelGame(
     }
 
     setBlockAndNotify(px, py, pz, placeId);
+    if (isBoxBlock(placeId)) { // the box keeps what was inside it
+      const inside = slots[selectedSlot]?.box;
+      const size = BOX_SLOTS[placeId];
+      const c = emptySlots(size);
+      if (inside) inside.slice(0, size).forEach((st, i) => { c[i] = st ? { ...st } : null; });
+      chests.set(boxKey(placeId, px, py, pz), c);
+    }
     if (falls(heldItem)) checkFalling(px, py, pz); // sand placed over a gap drops
     rebuildAround(px, pz);
     playBlockSound(heldItem, new THREE.Vector3(px + 0.5, py + 0.5, pz + 0.5), 'place');
@@ -20211,7 +20444,8 @@ export function createVoxelGame(
     // The held item swings with the punch, and a bow pulls back while drawn
     syncFistSkin();
     const isSword = heldItem !== null && TOOLS[heldItem]?.kind === 'sword';
-    if (!isSword || !engaged()) swordBlocking = false;
+    const shieldInHand = heldItem === ITEM_SHIELD || offhand?.id === ITEM_SHIELD;
+    if ((!isSword && !shieldInHand) || !engaged()) swordBlocking = false;
     blockLerp += ((swordBlocking ? 1 : 0) - blockLerp) * Math.min(1, delta * 14);
     // Hand bob: the hand sways a little against the camera's own bob while you walk (more when sprinting)
     equipLerp = Math.max(0, equipLerp - delta * 5.5);
@@ -20370,7 +20604,7 @@ export function createVoxelGame(
         // ores need stone, obsidian needs diamond). Too weak = can't break it.
         const need = requiredTier(blockType);
         const tooWeak = need > 0 && pickTier() < need;
-        const unbreakable = (mode !== 'creative' && (blockType === BLOCK_BEDROCK || isCommandBlock(blockType))) || (!!mg && !arenaCanBreak(hit.x, hit.y, hit.z, blockType));
+        const unbreakable = (mode !== 'creative' && (blockType === BLOCK_BEDROCK || blockType === BLOCK_BARRIER || isCommandBlock(blockType))) || (!!mg && !arenaCanBreak(hit.x, hit.y, hit.z, blockType));
         if (mg && unbreakable && performance.now() - arenaHintTime > 2000) { arenaHintTime = performance.now(); showHint(isEgg(blockType) ? "That's your own egg: protect it!" : 'You can only break blocks that players placed'); }
         // Bare hands or too weak a pickaxe still break it, but slowly, and it drops nothing
         const bare = heldTool() === null;
@@ -20405,7 +20639,7 @@ export function createVoxelGame(
           if (brokenType === BLOCK_SNOWY_GRASS || isSnowyLeaves(brokenType)) peelLock = true;
           setBlockAndNotify(bx, by, bz, brokenType === BLOCK_SNOWY_GRASS ? BLOCK_GRASS : isSnowyLeaves(brokenType) ? woodLeavesId(brokenType - BLOCK_SNOWY_LEAVES_FIRST) : BLOCK_AIR);
           rebuildAround(bx, bz);
-          if (brokenType === BLOCK_CHEST) spillChest(bx, by, bz);
+          if (brokenType === BLOCK_CHEST) spillChest(bx, by, bz); else if (isBoxBlock(brokenType)) dropBoxBlock(bx, by, bz, brokenType, mode !== 'creative');
           if (brokenType === BLOCK_FURNACE || brokenType === BLOCK_BREWING_STAND) spillFurnace(bx, by, bz);
           if (isDoor(brokenType)) removeDoorPartner(bx, by, bz, brokenType);
           if (brokenType === BLOCK_CAMPFIRE) dropCampfireFood(bx, by, bz);
@@ -20715,7 +20949,7 @@ export function createVoxelGame(
     if (dimension !== 'overworld') return 0.7;
     const x = Math.floor(camera.position.x), y = Math.floor(camera.position.y), z = Math.floor(camera.position.z);
     let open = true;
-    for (let yy = y + 1; yy < CHUNK_HEIGHT; yy++) if (isOpaque(world.getWorldBlock(x, yy, z))) { open = false; break; }
+    for (let yy = y + 1; yy < topY; yy++) if (isOpaque(world.getWorldBlock(x, yy, z))) { open = false; break; }
     if (open) return 0.35 + 0.65 * currentDayAmt;
     let lvl = 0;
     for (let dx = -5; dx <= 5; dx++) for (let dz = -5; dz <= 5; dz++) for (let dy = -2; dy <= 2; dy++) {
@@ -20862,7 +21096,7 @@ export function createVoxelGame(
     const px = Math.floor(camera.position.x), pz = Math.floor(camera.position.z);
     // in the Nether (or any roofed place) look down from just above your head, so the ceiling doesn't hide everything
     const roofed = dimension !== 'overworld' || !!world.custom;
-    const top = roofed ? Math.min(CHUNK_HEIGHT - 1, Math.floor(camera.position.y) + 3) : CHUNK_HEIGHT - 1;
+    const top = roofed ? Math.min(topY - 1, Math.floor(camera.position.y) + 3) : topY - 1;
     for (let j = 0; j < size; j++) {
       for (let i = 0; i < size; i++) {
         const x = px + i - r, z = pz + j - r;

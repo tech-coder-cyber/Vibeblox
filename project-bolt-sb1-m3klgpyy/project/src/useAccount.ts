@@ -1,7 +1,7 @@
 // Keeps track of who is signed in. The sign-in library loads in the background; if it can't (offline, blocked),
 // the game simply behaves as if nobody is signed in.
 import { useEffect, useRef, useState } from 'react';
-import { configureSocial, loadAccount, checkAdmin, fetchAdminPerms, isOwnerName, changeUsername, setUndercover, ADMIN_PERMS, type Account, type AdminPerm, type Result } from './social';
+import { configureSocial, loadAccount, checkAdmin, fetchAdminPerms, isOwnerName, changeUsername, setUndercover, switchRank, ADMIN_PERMS, type Account, type AdminPerm, type Result } from './social';
 
 type Session = { access_token: string; user: { id: string; email?: string; user_metadata?: { username?: string } } };
 
@@ -90,5 +90,14 @@ export function useAccount() {
     return r;
   }
 
-  return { account, admin, adminPerms, checked, signOut, rename, undercover, tokenRef };
+  /** Shop: turn on one of the paid ranks you own. Resolves an error message, or null. */
+  async function switchTo(rank: string): Promise<string | null> {
+    const acc = accountRef.current;
+    if (!acc) return 'Sign in first.';
+    const err = await switchRank(rank, acc.token);
+    if (!err) { const next = { ...acc, rank }; accountRef.current = next; setAccount(next); }
+    return err;
+  }
+
+  return { account, admin, adminPerms, checked, signOut, rename, undercover, switchTo, tokenRef };
 }

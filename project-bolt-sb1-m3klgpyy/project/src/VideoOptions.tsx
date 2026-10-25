@@ -112,6 +112,7 @@ export default function VideoOptions() {
 
       <section className={`${card} flex flex-col gap-2`} data-testid="video-more">
         <Toggle id="toggle-stars" label="Stars" desc="Show the stars in the night sky" on={v.stars} onClick={() => updateVideo({ stars: !v.stars })} />
+        <Toggle id="toggle-fog" label="Fog" desc="Haze in the distance" on={v.fog} onClick={() => updateVideo({ fog: !v.fog })} />
         <Toggle id="toggle-fast" label="Fast render" desc="Lower resolution, no shadows, no waving leaves or water effects. Good for slow computers." on={v.fastRender} onClick={() => updateVideo({ fastRender: !v.fastRender })} />
         <Toggle id="toggle-bobbing" label="View bobbing" desc="Your view sways a little while you walk" on={v.viewBobbing} onClick={() => updateVideo({ viewBobbing: !v.viewBobbing })} />
         <Toggle id="toggle-dynfov" label="Dynamic FOV" desc="Your view widens a little while you sprint" on={v.dynamicFov} onClick={() => updateVideo({ dynamicFov: !v.dynamicFov })} />

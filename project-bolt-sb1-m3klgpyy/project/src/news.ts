@@ -2,11 +2,38 @@
 // a small update to the current one is a point release (Indev 26.1, 26.2...), a big one is the next number.
 //
 // The News page in the sidebar shows this list, and a dot appears on it until the newest one has been read.
-export const GAME_VERSION = 35.3;
+export const GAME_VERSION = 36.1;
 
 export type NewsEntry = { version: number; date: string; title: string; changes: string[] };
 
 export const NEWS: NewsEntry[] = [
+  {
+    version: 36.1,
+    date: 'October 25, 2026',
+    title: 'Boxes you can place',
+    changes: [
+      'Pocket Box and Storage Box now work like shulker boxes: place one down, right-click it to open it, and when you break it the box drops with everything still inside. A box cannot hold another box.',
+      'Hold crouch (or Shift) while placing a block against a crafting table, furnace, chest, ender chest, anvil, enchanting table, brewing stand, command block, box, door, gate or campfire and the block goes next to it instead of opening it.',
+      'If the host leaves, the world stays open for everyone still in it. They just are not the host: the host powers (admin, ban, world settings) stay with the owner for when they come back.',
+    ],
+  },
+  {
+    version: 36,
+    date: 'October 24, 2026',
+    title: 'Shields, boxes and a taller world',
+    changes: [
+      'New items: Wind Charge (right-click to launch yourself up, no fall damage on the landing), Shield (hold right-click to block hits from the front), Pocket Box (9 slots) and Storage Box (27 slots), see Indev 36.1.',
+      'New block: Barrier. It is invisible, solid and can only be broken in creative. Get one with /give @p barrier.',
+      'You can build up to 320 blocks high now. The world grows taller as you build up, and you can still fly higher than the limit, you just cannot place blocks there.',
+      'Command blocks hold up to 10 commands, each in its own box, and run them in order. Hold crouch while placing to put levers, buttons or any block on a command block.',
+      'Chat autocomplete: press Tab after a command. /give and /tp suggest @p, @a, @s, @e, @r and player names, then /give lists items from A to Z with mod items last. /tp <player> suggests players.',
+      'Manage Server: turn mob spawning and mob griefing off. New /gamerule mobSpawning and /gamerule mobGriefing. Promotions and bans now show in chat ("<player> has been promoted to admin", "<player> has been banned by <player>").',
+      'Settings > Video: fog on/off. If you own more than one paid rank you can switch between them in the shop. Owning just one says "Already owned".',
+      'Ranks: Vanguard is $5 for good, with more AI questions per day. Elite is $10. Champion is $5 a month or $20 once. Rank colours: Vanguard brown, Elite cyan, Champion gold, MOD gold. [YOUTUBE] has red brackets and white letters.',
+      'The Ender Pearl is now the Teleportation Pearl (old /give names still work). Recipe names are capitalised (Spruce Planks, not spruce planks). Item icons have more shading and an outline.',
+      'Sleeping worlds are gone. Replying to a private message clears its notification. Fixed the "outside script" warning on CrazyGames. Less wordy text on a lot of screens.',
+    ],
+  },
   {
     version: 35.3,
     date: 'October 24, 2026',

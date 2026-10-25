@@ -14,7 +14,7 @@ export type NetWeather = 'clear' | 'rain' | 'snow' | 'thunder';
 export type NetBadge = { owner?: boolean; rank?: string; tier?: string; staff?: string | null; og?: boolean; special?: string | null };
 export type NetPlayerInfo = { id: number; name: string; x: number; y: number; z: number; yaw: number; pitch: number; mode: string; look?: NetLook; badge?: NetBadge };
 
-export type ServerSettings = { difficulty: 'peaceful' | 'easy' | 'normal' | 'hard'; keepInventory: boolean; scripts: boolean; mods: boolean; commands: boolean; pvp?: boolean; /** the sky stays at midday */ alwaysDay?: boolean; /** false = the weather stays as it is */ weatherCycle?: boolean; /** who may run scripts: 'off' | 'all' | 'admin' | 'owner' */ scriptPerm?: 'off' | 'all' | 'admin' | 'owner' };
+export type ServerSettings = { difficulty: 'peaceful' | 'easy' | 'normal' | 'hard'; keepInventory: boolean; scripts: boolean; mods: boolean; commands: boolean; pvp?: boolean; /** the sky stays at midday */ alwaysDay?: boolean; /** false = the weather stays as it is */ weatherCycle?: boolean; /** who may run scripts: 'off' | 'all' | 'admin' | 'owner' */ scriptPerm?: 'off' | 'all' | 'admin' | 'owner' ; mobSpawning?: boolean; mobGriefing?: boolean };
 /** Roles in a world (lowercase name -> 'owner' | 'coowner' | 'admin') */
 export type NetRoles = Record<string, string>;
 /** A world being handed to you when its host leaves (see HostRoom.handOff in hosting.ts) */

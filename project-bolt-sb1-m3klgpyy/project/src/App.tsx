@@ -13,7 +13,8 @@ import {
 import { ModBuilder } from '@/ModBuilder';
 import { parseModCode } from '@/modBuilderLogic';
 import { filterProfanity } from '@/profanity';
-import { readRank, worldLimit, WORLD_LIMITS, RANK_NAMES, effectiveRank, playerCap, scriptBudgetMs, canUploadSkin, SCRIPT_BUDGET_MS, creatorTier, CREATOR_PLAYS, CREATOR_NAMES, PLAYER_CAP, adsAllowedFor, badgeTags, perkRank, canGoUndercover, canCustomTheme, isStaffId, isSpecialId, type SpecialId, type StaffId, type RankId, type CreatorTier } from '@/ranks';
+import { completeChat, applyCompletion } from './autocomplete';
+import { readRank, aiLeftToday, AI_DAILY_LIMIT, countAiQuestion, worldLimit, WORLD_LIMITS, RANK_NAMES, effectiveRank, playerCap, scriptBudgetMs, canUploadSkin, SCRIPT_BUDGET_MS, creatorTier, CREATOR_PLAYS, CREATOR_NAMES, PLAYER_CAP, adsAllowedFor, badgeTags, perkRank, canGoUndercover, canCustomTheme, isStaffId, isSpecialId, type SpecialId, type StaffId, type RankId, type CreatorTier } from '@/ranks';
 import { GAME_VERSION, NEWS } from '@/news';
 import { t, useLanguage, setLanguage, LANGUAGES, type LangCode } from '@/i18n';
 import { useKeybinds, rebind, resetBinds, keyLabel, KEY_ACTIONS, setCapturingKey, isCapturingKey, getBinds } from '@/keybinds';
@@ -22,7 +23,7 @@ import { useBackground, backgroundStyle, findDefaultBackground } from './backgro
 import type { OneBlockView, KeyAction } from '@/voxelGame';
 import { getKeybinds } from '@/voxelGame';
 import { ITEM_IRON_INGOT, ITEM_GOLD_INGOT, ITEM_DIAMOND, ITEM_ENDER_PEARL, ITEM_IRON_SWORD, ITEM_IRON_PICKAXE, ITEM_BOW, BLOCK_TNT, BLOCK_GLASS, armorId } from '@/voxelGame';
-import { createVoxelGame, MINIGAME_SIZES, type GameWorldMode, type GraphicsQuality, type Recipe, type PlayMode, type DebugInfo, type WorldType, type Slots, type ItemStack, type SaveData, type WeatherKind, EXPERIMENTAL_IDS, experimentalEnabled, isWater, isLava, BLOCK_WATER, BLOCK_LAVA, BLOCK_GRASS, BLOCK_DIRT, BLOCK_STONE, ARMOR, ARMOR_PIECES, CUSTOM_ITEMS, CUSTOM_BLOCKS, customIdForKey, registerCustomItem, registerCustomBlock, createPlayerPreview, drawLookPreview, getTexturePreviews, setTextureResolution, type TextureRes, type DimensionSpec, type TextureSpec, maxStack, addToSlots, countInSlots, emptySlots, INVENTORY_SIZE, ITEM_INFO, RECIPES, getItemIconURL, matchRecipe, getBowStage, subscribeBowStage, BOW_PULL_BASE, SMELTING, FUEL_SECONDS, isBlockId, type Trade, type Difficulty, ITEM_WAND, CHUNK_SIZE, CHUNK_HEIGHT, isPotionItem, isBrewIngredient, ITEM_BLAZE_POWDER, potionName, ITEM_NAME_TAG, toolLore } from '@/voxelGame';
+import { createVoxelGame, MINIGAME_SIZES, type GameWorldMode, type GraphicsQuality, type Recipe, type PlayMode, type DebugInfo, type WorldType, type Slots, type ItemStack, type SaveData, type WeatherKind, EXPERIMENTAL_IDS, experimentalEnabled, isWater, isLava, BLOCK_WATER, BLOCK_LAVA, BLOCK_GRASS, BLOCK_DIRT, BLOCK_STONE, ARMOR, ARMOR_PIECES, CUSTOM_ITEMS, CUSTOM_BLOCKS, customIdForKey, customKeyList, registerCustomItem, registerCustomBlock, createPlayerPreview, drawLookPreview, getTexturePreviews, setTextureResolution, type TextureRes, type DimensionSpec, type TextureSpec, maxStack, addToSlots, countInSlots, emptySlots, INVENTORY_SIZE, ITEM_INFO, RECIPES, getItemIconURL, matchRecipe, getBowStage, subscribeBowStage, BOW_PULL_BASE, SMELTING, FUEL_SECONDS, isBlockId, type Trade, type Difficulty, ITEM_WAND, CHUNK_SIZE, CHUNK_HEIGHT, isPotionItem, isBrewIngredient, ITEM_BLAZE_POWDER, potionName, ITEM_NAME_TAG, toolLore } from '@/voxelGame';
 import * as THREE from 'three';
 import {
   withCount, addStackToSlots, maxDurability, itemDisplayName, enchantLabel, ENCHANTMENTS, enchantFits, enchantsConflict, ITEM_LAPIS, ITEM_BOOK, ITEM_ENCHANTED_BOOK, type Station,
@@ -60,9 +61,8 @@ import { fetchLoyalty, claimLoyalty, type LoyaltyInfo } from './social';
 import { WORLD_TAGS, MAX_WORLD_TAGS, cleanTags, toggleTag, tagInfo } from './worldTags';
 import { randomGuestName, fetchProfile, type PlayerProfile, type Account } from './social';
 import { openProfile, setProfileOpener } from './profileBus';
-import { setWorldWaker, wakeWorld } from './wakeBus';
 import { watchOutsideScripts, FLAG_LABELS, type Flag } from './integrity';
-import { saveWorldSnapshot, releaseWorld, deleteWorldSnapshot, listSleepingWorlds, claimWorld, transferWorld, type SleepingWorld, setWorldLike, saveProgressToAccount, loadProgressFromAccount, fetchLevelLeaderboard, reportCheat, cleanWorldImage, type LevelRow, addFriend, unfriendByName, loadFriends, sendDM, startPolling, isGuestName, reportActivity, fetchPlayingCounts, fetchLeaderboard, fetchStanding, recordPlay, setServerPresence, isOwnerName, listHostedWorlds, publishHostedWorld, unpublishHostedWorld, verifyToken, isFriendOf, isBannedName, isAdminToken, banEverywhere, unbanEverywhere, type DM, type Activity, type Friend, type LeaderRow, type Standing, type HostedWorld } from './social';
+import { setWorldLike, saveProgressToAccount, loadProgressFromAccount, fetchLevelLeaderboard, reportCheat, cleanWorldImage, type LevelRow, addFriend, unfriendByName, loadFriends, sendDM, startPolling, isGuestName, reportActivity, fetchPlayingCounts, fetchLeaderboard, fetchStanding, recordPlay, setServerPresence, isOwnerName, listHostedWorlds, publishHostedWorld, unpublishHostedWorld, verifyToken, isFriendOf, isBannedName, isAdminToken, banEverywhere, unbanEverywhere, type DM, type Activity, type Friend, type LeaderRow, type Standing, type HostedWorld } from './social';
 
 // Multiplayer is optional: Vite only includes src/multiplayer.ts if the file
 // exists, so deleting it (or the server folder) never breaks the game.
@@ -143,8 +143,8 @@ function listImage(img?: string): Promise<string | undefined> {
 type NetBlock = [number, number, number, number];
 type NetBadge = { owner?: boolean; rank?: string; tier?: string; staff?: string | null; og?: boolean; special?: string | null; undercover?: boolean };
 type NetPlayerInfo = { id: number; name: string; x: number; y: number; z: number; yaw: number; pitch: number; mode: string; look?: PlayerLook; badge?: NetBadge };
-type ServerSettings = { difficulty: Difficulty; keepInventory: boolean; scripts: boolean; mods: boolean; commands: boolean; pvp?: boolean; scriptPerm?: ScriptPerm; alwaysDay?: boolean; weatherCycle?: boolean };
-const DEFAULT_SERVER: ServerSettings = { difficulty: 'normal', keepInventory: false, scripts: true, mods: true, commands: true, pvp: true, alwaysDay: false, weatherCycle: true };
+type ServerSettings = { difficulty: Difficulty; keepInventory: boolean; scripts: boolean; mods: boolean; commands: boolean; pvp?: boolean; scriptPerm?: ScriptPerm; alwaysDay?: boolean; weatherCycle?: boolean; mobSpawning?: boolean; mobGriefing?: boolean };
+const DEFAULT_SERVER: ServerSettings = { difficulty: 'normal', keepInventory: false, scripts: true, mods: true, commands: true, pvp: true, alwaysDay: false, weatherCycle: true, mobSpawning: true, mobGriefing: true };
 type Welcome = { game?: NetGame; id: number; name: string; seed: number; worldType: 'default' | 'superflat' | 'eggwars' | 'bridge'; mode: string; time: number; changes: NetBlock[]; players: NetPlayerInfo[]; hostId?: number | null; settings?: ServerSettings; weather?: WeatherKind; experimental?: boolean; maxPlayers?: number; ranks?: unknown; roles?: Record<string, string>; drops?: NetDrop[] };
 import type { NetDrop } from './multiplayer';
 import { ShadersPanel, CrosshairPanel, CrosshairView } from './ShadersPanel';
@@ -383,6 +383,8 @@ function getInitialUsername(): string | null {
 }
 
 type RankTier = {
+  id: 'vanguard' | 'elite' | 'champion';
+  priceNote: string;
   name: string;
   price: string;
   priceValue: number;
@@ -396,32 +398,38 @@ type RankTier = {
 
 const rankTiers: RankTier[] = [
   {
+    id: 'vanguard',
     name: 'VANGUARD',
     price: '$5',
     priceValue: 5,
+    priceNote: 'one time',
     icon: Shield,
-    perks: [`${WORLD_LIMITS.vanguard} planets (instead of ${WORLD_LIMITS.none})`, 'Custom Chat Tag', 'Custom menu theme colours', `${SCRIPT_BUDGET_MS.vanguard}ms CPU script budget`],
+    perks: [`${WORLD_LIMITS.vanguard} planets (instead of ${WORLD_LIMITS.none})`, 'Custom chat tag', 'Custom menu theme colours', `${SCRIPT_BUDGET_MS.vanguard}ms script budget`, `${AI_DAILY_LIMIT.vanguard} AI questions a day (others get ${AI_DAILY_LIMIT.none})`, 'No ads'],
     borderClass: 'vb-border-copper border-2',
-    accentText: 'text-[#e8a87c]',
-    iconBg: 'from-[#b87333] to-[#8b5a2b]',
+    accentText: 'text-[#c68642]',
+    iconBg: 'from-[#a0683a] to-[#6b4423]',
   },
   {
+    id: 'elite',
     name: 'ELITE',
-    price: '$15',
-    priceValue: 15,
+    price: '$10',
+    priceValue: 10,
+    priceNote: 'one time',
     icon: Zap,
-    perks: ['Everything in Vanguard', `${WORLD_LIMITS.elite} planets`, 'Reflective linear gradient text colors', `${SCRIPT_BUDGET_MS.elite}ms CPU script budget`, '+100 daily AI terminal calls'],
+    perks: ['Everything in Vanguard', `${WORLD_LIMITS.elite} planets`, 'Gradient chat colours', `${SCRIPT_BUDGET_MS.elite}ms script budget`, `${AI_DAILY_LIMIT.elite} AI questions a day`],
     borderClass: 'vb-border-neon-cyan border-2',
-    accentText: 'text-[#00e5ff]',
-    iconBg: 'from-[#00e5ff] to-[#00b8d4]',
+    accentText: 'text-[#22e6e6]',
+    iconBg: 'from-[#22e6e6] to-[#00b8d4]',
     featured: true,
   },
   {
+    id: 'champion',
     name: 'CHAMPION',
-    price: '$30',
-    priceValue: 30,
+    price: '$5',
+    priceValue: 5,
+    priceNote: 'a month, or $20 one time',
     icon: Crown,
-    perks: ['Everything in Elite (and Vanguard)', `${WORLD_LIMITS.champion} planets`, 'Animated molten magma chat tags', 'Cosmic floating chat tags', `${SCRIPT_BUDGET_MS.champion}ms CPU script budget`, 'Upload your own custom skin and cape', 'Unlimited AI terminal access'],
+    perks: ['Everything in Elite', `${WORLD_LIMITS.champion} planets`, 'Animated chat tags', `${SCRIPT_BUDGET_MS.champion}ms script budget`, 'Your own skin and cape', 'No AI limit'],
     borderClass: 'vb-border-plasma',
     accentText: 'text-[#ffd700]',
     iconBg: 'from-[#ffd700] to-[#ff8c00]',
@@ -675,7 +683,7 @@ function GameCardItem({ game, onPlay, players }: { game: GameCard; onPlay?: () =
     </button>
   );
 }
-function RankTierCard({ tier }: { tier: RankTier }) {
+function RankTierCard({ tier, owned, ownedCount, active, onSwitch }: { tier: RankTier; owned: boolean; ownedCount: number; active: boolean; onSwitch: () => void }) {
   const Icon = tier.icon;
   return (
     <div className={`relative bg-[#121822] rounded-2xl overflow-visible border ${tier.borderClass} transition-all duration-300 hover:-translate-y-1 ${tier.featured ? 'lg:scale-105' : ''}`}>
@@ -697,7 +705,7 @@ function RankTierCard({ tier }: { tier: RankTier }) {
 
         <div className="text-center mb-5">
           <span className="font-[var(--font-display)] text-white text-4xl tracking-wide">{tier.price}</span>
-          <span className="text-[#5a6b80] text-xs ml-1">/month</span>
+          <span className="text-[#5a6b80] text-xs ml-1">{tier.priceNote}</span>
         </div>
 
         <ul className="space-y-3 mb-6">
@@ -711,13 +719,13 @@ function RankTierCard({ tier }: { tier: RankTier }) {
           ))}
         </ul>
 
-        <button
-          disabled
-          data-testid="rank-coming-soon"
-          className={`w-full py-3 rounded-xl font-[var(--font-display)] text-sm tracking-wide flex items-center justify-center gap-2 cursor-not-allowed opacity-80 bg-gradient-to-r ${tier.iconBg} text-[#0a0e14]`}
-        >
-          Coming Soon!
-        </button>
+        {owned ? (
+          !active
+            ? <button onClick={onSwitch} data-testid={`rank-switch-${tier.id}`} className={`w-full py-3 rounded-xl font-[var(--font-display)] text-sm tracking-wide bg-gradient-to-r ${tier.iconBg} text-[#0a0e14] active:scale-95`}>Switch to {tier.name.charAt(0) + tier.name.slice(1).toLowerCase()}</button>
+            : <button disabled data-testid={`rank-owned-${tier.id}`} className="w-full py-3 rounded-xl text-sm font-bold bg-[#1a2230] text-[#8ea0b8] cursor-default">{ownedCount > 1 ? 'Active' : 'Already owned'}</button>
+        ) : (
+          <button disabled data-testid="rank-coming-soon" className={`w-full py-3 rounded-xl font-[var(--font-display)] text-sm tracking-wide cursor-not-allowed opacity-80 bg-gradient-to-r ${tier.iconBg} text-[#0a0e14]`}>Coming soon</button>
+        )}
       </div>
     </div>
   );
@@ -990,6 +998,8 @@ type WorldConfig = {
   keepInventory?: boolean;
   alwaysDay?: boolean;
   weatherCycle?: boolean;
+  mobSpawning?: boolean;
+  mobGriefing?: boolean;
   creator?: string;      // who made the planet
   createdAt?: number;    // when (ms since 1970)
   lastPlayed?: number;
@@ -1292,7 +1302,7 @@ function CreateWorldView({ onSave, onBack, used, limit, initialMode = 'survival'
                     </button>
                   ))}
                 </div>
-                <p className="text-[#364860] text-[10px] mt-1.5">You need to be signed in for others to join. You can change this any time in Manage Server.</p>
+                <p className="text-[#364860] text-[10px] mt-1.5">Sign in so others can join. Change it later in Manage Server.</p>
               </div>
             )}
             <div className="mt-4">
@@ -1306,7 +1316,7 @@ function CreateWorldView({ onSave, onBack, used, limit, initialMode = 'survival'
                   <button onClick={() => setCustomImage(null)} className="text-[#5a6b80] text-xs hover:text-white transition-colors">Remove</button>
                 )}
               </div>
-              <p className="text-[#364860] text-[10px] mt-1.5">Shown on your world's card. Works for every world type, superflat included.</p>
+              <p className="text-[#364860] text-[10px] mt-1.5">Shown on your world's card.</p>
             </div>
           </section>
 
@@ -1709,7 +1719,7 @@ function SettingsView({
           <BarChart3 className="w-4 h-4 text-[#00e676]" />
           <h2 className="text-white text-sm font-medium">HUD Overlays</h2>
         </div>
-        <p className="text-[#5a6b80] text-xs mb-4">Extra info on screen while you play. Press F3 in game for the full debug screen (coordinates, direction and more).</p>
+        <p className="text-[#5a6b80] text-xs mb-4">Info on screen while you play. F3 shows the full debug screen.</p>
         <div className="flex flex-col gap-2" data-testid="hud-options">
           {([
             ['keystrokes', 'Keystrokes', 'Your movement keys, mouse buttons and jump key light up as you press them'],
@@ -1744,7 +1754,7 @@ function SettingsView({
           <Music className="w-4 h-4 text-[#00e676]" />
           <h2 className="text-white text-sm font-medium">Soundtrack</h2>
         </div>
-        <p className="text-[#5a6b80] text-xs mb-4">Pick a soundtrack (a playlist of several tracks that play one after another), or upload your own. It keeps playing while you browse or play.</p>
+        <p className="text-[#5a6b80] text-xs mb-4">Pick a playlist or upload your own tracks.</p>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4" data-testid="soundtracks">
           {builtInTracks.map((t) => {
@@ -1898,8 +1908,12 @@ function NewsView() {
   );
 }
 
+/** Which paid ranks this player owns, which one is on, and how to switch (Shop > Ranks) */
+const RankShopContext = createContext<{ owned: string[]; active: string; switchTo: (r: string) => Promise<string | null> }>({ owned: [], active: 'none', switchTo: async () => null });
+
 function ShopView({ compact = false }: { compact?: boolean }) {
   const p = useProgress();
+  const rankShop = useContext(RankShopContext);
   const [tab, setTab] = useState<'ranks' | 'cosmetics'>(CAN_SELL_RANKS ? 'ranks' : 'cosmetics');
   const [sub, setSub] = useState<'skins' | 'capes'>('skins');
   const [adBusy, setAdBusy] = useState<null | 'coins' | 'booster'>(null);
@@ -2052,9 +2066,9 @@ function ShopView({ compact = false }: { compact?: boolean }) {
       {tab === 'ranks' && CAN_SELL_RANKS ? (
         <>
           <section className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start pt-2">
-            {rankTiers.map((tier) => <RankTierCard key={tier.name} tier={tier} />)}
+            {rankTiers.map((tier) => <RankTierCard key={tier.name} tier={tier} owned={!!rankShop.owned.includes(tier.id)} ownedCount={Number(rankShop.owned.length)} active={rankShop.active === tier.id} onSwitch={() => { void rankShop.switchTo(tier.id).then((err) => setNote(err ?? `${tier.name.charAt(0) + tier.name.slice(1).toLowerCase()} is on now.`)); }} />)}
           </section>
-          <p className="text-center text-[#5a6b80] text-xs mt-8">Ranks are coming soon. Keep an eye on our Discord for the launch!</p>
+          <p className="text-center text-[#5a6b80] text-xs mt-8">Buying ranks opens soon. News is on our Discord.</p>
         </>
       ) : (
         <>
@@ -2083,7 +2097,7 @@ function ShopView({ compact = false }: { compact?: boolean }) {
           {/* Lootboxes for coins */}
           <div className="rounded-2xl bg-gradient-to-r from-[#3a2a08] to-[#121822] border border-[#ffd23a]/40 p-4 mb-3" data-testid="shop-lootboxes">
             <div className="flex items-center gap-2 mb-1"><Package className="w-5 h-5 text-[#ffd23a]" /><span className="text-white text-sm font-bold">Lootboxes</span></div>
-            <p className="text-[#c8b890] text-xs mb-3">Coins, Streak Freezes, XP Boosters, skins, and now and then a rare skin or cape.</p>
+            <p className="text-[#c8b890] text-xs mb-3">Coins, Streak Freezes, XP Boosters, skins and the odd rare cape.</p>
             <div className="grid sm:grid-cols-2 gap-3 mb-3">
               <button data-testid="buy-lootbox" onClick={() => { const r = buyShopItem('lootbox'); setNote(r === 'ok' ? 'You bought a lootbox! Open it below.' : 'Not enough coins yet.'); }}
                 className="flex items-center justify-between gap-2 rounded-xl px-4 py-3 bg-[#121822] border border-[#243044] hover:border-[#ffd23a] text-left transition-all active:scale-95">
@@ -2331,7 +2345,7 @@ function TouchSetting() {
   return (
     <div className="mt-5" data-testid="touch-setting">
       <p className="text-white text-sm font-medium">Touch controls</p>
-      <p className="text-[#5a6b80] text-xs mt-0.5 mb-2">A joystick and buttons on screen, for phones and tablets. Auto turns them on when there's no mouse.</p>
+      <p className="text-[#5a6b80] text-xs mt-0.5 mb-2">On-screen joystick and buttons. Auto turns them on when there's no mouse.</p>
       <div className="grid grid-cols-3 gap-2">
         {(['auto', 'on', 'off'] as TouchPref[]).map((v) => (
           <button key={v} onClick={() => pick(v)} data-testid={`touch-${v}`}
@@ -2365,7 +2379,7 @@ function LootboxRow() {
         <button data-testid="open-box" disabled={n <= 0} onClick={() => setOpened(openLootbox())} className="rounded-lg px-3 py-1.5 text-xs font-bold bg-[#ffd23a] text-[#0a0e14] active:scale-95 transition-all disabled:opacity-40">Open one</button>
       </div>
       {opened && <div className="mt-2 rounded-lg bg-[#ffd23a]/10 border border-[#ffd23a]/40 px-3 py-2 text-xs text-white vb-fade-in" data-testid="box-result">You got {lootText(opened)}!</div>}
-      {!opened && n === 0 && <p className="mt-1 text-[#5a6b80] text-[11px]">You get 1-2 lootboxes for every level up and some from the daily reward.</p>}
+      {!opened && n === 0 && <p className="mt-1 text-[#5a6b80] text-[11px]">You get 1-2 for every level up, and some from the daily reward.</p>}
     </div>
   );
 }
@@ -2511,7 +2525,7 @@ function DailyRewardModal({ onClose }: { onClose: () => void }) {
             );
           })}
         </div>
-        <p className="text-[#8ea0b8] text-[11px] mb-3">Come back every day to keep your streak. Day 7 gives a random skin you don't own yet ({WEEKLY_FALLBACK_COINS} coins if you own them all). Streak Freezes cover missed days automatically.</p>
+        <p className="text-[#8ea0b8] text-[11px] mb-3">Log in daily to keep your streak. Day 7 gives a skin you don't own ({WEEKLY_FALLBACK_COINS} coins if you have them all). Streak Freezes cover missed days.</p>
 
         {grant ? (
           <div className="rounded-xl bg-[#00e676]/10 border border-[#00e676]/40 p-3 mb-3 text-sm text-white" data-testid="daily-result">
@@ -2537,7 +2551,7 @@ function DailyRewardModal({ onClose }: { onClose: () => void }) {
                 <button data-testid="daily-claim-ad" onClick={() => void takeWithAd()} disabled={!adsOk || busy} className="rounded-xl py-3 font-bold text-sm bg-gradient-to-r from-[#ffd23a] to-[#ff9a1a] text-[#0a0e14] active:scale-95 transition-all disabled:opacity-40"><Tv className="inline w-4 h-4 mr-1" />{busy ? 'Playing ad…' : 'Watch ad for 2x'}</button>
               </div>
             )}
-            {!adsFree && !adsOk && <p className="mt-1 text-[11px] text-[#5a6b80]">2x needs an ad, and none is available right now. Ranks get 2x without ads.</p>}
+            {!adsFree && !adsOk && <p className="mt-1 text-[11px] text-[#5a6b80]">2x needs an ad and none is ready. Ranks get 2x without ads.</p>}
           </div>
         ) : (
           <div className="rounded-xl bg-[#121822] border border-[#243044] p-3 mb-3 text-sm text-[#b8c4d4]" data-testid="daily-done">You took today's reward. Come back tomorrow to keep your streak!</div>
@@ -2823,7 +2837,7 @@ function ProfileModal({ name, me, onClose }: { name: string; me: Account | null;
               {guestName && <span className="px-2 py-0.5 rounded-full bg-[#243044] text-[#8ea0b8] text-[10px] font-bold">GUEST</span>}
             </div>
             {guestName ? (
-              <p className="text-[#8ea0b8] text-xs mt-3" data-testid="profile-guest-note">Guests don't have a profile. Sign in to keep your level, climb the leaderboards and make friends.</p>
+              <p className="text-[#8ea0b8] text-xs mt-3" data-testid="profile-guest-note">Guests don't have a profile. Sign in to keep your level and add friends.</p>
             ) : prof === 'loading' ? (
               <p className="text-[#5a6b80] text-sm mt-4">…</p>
             ) : !p && !isMe ? (
@@ -3217,7 +3231,7 @@ function AntiCheatPanel({ settings, onChange, alerts, onKick, onBan, onDismiss, 
   );
   return (
     <div className="flex flex-col gap-3" data-testid="anticheat-panel">
-      <p className="text-[#8ea0b8] text-xs">Watches players who join your world for flying, speed, reach, kill aura, auto clickers, nukers, chat spam and outside scripts (Tampermonkey and the like). Creative mode, elytra and the game's own commands are never counted. Alerts show here and in chat, and go to the VibeBlox admins.</p>
+      <p className="text-[#8ea0b8] text-xs">Flags players who fly, speed, reach, kill aura, auto click, nuke, spam chat or run outside scripts. Creative mode, elytra and game commands don't count. Alerts show here and in chat, and go to the VibeBlox admins.</p>
       <div className="grid sm:grid-cols-2 gap-2">
         {row(settings.enabled, 'Anti-cheat', 'Check players in your world', () => onChange({ ...settings, enabled: !settings.enabled }), 'ac-enabled')}
         {row(settings.autoKick, 'Kick cheaters', `Kick a player after ${settings.kickAt} warning points`, () => onChange({ ...settings, autoKick: !settings.autoKick }), 'ac-autokick')}
@@ -3271,8 +3285,8 @@ function ManageServerView({ settings, hardcore, online, isHost, players, myId, h
   const canRules = lvl >= 2, canCheat = lvl >= 1;
   const roleOfName = (n: string) => (roles[n.toLowerCase()] as ServerRole | undefined) ?? null;
   const [tab, setTab] = useState<'world' | 'rules' | 'players' | 'roles' | 'schematics' | 'anticheat'>(() => (lvl >= 2 ? 'world' : 'players'));
-  const toggle = (key: 'keepInventory' | 'scripts' | 'mods' | 'commands' | 'pvp' | 'alwaysDay' | 'weatherCycle', label: string, hint: string) => {
-    const on = key === 'pvp' || key === 'weatherCycle' ? settings[key] !== false : !!settings[key];
+  const toggle = (key: 'keepInventory' | 'scripts' | 'mods' | 'commands' | 'pvp' | 'alwaysDay' | 'weatherCycle' | 'mobSpawning' | 'mobGriefing', label: string, hint: string) => {
+    const on = key === 'pvp' || key === 'weatherCycle' || key === 'mobSpawning' || key === 'mobGriefing' ? settings[key] !== false : !!settings[key];
     return (
       <button disabled={!canRules} onClick={() => onChange({ [key]: !on })} data-testid={`toggle-${key}`}
         className="flex items-center justify-between gap-3 w-full rounded-xl bg-[#121822] border border-[#243044] px-4 py-3 text-left disabled:opacity-60">
@@ -3338,7 +3352,7 @@ function ManageServerView({ settings, hardcore, online, isHost, players, myId, h
               </button>
             );
           })()}
-          <p className="text-[#5a6b80] text-[10px] mt-1">Changes the weather right now. Rain turns to snow when it is snow weather.</p>
+          <p className="text-[#5a6b80] text-[10px] mt-1">Changes the weather now.</p>
         </div>
       </div>
       <div className="grid grid-cols-2 gap-2">
@@ -3348,6 +3362,8 @@ function ManageServerView({ settings, hardcore, online, isHost, players, myId, h
       </>}
       {tab === 'rules' && <div className="grid grid-cols-2 gap-2">
         {toggle('keepInventory', 'Keep inventory', 'Keep your items when you die')}
+        {toggle('mobSpawning', 'Mob spawning', 'Off: no wild mobs appear')}
+        {toggle('mobGriefing', 'Mob griefing', 'Off: creepers and ghasts do not break blocks')}
         {toggle('commands', 'Allow commands', 'Chat commands like /give and /tp')}
         {toggle('scripts', 'Allow scripts', 'Off hides the Scripts button')}
         {toggle('mods', 'Allow mods', 'Off hides the Mods button')}
@@ -3372,7 +3388,7 @@ function ManageServerView({ settings, hardcore, online, isHost, players, myId, h
             <p className="flex items-center"><RoleIcon role="admin" /><b className="text-white mr-1">Admin</b> bans and kicks players here, and can use commands.</p>
             <p className="flex items-center"><RoleIcon role="coowner" /><b className="text-white mr-1">Co-owner</b> also changes the rules, uses schematics, sets up anti-cheat and promotes admins.</p>
             <p className="flex items-center"><RoleIcon role="owner" /><b className="text-white mr-1">Owner</b> is the world's creator. Only the owner makes co-owners.</p>
-            <p className="mt-1">These roles only count in this world. The icons show in the player list (Tab).</p>
+            <p className="mt-1">Roles only apply in this world.</p>
           </div>
           {players.filter((pl) => pl.id !== myId).length === 0 && <p className="text-[#5a6b80] text-xs rounded-xl bg-[#121822] border border-[#243044] px-4 py-3">Nobody else is here right now. You can also type <b>/promote name admin</b> in chat.</p>}
           {players.filter((pl) => pl.id !== myId).map((pl) => {
@@ -3399,7 +3415,7 @@ function ManageServerView({ settings, hardcore, online, isHost, players, myId, h
           {schematics}
           <div className="rounded-xl bg-[#121822] border border-[#243044] p-4">
             <p className="text-white text-sm font-medium mb-1">Upload a schematic file</p>
-            <p className="text-[#8ea0b8] text-xs mb-2">Add .vbschem files someone shared with you. They show up in the list above.</p>
+            <p className="text-[#8ea0b8] text-xs mb-2">Add .vbschem files from other people.</p>
             <SchematicUpload />
           </div>
         </div>
@@ -3592,11 +3608,12 @@ function CommandBlockPanel({ info, onDone, onCancel }: {
   onDone: (cfg: { type: CommandType; cmd: string; auto: boolean; conditional: boolean }) => void;
   onCancel: () => void;
 }) {
-  const [cmd, setCmd] = useState(info.cmd);
+  const [lines, setLines] = useState<string[]>(() => { const l = (info.cmd || '').split('\n'); return l.length ? l.slice(0, 10) : ['']; });
   const [type, setType] = useState<CommandType>(info.type);
   const [auto, setAuto] = useState(info.auto);
   const [conditional, setConditional] = useState(info.conditional);
-  const done = () => onDone({ type, cmd: cmd.trim(), auto, conditional });
+  const done = () => onDone({ type, cmd: lines.map((l) => l.trim()).filter(Boolean).join('\n'), auto, conditional });
+  const setLine = (i: number, v: string) => setLines((cur) => cur.map((l, j) => (j === i ? v : l)));
   const toggle = (on: boolean, a: string, b: string, set: (v: boolean) => void, id: string) => (
     <button type="button" onClick={() => set(!on)} data-testid={id}
       className="flex-1 py-2 rounded-lg bg-[#121822] border border-[#243044] text-white text-xs font-medium hover:border-[#00e676] transition-colors">{on ? b : a}</button>
@@ -3609,11 +3626,26 @@ function CommandBlockPanel({ info, onDone, onCancel }: {
         <h3 className="font-[var(--font-retro)] text-white text-sm tracking-wider uppercase mb-4 flex items-center gap-2">
           <span className="w-3 h-3 rounded-sm" style={{ background: colors[type] }} /> Set Console Command for Block
         </h3>
-        <label className="text-[#8ea0b8] text-xs">Console Command</label>
-        <input autoFocus value={cmd} onChange={(e) => setCmd(e.target.value)} maxLength={512} spellCheck={false} data-testid="command-input"
-          placeholder="/say Hello! · /give @p diamond 1 · /setblock ~ ~2 ~ glowstone"
-          className="mt-1.5 w-full bg-[#0a0e14] border border-[#243044] rounded-lg px-3 py-2.5 text-white text-sm font-mono placeholder-[#364860] focus:border-[#00e676] focus:outline-none" />
-        <p className="text-[#5a6b80] text-[10px] mt-1.5">~ means this block's position (~ ~1 ~ is the block above it). @p is the nearest player, @a every player, @e every mob too.</p>
+        <label className="text-[#8ea0b8] text-xs">Commands <span className="text-[#5a6b80]">({lines.filter((l) => l.trim()).length}/10)</span></label>
+        <div className="mt-1.5 flex flex-col gap-1.5 max-h-[34vh] overflow-y-auto vb-scroll pr-1">
+          {lines.map((l, i) => (
+            <div key={i} className="flex gap-1.5 items-center">
+              <span className="text-[#5a6b80] text-[10px] w-4 text-right">{i + 1}</span>
+              <input autoFocus={i === 0} value={l} onChange={(e) => setLine(i, e.target.value)} maxLength={512} spellCheck={false} data-testid={i === 0 ? 'command-input' : `command-input-${i + 1}`}
+                placeholder={i === 0 ? '/say Hello!' : '/give @p diamond 1'}
+                className="flex-1 min-w-0 bg-[#0a0e14] border border-[#243044] rounded-lg px-3 py-2 text-white text-sm font-mono placeholder-[#364860] focus:border-[#00e676] focus:outline-none" />
+              {lines.length > 1 && (
+                <button type="button" onClick={() => setLines((cur) => cur.filter((_, j) => j !== i))} data-testid={`command-remove-${i + 1}`} aria-label={`Remove command ${i + 1}`}
+                  className="w-7 h-7 rounded-md bg-[#121822] border border-[#243044] text-[#8ea0b8] hover:text-white hover:border-[#ff6b6b] text-sm leading-none">×</button>
+              )}
+            </div>
+          ))}
+        </div>
+        {lines.length < 10 && (
+          <button type="button" onClick={() => setLines((cur) => [...cur, ''])} data-testid="command-add"
+            className="mt-2 w-full py-1.5 rounded-lg border border-dashed border-[#243044] text-[#8ea0b8] text-xs hover:text-white hover:border-[#00e676] transition-colors">+ Add command</button>
+        )}
+        <p className="text-[#5a6b80] text-[10px] mt-1.5">Each box is its own command, run in order. ~ is this block's spot. @p is the nearest player, @a everyone, @e every mob.</p>
         <div className="mt-4 grid grid-cols-3 gap-2">
           {COMMAND_TYPES.map((t: CommandType) => (
             <button key={t} type="button" onClick={() => setType(t)} data-testid={`command-type-${t}`}
@@ -4117,7 +4149,7 @@ function InventoryOverlay({
     ));
 
   const previewRecipe = recipePreview !== null ? RECIPES.find((r) => r.output.id === recipePreview) ?? null : null;
-  const title = station?.kind === 'enchanting' ? 'Enchanting Table' : station?.kind === 'anvil' ? 'Anvil' : furnaceKey ? (furnaceKey.startsWith('B|') ? 'Brewing Stand' : 'Furnace') : chestKey ? (chestKey === 'ender' ? 'Ender Chest' : 'Chest') : atCraftingTable ? 'Crafting Table' : 'Inventory';
+  const title = station?.kind === 'enchanting' ? 'Enchanting Table' : station?.kind === 'anvil' ? 'Anvil' : furnaceKey ? (furnaceKey.startsWith('B|') ? 'Brewing Stand' : 'Furnace') : chestKey ? (chestKey === 'ender' ? 'Ender Chest' : chestKey.startsWith('box:p:') ? 'Pocket Box' : chestKey.startsWith('box:s:') ? 'Storage Box' : 'Chest') : atCraftingTable ? 'Crafting Table' : 'Inventory';
 
   // ---- Enchanting table ----
   const lapisHere = stationSlots[1]?.id === ITEM_LAPIS ? stationSlots[1].count : 0;
@@ -4236,7 +4268,7 @@ function InventoryOverlay({
                   </button>
                 );
               })}
-              <p className="text-[10px] text-[#5a6b80]">Needs the green level shown; costs 1, 2 or 3 levels and lapis. Up to 15 bookshelves around the table unlock the best ones.</p>
+              <p className="text-[10px] text-[#5a6b80]">Costs 1-3 levels and lapis. More bookshelves (up to 15) unlock better ones.</p>
             </div>
           </div>
         ) : station?.kind === 'anvil' ? (
@@ -4476,7 +4508,7 @@ const COMMANDS: Array<{ names: string[]; usage: string; desc: string }> = [
   { names: ['promote', 'demote', 'roles'], usage: '/promote <player> <admin|coowner> · /demote <player> · /roles', desc: 'World roles. Admins ban players and use cheats; co-owners also change rules, schematics and anti-cheat. Only the owner makes co-owners.' },
   { names: ['join'], usage: '/join <friend>', desc: 'Go to the world a friend is playing in.' },
   { names: ['globalban', 'globalunban'], usage: '/globalban <player> [reason] · /globalunban <player>', desc: 'VibeBlox staff ([HELPER], [MOD]) and admins: ban a player from all of VibeBlox.' },
-  { names: ['gamerule'], usage: '/gamerule keepInventory true|false', desc: 'Keep your items when you die.' },
+  { names: ['gamerule'], usage: '/gamerule keepInventory|mobGriefing|doMobSpawning true|false', desc: 'Change a world rule.' },
   { names: ['screenshot', 'ss'], usage: '/screenshot', desc: 'Save a picture of the game (a PNG download). F2 does the same. Works everywhere.' },
   { names: ['locate'], usage: '/locate village | temple | fortress | dungeon | portal | treasure', desc: 'Find the closest village, desert temple, dungeon, ruined portal, buried treasure, or (in the Nether) fortress.' },
 ];
@@ -4532,7 +4564,7 @@ function itemIdFromNameAny(name: string): number | null {
     return ITEM_INFO[id] ? id : null;
   }
   // the old names still work in scripts: "planks" is oak planks now, "snow" is the snow block...
-  const OLD_NAMES: Record<string, string> = { planks: 'oakplanks', wood: 'oaklog', log: 'oaklog', leaves: 'oakleaves', snow: 'snowblock', door: 'oakdoor', trapdoor: 'oaktrapdoor', fence: 'oakfence', fencegate: 'oakfencegate', woodsword: 'woodensword', wood_sword: 'woodensword' };
+  const OLD_NAMES: Record<string, string> = { enderpearl: 'teleportationpearl', pearl: 'teleportationpearl', planks: 'oakplanks', wood: 'oaklog', log: 'oaklog', leaves: 'oakleaves', snow: 'snowblock', door: 'oakdoor', trapdoor: 'oaktrapdoor', fence: 'oakfence', fencegate: 'oakfencegate', woodsword: 'woodensword', wood_sword: 'woodensword' };
   const n0 = normalizeItemName(name);
   const n = OLD_NAMES[n0] ?? n0;
   let hiddenMatch: number | null = null; // block states (a lit torch on a wall...) share names: prefer the real item
@@ -4630,8 +4662,12 @@ export function playPingSound() {
   } catch { /* no audio: no ping */ }
 }
 
-function ChatBox({ open, initialText, messages, history, onSubmit, restricted = false, channels = [], channel = null, onChannel }: {
+function ChatBox({ open, initialText, messages, history, onSubmit, restricted = false, channels = [], channel = null, onChannel, players = [], getItems = () => [] }: {
   restricted?: boolean;
+  /** Names for autocomplete after /tp, /give and so on */
+  players?: string[];
+  /** Every item name (called when the chat opens) */
+  getItems?: () => string[];
   /** Private-message channels that are open right now (Tab / the chips switch between them and the server chat). */
   channels?: string[];
   channel?: string | null;
@@ -4660,15 +4696,28 @@ function ChatBox({ open, initialText, messages, history, onSubmit, restricted = 
   const now = Date.now();
   const shown = open ? messages.slice(-50) : messages.slice(-10);
   const typedCmd = text.startsWith('/') && !text.includes(' ') ? text.slice(1).toLowerCase() : null;
-  const suggestions = open && typedCmd !== null
-    ? COMMANDS.filter((c) => (!restricted || c.names.some((n) => SAFE_COMMANDS.has(n))) && c.names.some((n) => n.startsWith(typedCmd))).slice(0, 6)
+  const items = useMemo(() => (open ? getItems() : []), [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  const argComp = open ? completeChat(text, { players, items }) : { kind: 'none' as const, options: [] };
+  // What Tab can fill in: the command names while you type the first word, then the players, selectors and items for the rest
+  const cmdSuggestions = open && typedCmd !== null
+    ? COMMANDS.filter((c) => (!restricted || c.names.some((n) => SAFE_COMMANDS.has(n))) && c.names.some((n) => n.startsWith(typedCmd)))
     : [];
+  const options: Array<{ key: string; label: string; hint?: string; fill: string }> = argComp.kind !== 'none'
+    ? argComp.options.map((o) => ({ key: o.word, label: o.label, hint: o.hint, fill: applyCompletion(text, o.word) }))
+    : cmdSuggestions.map((c) => ({ key: c.usage, label: c.usage, hint: c.names.length > 1 ? `also /${c.names.slice(1).join(', /')}` : undefined, fill: '/' + c.names[0] + ' ' }));
+  const [sel, setSel] = useState(0);
+  const pick = Math.min(sel, Math.max(0, options.length - 1));
+  const rowRefs = useRef<Array<HTMLDivElement | null>>([]);
+  useEffect(() => { rowRefs.current[pick]?.scrollIntoView({ block: 'nearest' }); }, [pick, options.length]);
 
   function onKeyDown(e: ReactKeyboardEvent<HTMLInputElement>) {
     if (e.key === 'Enter') {
       e.preventDefault();
       e.stopPropagation(); // don't let this same Enter re-open chat
       onSubmit(text);
+    } else if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && options.length > 0) {
+      e.preventDefault();
+      setSel((pick + (e.key === 'ArrowDown' ? 1 : options.length - 1)) % options.length);
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       const i = Math.min(history.length - 1, histIdx + 1);
@@ -4680,7 +4729,7 @@ function ChatBox({ open, initialText, messages, history, onSubmit, restricted = 
       setText(i >= 0 ? history[history.length - 1 - i] : '');
     } else if (e.key === 'Tab') {
       e.preventDefault();
-      if (suggestions[0]) { setText('/' + suggestions[0].names[0] + ' '); return; }
+      if (options[pick]) { setText(options[pick].fill); setSel(0); return; }
       if (!onChannel || !channels.length) return;
       // Server chat -> each private channel -> server chat. (Shift+Tab goes the other way.)
       const order: Array<string | null> = [null, ...channels];
@@ -4705,15 +4754,16 @@ function ChatBox({ open, initialText, messages, history, onSubmit, restricted = 
           </div>
         ))}
       </div>
-      {open && suggestions.length > 0 && (
-        <div className="bg-black/75 border border-white/10 rounded-md py-1 vb-fade-in">
-          {suggestions.map((c, i) => (
-            <div key={c.usage} className={`px-2 py-0.5 text-xs font-mono ${i === 0 ? 'text-[#ffe066]' : 'text-[#c8c8c8]'}`}>
-              {c.usage}
-              {c.names.length > 1 && <span className="text-[#7a7a7a]"> (also /{c.names.slice(1).join(', /')})</span>}
+      {open && options.length > 0 && (
+        <div className="bg-black/75 border border-white/10 rounded-md py-1 vb-fade-in max-h-[220px] overflow-y-auto vb-scroll pointer-events-auto" data-testid="chat-suggestions" data-kind={argComp.kind}>
+          {options.map((o, i) => (
+            <div key={o.key} ref={(el) => { rowRefs.current[i] = el; }} data-testid="chat-suggestion" onMouseDown={(e) => e.preventDefault()} onClick={() => { setText(o.fill); setSel(0); }}
+              className={`px-2 py-0.5 text-xs font-mono cursor-pointer flex justify-between gap-3 ${i === pick ? 'text-[#ffe066] bg-white/10' : 'text-[#c8c8c8] hover:bg-white/5'}`}>
+              <span>{o.label}</span>
+              {o.hint && <span className="text-[#7a7a7a]">{o.hint}</span>}
             </div>
           ))}
-          <div className="px-2 pt-0.5 text-[10px] text-[#7a7a7a]">Tab to autocomplete</div>
+          <div className="px-2 pt-0.5 text-[10px] text-[#7a7a7a]">Tab to fill in · arrows to pick</div>
         </div>
       )}
       {open && channels.length > 0 && (
@@ -4736,7 +4786,7 @@ function ChatBox({ open, initialText, messages, history, onSubmit, restricted = 
           autoFocus
           value={text}
           maxLength={256}
-          onChange={(e) => { setText(e.target.value); setHistIdx(-1); }}
+          onChange={(e) => { setText(e.target.value); setHistIdx(-1); setSel(0); }}
           onKeyDown={onKeyDown}
           className="w-full px-2 py-1.5 bg-black/65 text-white text-sm font-mono outline-none border border-white/20 focus:border-white/50 rounded-sm transition-colors"
           placeholder={channel ? `Message ${channel} privately (Tab: back to the server chat)` : 'Type a message, or / for commands'}
@@ -4829,7 +4879,7 @@ function HelpPanel({ onClose, extra = [], restricted = false }: { onClose: () =>
           {SELECTOR_HELP.map(([k, d]) => (
             <div key={k} className="flex gap-3 text-xs"><span className="w-10 shrink-0 font-mono text-[#00e676]">{k}</span><span className="text-[#8ea0b8]">{d}</span></div>
           ))}
-          <p className="text-[#5a6b80] text-[11px] mt-1">Use them (or a player's name) wherever a command takes a player, e.g. /tp @p, /give @s diamond, /kill @e[type=creeper].</p>
+          <p className="text-[#5a6b80] text-[11px] mt-1">Use them or a player's name in commands, like /tp @p or /give @s diamond.</p>
         </div>
         <h4 className="text-white text-xs font-medium mb-2 uppercase tracking-wide">Game modes</h4>
         <div className="flex flex-col gap-1.5 mb-6">
@@ -4854,7 +4904,7 @@ function HelpPanel({ onClose, extra = [], restricted = false }: { onClose: () =>
           <span><b className="text-white">Esc</b> game menu</span>
           <span><b className="text-white">Right-click</b> with food to eat</span>
           <span><b className="text-white">Hold right-click</b> to draw a bow</span>
-          <span><b className="text-white">Right-click</b> buckets / ender pearls</span>
+          <span><b className="text-white">Right-click</b> buckets / teleportation pearls</span>
           <span><b className="text-white">Right-click</b> a boat to get in · <b className="text-white">Shift</b> out</span>
         </div>
         </>)}
@@ -5482,14 +5532,6 @@ function ServersView({ serverUrl, onServerUrlChange, onJoin, status, error, avai
   const [sortBy, setSortBy] = useState<'players' | 'likes'>('players');
   const [likeMsg, setLikeMsg] = useState<string | null>(null);
   const [liking, setLiking] = useState<string | null>(null);
-  const [sleeping, setSleeping] = useState<SleepingWorld[]>([]);
-  const [waking, setWaking] = useState<string | null>(null);
-  const [wakeError, setWakeError] = useState<string | null>(null);
-  async function wakeUp(w: SleepingWorld) {
-    setWaking(w.id); setWakeError(null);
-    const err = await wakeWorld(w.id);
-    if (err) { setWakeError(err); setWaking(null); }
-  }
   const signedIn = !!summary.username && !isGuestName(summary.username);
   /** Like or un-like a world: shows the change at once, then the real count from the database. */
   async function toggleLike(w: HostedWorld) {
@@ -5513,8 +5555,6 @@ function ServersView({ serverUrl, onServerUrlChange, onJoin, status, error, avai
       const r = await listHostedWorlds();
       if (!live) return;
       if (r.ok) { setWorlds(r.worlds); setListError(null); } else setListError(r.error);
-      const sl = await listSleepingWorlds();
-      if (live && sl.ok) setSleeping(sl.worlds);
     };
     void load();
     const t = window.setInterval(load, 8000);
@@ -5537,7 +5577,7 @@ function ServersView({ serverUrl, onServerUrlChange, onJoin, status, error, avai
           <span className="font-[var(--font-retro)] text-[10px] text-[#00e676]">MULTIPLAYER</span>
         </div>
         <h1 className="font-[var(--font-retro)] text-xl text-white leading-relaxed tracking-wider">PLAY WITH OTHERS</h1>
-        <p className="text-[#5a6b80] text-sm mt-1">Jump into a world someone is playing right now. Your own worlds open up the same way while you play them.</p>
+        <p className="text-[#5a6b80] text-sm mt-1">Worlds people are playing right now.</p>
       </header>
 
       <section className="bg-[#121822] rounded-2xl border border-[#243044] p-5" data-testid="world-list">
@@ -5579,7 +5619,7 @@ function ServersView({ serverUrl, onServerUrlChange, onJoin, status, error, avai
         {worlds && !worlds.length && !listError && (
           <div className="rounded-xl bg-[#0a0e14] border border-[#243044] px-4 py-6 text-center" data-testid="world-list-empty">
             <p className="text-white text-sm">Nobody is playing an open world right now.</p>
-            <p className="text-[#5a6b80] text-xs mt-1">Play one of your own worlds (signed in) and it shows up here for others.</p>
+            <p className="text-[#5a6b80] text-xs mt-1">Sign in and play a world of yours to list it here.</p>
           </div>
         )}
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -5626,28 +5666,6 @@ function ServersView({ serverUrl, onServerUrlChange, onJoin, status, error, avai
             );
           })}
         </div>
-        {sleeping.length > 0 && (
-          <div className="mt-6" data-testid="sleeping-worlds">
-            <h3 className="text-white text-sm font-bold mb-1">💤 Sleeping worlds</h3>
-            <p className="text-[#8ea0b8] text-xs mb-3">Their host has left, but you can still join: the world wakes up on your device from its saved copy and others can join you.</p>
-            {wakeError && <p className="text-[#ff8a8a] text-xs mb-2" data-testid="wake-error">{wakeError}</p>}
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-              {sleeping.map((w) => (
-                <div key={w.id} className="rounded-2xl bg-[#0a0e14] border border-[#243044] p-3 flex flex-col gap-1.5" data-testid="sleeping-row">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-white text-sm font-bold truncate" data-testid="sleeping-name">{w.name}</span>
-                    <span className="shrink-0 px-2 py-0.5 rounded-md text-[10px] font-bold bg-[#243044] text-[#8ea0b8]">{w.mode.charAt(0).toUpperCase() + w.mode.slice(1)}{w.worldType === 'superflat' ? ' · Superflat' : ''}</span>
-                  </div>
-                  <div className="text-[#5a6b80] text-[11px]">by <span className="text-[#8ea0b8]">{w.owner}</span> · {timeAgo(w.updatedAt)}</div>
-                  <button disabled={!canJoin || connecting || !!waking || !signedIn} onClick={() => void wakeUp(w)} data-testid="sleeping-join"
-                    className="mt-1 w-full py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-[#00e676] to-[#00b248] text-[#0a0e14] disabled:opacity-50">
-                    {waking === w.id ? 'Waking up…' : !signedIn ? 'Sign in to join' : 'Wake up & join'}
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
         <p className="text-[#5a6b80] text-[11px] mt-4 leading-relaxed">
           To open your own world, sign in and play it. Pick who can join (Public, Accounts only, Friends only or Private) when you create it, or in
           Esc → Manage Server. Players connect straight to your game, so it stays open only while you're playing.
@@ -5868,6 +5886,7 @@ function AiSidePanel({ scriptName, getCode, onApply, names }: {
   names: { blocks: string[]; items: string[] };
 }) {
   type Msg = AiTurn & { result?: string };
+  const aiRank = useContext(StandingContext).rank as RankId;
   const [mode, setMode] = useState<AiMode>(() => (localStorage.getItem('vb-ai-mode') === 'high-effort' ? 'high-effort' : 'normal'));
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
@@ -5885,6 +5904,8 @@ function AiSidePanel({ scriptName, getCode, onApply, names }: {
   async function send(text: string) {
     const q = text.trim();
     if (!q || streaming) return;
+    if (aiLeftToday(aiRank) <= 0) { setError(`You used all ${AI_DAILY_LIMIT[aiRank]} AI questions for today. Vanguard gives 40, Elite 100 and Champion has no limit.`); return; }
+    countAiQuestion();
     const history: AiTurn[] = [...messages.map((m) => ({ role: m.role, text: m.text })), { role: 'user', text: q }];
     setMessages([...history, { role: 'assistant', text: '' }]);
     setInput('');
@@ -6081,7 +6102,7 @@ function ModsPanel({ official, custom, enabled, starred, onToggle, onStar, onFor
       </div>
 
       {list.length === 0 && (
-        <p className="text-[#5a6b80] text-xs py-4 text-center">No community mods yet. Make one, fork an official mod, or import one below.</p>
+        <p className="text-[#5a6b80] text-xs py-4 text-center">No community mods yet.</p>
       )}
       {list.map((m) => {
         const on = enabled.includes(m.id);
@@ -6128,7 +6149,7 @@ function ModsPanel({ official, custom, enabled, starred, onToggle, onStar, onFor
               className="px-3 py-2 rounded-lg bg-[#121822] border border-[#243044] text-white text-xs hover:border-[#00e676]">Import</button>
           </div>
           {importMsg && <p className="text-[#8ea0b8] text-[11px] mt-2">{importMsg}</p>}
-          <p className="text-amber-500/80 text-[10px] mt-2">Only import mods from people you trust. Mods run sandboxed, but they can still build, break and teleport in your world.</p>
+          <p className="text-amber-500/80 text-[10px] mt-2">Only import mods from people you trust. They can build, break and teleport in your world.</p>
         </div>
       )}
     </div>
@@ -6160,7 +6181,7 @@ export default function App() {
   const viewRef = useRef<View>('home');
   viewRef.current = view;
   // ---- accounts, friends, private messages, admin ----
-  const { account, admin, adminPerms, checked: accountChecked, signOut: doSignOut, rename: doRename, undercover: doUndercover } = useAccount();
+  const { account, admin, adminPerms, checked: accountChecked, signOut: doSignOut, rename: doRename, undercover: doUndercover, switchTo: doSwitchRank } = useAccount();
   const [profileName, setProfileName] = useState<string | null>(null);
   useEffect(() => { setProfileOpener(setProfileName); return () => setProfileOpener(null); }, []);
   const accountRef = useRef(account);
@@ -7074,7 +7095,7 @@ export default function App() {
     if (gameMode === 'playing' && canvasRef.current) {
       hadLockRef.current = false;
       lastStatTickRef.current = Date.now();
-      const applyRules = (h: { setRules: (r: { difficulty: Difficulty; keepInventory: boolean; hardcore: boolean; alwaysDay?: boolean; weatherCycle?: boolean }) => void }) => h.setRules({ difficulty: serverSettingsRef.current.difficulty, keepInventory: serverSettingsRef.current.keepInventory, hardcore: hardcoreRef.current, alwaysDay: !!serverSettingsRef.current.alwaysDay, weatherCycle: serverSettingsRef.current.weatherCycle !== false });
+      const applyRules = (h: { setRules: (r: { difficulty: Difficulty; keepInventory: boolean; hardcore: boolean; alwaysDay?: boolean; weatherCycle?: boolean; mobSpawning?: boolean; mobGriefing?: boolean }) => void }) => h.setRules({ difficulty: serverSettingsRef.current.difficulty, keepInventory: serverSettingsRef.current.keepInventory, hardcore: hardcoreRef.current, alwaysDay: !!serverSettingsRef.current.alwaysDay, weatherCycle: serverSettingsRef.current.weatherCycle !== false, mobSpawning: serverSettingsRef.current.mobSpawning !== false, mobGriefing: serverSettingsRef.current.mobGriefing !== false });
       const handle = createVoxelGame(canvasRef.current, renderDistance, activeWorldMode, graphicsQuality, fov, activeWorldType, sfxVolume, activeSeed, activeExperimental, arenaVariantRef.current);
       gameHandleRef.current = handle;
       handle.setPlayerLook(currentLook());
@@ -7258,13 +7279,6 @@ export default function App() {
             pushMessage('Welcome back! Your progress was restored.', '#ffe066');
           }
         } catch { /* a broken save just starts fresh */ }
-      }
-      // A sleeping world that was just woken up: its blocks and time come from the saved copy
-      const wake = pendingWakeRef.current;
-      if (wake && worldId && wake.worldId === worldId) {
-        pendingWakeRef.current = null;
-        try { handle.applyRemoteBlocks(wake.changes, true); handle.setTime(wake.time); handle.setWeather?.(wake.weather); } catch { /* a bad copy just starts fresh */ }
-        pushMessage(`You woke up ${wake.name}. Others can join you now.`, '#7cfc7c');
       }
       // Your own world opens to others (as its privacy allows) a moment after it has loaded
       if (worldId && !mpRef.current) window.setTimeout(() => { if (gameHandleRef.current === handle) void maybeStartHostingRef.current(); }, 1200);
@@ -7462,19 +7476,19 @@ export default function App() {
     if (hardcoreRef.current) st = { ...st, difficulty: 'hard' };
     serverSettingsRef.current = st;
     setServerSettings(st);
-    gameHandleRef.current?.setRules({ difficulty: st.difficulty, keepInventory: st.keepInventory, alwaysDay: !!st.alwaysDay, weatherCycle: st.weatherCycle !== false });
+    gameHandleRef.current?.setRules({ difficulty: st.difficulty, keepInventory: st.keepInventory, alwaysDay: !!st.alwaysDay, weatherCycle: st.weatherCycle !== false, mobSpawning: st.mobSpawning !== false, mobGriefing: st.mobGriefing !== false });
     const runner = getRunner();
     if (!st.scripts) for (const sc of scripts) runner.stop(sc.id);
     if (!st.mods) for (const id of enabledNow()) runner.stop(`mod:${id}`);
     if (!st.scripts || !st.mods) setRunningScripts(runner.runningIds().filter((id) => !id.startsWith("mod:")));
     // remember a planet's settings with the planet
     const wid = activeWorldIdRef.current;
-    if (wid && (!mpRef.current || hostingRef.current)) setSavedWorlds((prev) => prev.map((w) => (w.id === wid ? { ...w, difficulty: st.difficulty, keepInventory: st.keepInventory, alwaysDay: !!st.alwaysDay, weatherCycle: st.weatherCycle !== false } : w)));
+    if (wid && (!mpRef.current || hostingRef.current)) setSavedWorlds((prev) => prev.map((w) => (w.id === wid ? { ...w, difficulty: st.difficulty, keepInventory: st.keepInventory, alwaysDay: !!st.alwaysDay, weatherCycle: st.weatherCycle !== false, mobSpawning: st.mobSpawning !== false, mobGriefing: st.mobGriefing !== false } : w)));
   }
   /** Manage Server changes: the host sends them to the server; alone, they apply right away. */
   function changeServerSettings(part: Partial<ServerSettings>) {
     const mp = mpRef.current;
-    if (mp && mp.connected) { if (hostId === myNetId || roleLevel(myRoleRef.current) >= 2) mp.sendSettings(part); return; } // the host and co-owners change the rules
+    if (mp && mp.connected) { if ((hostId === myNetId && !handedOverRef.current) || roleLevel(myRoleRef.current) >= 2) mp.sendSettings(part); return; } // the host and co-owners change the rules
     applyServerSettings({ ...serverSettingsRef.current, ...part });
   }
 
@@ -7482,7 +7496,7 @@ export default function App() {
   function changeTime(t: number): boolean {
     const mp = mpRef.current;
     if (mp && mp.connected) {
-      if (hostId !== myNetId && roleLevel(myRoleRef.current) < 1) return false;
+      if ((hostId !== myNetId || handedOverRef.current) && roleLevel(myRoleRef.current) < 1) return false;
       mp.sendTime(t);
       return true;
     }
@@ -7492,7 +7506,7 @@ export default function App() {
   function changeWeather(kind: WeatherKind, seconds?: number): boolean {
     const mp = mpRef.current;
     if (mp && mp.connected) {
-      if (hostId !== myNetId && roleLevel(myRoleRef.current) < 1) return false;
+      if ((hostId !== myNetId || handedOverRef.current) && roleLevel(myRoleRef.current) < 1) return false;
       mp.sendWeather(kind);
       return true;
     }
@@ -7763,7 +7777,7 @@ export default function App() {
       onAnticheat: (st) => setRemoteAc(st),
       onCheat: (a) => setCheatAlerts((prev) => [a as unknown as CheatAlertLike, ...prev].slice(0, 100)),
       onBecomeHost: (room, st) => { void becomeHostRef.current(room, st); },
-      onMigrate: (room, host) => { migratingRef.current = { room, host }; pushMessage(`The host left. ${host} is keeping the world open: moving you there…`, '#ffe066'); },
+      onMigrate: (room, host) => { migratingRef.current = { room, host }; pushMessage(`The owner left. ${host} is keeping the world running: moving you there…`, '#ffe066'); },
       onRanks: (r) => { applyFakeRanks(cleanFakeRanks(r)); refreshNameTags(); },
       onBadge: (id, badge) => {
         const nm = onlineNamesRef.current[id];
@@ -7834,16 +7848,6 @@ export default function App() {
     if (!hs || !me) return;
     void publishHostedWorld(me, { id: hs.id, name: hs.name, mode: hs.mode, worldType: hs.worldType, privacy: hs.privacy, players: hs.room.count, max: hs.max, description: hs.description, image: hs.image, tags: hs.tags });
     void setServerPresence('p2p:' + hs.id);
-    if (hs.sid && Date.now() - (hs.snapAt ?? 0) > 60_000) snapshotHosting(hs);
-  }
-  /** Saves a copy of the world you host online, so it can be joined even after you leave (a "sleeping world"). */
-  function snapshotHosting(hs: Hosting): Promise<unknown> {
-    const me = accountRef.current;
-    if (!hs.sid || !me || isGuestName(me.username) || hs.privacy === 'private' || !HOSTABLE_TYPES.includes(hs.worldType as WorldType)) return Promise.resolve();
-    const data = hs.room.snapshot?.();
-    if (!data) return Promise.resolve();
-    hs.snapAt = Date.now();
-    return saveWorldSnapshot({ id: hs.sid, name: hs.name, mode: hs.mode, worldType: hs.worldType, privacy: hs.privacy, max: hs.max, data }).catch(() => null);
   }
   /** Opens the world you're playing to others (unless it's private, you're a guest, or it's a minigame). */
   async function maybeStartHosting() {
@@ -8016,7 +8020,7 @@ export default function App() {
       sid,
       seed: st.seed, worldType, mode, changes: Array.isArray(st.changes) ? st.changes : [], time: Number(st.time) || 0, weather: st.weather ?? 'clear',
       settings: { ...DEFAULT_SERVER, ...(st.settings ?? {}) }, ranks: st.ranks, experimental: !!st.experimental, privacy: st.privacy ?? 'public',
-      hostName: me.username, owner: st.owner, roles: st.roles ?? {}, worldName: st.name, maxPlayers: Math.max(2, Math.min(40, Number(st.maxPlayers) || 18)), bans: Array.isArray(st.bans) ? st.bans : [],
+      hostName: me.username, caretaker: true, owner: st.owner, roles: st.roles ?? {}, worldName: st.name, maxPlayers: Math.max(2, Math.min(40, Number(st.maxPlayers) || 18)), bans: Array.isArray(st.bans) ? st.bans : [],
       services: roomServices(me),
       ...anticheatOptions(st.name),
       onCount: (n: number) => { setHostingInfo((x) => (x ? { ...x, players: n } : x)); publishHosting(); },
@@ -8033,43 +8037,10 @@ export default function App() {
     peer.start().catch(() => { if (hostingRef.current?.id === roomId) pushMessage("Couldn't keep the world open for others (the matchmaking service didn't answer).", '#ff9a3c'); });
     publishHosting();
     hostingRef.current.timer = window.setInterval(publishHosting, 20_000);
-    pushMessage(`The host left, so the world now runs on your device. Others are joining you. If you leave, the next player takes over.`, '#7cfc7c');
+    pushMessage(`The owner left. The world keeps running on your device so everyone can keep playing, but you are not the host. If you leave, the next player keeps it going.`, '#7cfc7c');
   }
   const becomeHostRef = useRef(becomeHost);
   becomeHostRef.current = becomeHost;
-
-  // ---------------- Sleeping worlds ----------------
-  const pendingWakeRef = useRef<{ worldId: string; name: string; changes: Array<[number, number, number, number]>; time: number; weather: WeatherKind } | null>(null);
-  /** Wakes a world whose host left (from the Servers page): you host it from its saved copy. Gives an error message, or null when it starts. */
-  async function wakeSleepingWorld(sid: string): Promise<string | null> {
-    const me = accountRef.current;
-    if (!me || isGuestName(me.username)) return 'Sign in to join worlds.';
-    if (!multiplayerAvailable || !hostingAvailable) return "Hosting isn't installed in this copy of the game.";
-    const r = await claimWorld(sid);
-    if (!r.ok) return r.error;
-    const w = r.world, d = w.data as Record<string, unknown>;
-    const settings = (d.settings ?? {}) as Partial<ServerSettings>;
-    const mode: WorldMode = w.mode === 'creative' || w.mode === 'adventure' ? w.mode : 'survival';
-    const existing = savedWorldsRef.current.find((x) => x.sharedId === sid);
-    const id = existing?.id ?? newWorldId();
-    const config: WorldConfig = {
-      ...(existing ?? { image: mode === 'creative' ? 'images/creative-bg.jpg' : 'images/survival-bg.jpg', tag: 'Shared', accent: '#00e676', createdAt: Date.now(), playSeconds: 0 }),
-      name: w.name, mode, worldType: w.worldType === 'superflat' ? 'superflat' : 'default', seed: Number(d.seed) || 0, id,
-      difficulty: (settings.difficulty as Difficulty | undefined) ?? 'normal', keepInventory: !!settings.keepInventory, alwaysDay: !!settings.alwaysDay, weatherCycle: settings.weatherCycle !== false,
-      creator: w.owner, owner: w.owner, sharedId: sid, experimental: !!d.experimental, privacy: w.privacy,
-      bans: Array.isArray(d.bans) ? (d.bans as string[]) : [], roles: (d.roles ?? {}) as WorldConfig['roles'], lastPlayed: Date.now(),
-    };
-    setSavedWorlds((prev) => (prev.some((x) => x.id === id) ? prev.map((x) => (x.id === id ? config : x)) : [...prev, config]));
-    savedWorldsRef.current = savedWorldsRef.current.some((x) => x.id === id) ? savedWorldsRef.current.map((x) => (x.id === id ? config : x)) : [...savedWorldsRef.current, config];
-    try { localStorage.removeItem(`vb-save-${id}`); } catch { /* storage blocked */ } // the saved copy online is the truth now
-    pendingWakeRef.current = { worldId: id, name: w.name, changes: Array.isArray(d.changes) ? (d.changes as Array<[number, number, number, number]>) : [], time: Number(d.time) || 0, weather: (d.weather as WeatherKind) ?? 'clear' };
-    if (!startGuard()) { pendingWakeRef.current = null; return 'Hold on a second and try again.'; }
-    beginWorld(config);
-    return null;
-  }
-  const wakeSleepingWorldRef = useRef(wakeSleepingWorld);
-  wakeSleepingWorldRef.current = wakeSleepingWorld;
-  useEffect(() => { setWorldWaker((id) => wakeSleepingWorldRef.current(id)); return () => setWorldWaker(null); }, []);
 
   /** Closes your world to others. stillPlaying: you stay in it (it was made private). */
   function stopHosting(stillPlaying: boolean) {
@@ -8078,17 +8049,9 @@ export default function App() {
     hostingRef.current = null;
     setHostingInfo(null);
     window.clearInterval(hs.timer);
-    // Leaving (not just closing the door): the world stays open, run by another player
+    // Leaving (not just closing the door): the world stays open for whoever is still in it. One of them keeps it running, but nobody becomes the host.
     let handedTo: string | null = null;
-    // the saved copy first (everything up to now), so the world can be joined after you are gone
-    const saved = hs.sid ? snapshotHosting({ ...hs, snapAt: 0 }) : Promise.resolve();
     if (!stillPlaying && hs.room.handOff && hs.privacy !== 'private') { try { handedTo = hs.room.handOff(randomRoomId()); } catch { handedTo = null; } }
-    if (hs.sid) {
-      const sid = hs.sid;
-      if (stillPlaying) void saved.then(() => deleteWorldSnapshot(sid)); // closing the door: no saved copy for others
-      else if (handedTo) void saved.then(() => transferWorld(sid, handedTo!)); // the next player keeps it up to date
-      else void saved.then(() => releaseWorld(sid)); // nobody else here: the world goes to sleep, and anyone can wake it
-    }
     if (handedTo) window.setTimeout(() => hs.peer.stop(), 2600); else hs.peer.stop();
     if (mpRef.current) { mpRef.current.disconnect(); mpRef.current = null; }
     if (!handedTo) hs.room.stop();
@@ -8823,8 +8786,12 @@ export default function App() {
     const f = fr.friends.find((x) => x.username.toLowerCase() === to.toLowerCase());
     if (!f) { pushMessage(`No player or friend named ${to}`, '#ff6b6b'); return; }
     const r = await sendDM(me, f.id, text);
-    if (r.ok) pushMessage(`[you \u2192 ${f.username}] ${filterProfanity(text)}`, '#c8a2ff');
-    else pushMessage(r.error, '#ff6b6b');
+    if (r.ok) {
+      pushMessage(`[you \u2192 ${f.username}] ${filterProfanity(text)}`, '#c8a2ff');
+      // you answered, so their message is no longer waiting: no unread count and no pop-up left
+      setUnread((u) => { if (!u[f.id]) return u; const n = { ...u }; delete n[f.id]; return n; });
+      setToasts((t) => t.filter((x) => !(x.kind === 'dm' && x.text.startsWith(`${f.username}:`))));
+    } else pushMessage(r.error, '#ff6b6b');
   }
   function sendWhisper(to: string, rawText: string) {
     const text = filterProfanity(rawText);
@@ -9038,7 +9005,7 @@ export default function App() {
       return true;
     };
     /** The host can also reach other players (@a, @p, a name): the command is sent to their game and runs there. */
-    const iAmHost = !!mpRef.current?.connected && (hostId === myNetIdRef.current || roleLevel(myRoleRef.current) >= 1); // the host, and world admins (cheats)
+    const iAmHost = !!mpRef.current?.connected && ((hostId === myNetIdRef.current && !handedOverRef.current) || roleLevel(myRoleRef.current) >= 1); // the host, and world admins (cheats)
     const reach = (tok: string | undefined, what: string): { you: boolean; others: string[] } | null => {
       if (tok === undefined) return { you: true, others: [] };
       const r = resolve(tok);
@@ -9104,7 +9071,7 @@ export default function App() {
       if (ctx) { err('That command only works in chat'); return; }
       if (!args[0]) { err(`Usage: /${cmd} <player>`); return; }
       const mp = mpRef.current;
-      const worldPower = !!mp?.connected && !isMinigameRef.current && (roleLevel(myRoleRef.current) >= 1 || hostId === myNetIdRef.current);
+      const worldPower = !!mp?.connected && !isMinigameRef.current && (roleLevel(myRoleRef.current) >= 1 || (hostId === myNetIdRef.current && !handedOverRef.current));
       if (worldPower) mp!.sendMod(cmd, args[0]); // world admins, co-owners and the owner (the world answers in chat)
       else if (canModerateRef.current && accountRef.current && mp?.connected) mp.sendAdmin(accountRef.current.token, cmd, { name: args[0] }); // VibeBlox staff
       else err(mp?.connected ? `Only this world's admins and staff can use /${cmd}` : 'Kick and ban are for players in your world (multiplayer)');
@@ -9194,9 +9161,11 @@ export default function App() {
         return;
       }
       case 'gamerule': {
-        if ((args[0] ?? '').toLowerCase() !== 'keepinventory' || !['true', 'false'].includes((args[1] ?? '').toLowerCase())) { err('Usage: /gamerule keepInventory true|false'); return; }
-        changeServerSettings({ keepInventory: args[1].toLowerCase() === 'true' });
-        info(`keepInventory is now ${args[1].toLowerCase()}`);
+        const rule = (args[0] ?? '').toLowerCase(), val = (args[1] ?? '').toLowerCase();
+        const keys: Record<string, 'keepInventory' | 'mobGriefing' | 'mobSpawning'> = { keepinventory: 'keepInventory', mobgriefing: 'mobGriefing', domobspawning: 'mobSpawning' };
+        if (!keys[rule] || !['true', 'false'].includes(val)) { err('Usage: /gamerule keepInventory|mobGriefing|doMobSpawning true|false'); return; }
+        changeServerSettings({ [keys[rule]]: val === 'true' });
+        info(`${args[0]} is now ${val}`);
         return;
       }
       case 'help':
@@ -9372,7 +9341,7 @@ export default function App() {
         const rest = raw.replace(/^\s*\/?\s*\S+\s*/, '');
         const sub = (rest.split(/\s+/)[0] ?? '').toLowerCase();
         const online = !!mpRef.current?.connected;
-        if (online && hostId !== myNetIdRef.current && sub !== 'list' && sub !== 'who') { err('Only the host of the server can change ranks'); return; }
+        if (online && (hostId !== myNetIdRef.current || handedOverRef.current) && sub !== 'list' && sub !== 'who') { err('Only the host of the server can change ranks'); return; }
         const resolveNames = (tok: string): string[] | string => {
           const r = resolve(tok);
           if (typeof r === 'string') return r;
@@ -9593,9 +9562,6 @@ export default function App() {
     setSavedWorlds((prev) => prev.filter((w) => (world.id ? w.id !== world.id : w !== world)));
     if (world.id) { try { localStorage.removeItem(`vb-save-${world.id}`); } catch { /* storage blocked */ } }
     if (world.id) clearAdvancements(world.id);
-    // deleting a planet you own also removes its saved copy online (a world someone else owns stays for them)
-    const gone = savedWorldsRef.current.find((w) => w.id === world.id);
-    if (gone?.sharedId && (!gone.owner || gone.owner.toLowerCase() === currentUsername.toLowerCase())) void deleteWorldSnapshot(gone.sharedId);
   }
 
   const guestNow = (accountChecked || authWaitOver) && (!account || isGuestName(account.username));
@@ -9640,7 +9606,7 @@ export default function App() {
     const hc = config.mode === 'hardcore';
     hardcoreRef.current = hc;
     setHardcore(hc);
-    const s: ServerSettings = { ...DEFAULT_SERVER, difficulty: hc ? 'hard' : config.difficulty ?? 'normal', keepInventory: config.keepInventory ?? false, alwaysDay: !!config.alwaysDay, weatherCycle: config.weatherCycle !== false };
+    const s: ServerSettings = { ...DEFAULT_SERVER, difficulty: hc ? 'hard' : config.difficulty ?? 'normal', keepInventory: config.keepInventory ?? false, alwaysDay: !!config.alwaysDay, weatherCycle: config.weatherCycle !== false, mobSpawning: config.mobSpawning !== false, mobGriefing: config.mobGriefing !== false };
     serverSettingsRef.current = s;
     setServerSettings(s);
     setActiveWorldMode((hc ? 'survival' : config.mode) as GameWorldMode);
@@ -9760,11 +9726,20 @@ export default function App() {
   }
 
   const currentUsername = username ?? '';
+  /** Autocomplete in chat: who is here, and every item that /give knows */
+  const chatPlayerNames = [...new Set([currentUsername, ...(Object.values(onlinePlayers) as string[])])].filter(Boolean);
+  const chatItemNames = () => {
+    const names: string[] = [];
+    for (const info of Object.values(ITEM_INFO)) if (!info.hidden && info.name) names.push(info.name);
+    const plain = names.filter((n) => { const id = itemIdFromName(n); return id !== null; });
+    return [...plain, ...customKeyList()];
+  };
   selectedSlotRef.current = selectedSlot;
   usernameRef.current = currentUsername || 'Player';
   const showMenu = gameMode === 'menu';
 
   return (
+    <RankShopContext.Provider value={{ owned: account?.ownedRanks ?? [], active: account?.rank ?? 'none', switchTo: doSwitchRank }}>
     <AccountSummaryContext.Provider value={{ username: account?.username ?? '', signedIn: !!account && !isGuestName(account.username), isOwner: isOwnerAccount, isAdmin: !!admin, openAdmin: () => openPanel() }}>
     <StandingContext.Provider value={{ nameTags: badgeTags({ owner: isOwnerAccount, rank: myRank, staff: myStaff, og: myOg, special: mySpecial, undercover: myUndercover }), undercover: myUndercover, rank: myPerk, rising, tier: myTier, isOwner: isOwnerAccount, standing, signedIn: !!account && !isGuestName(account.username), guest: (accountChecked || authWaitOver) && (!account || isGuestName(account.username)) }}>
       <DailyUiContext.Provider value={{ openDaily: () => setShowDaily(true) }}>
@@ -9871,7 +9846,7 @@ export default function App() {
           <div className="absolute inset-0 z-[70] flex items-center justify-center bg-black/50 vb-fade-in" data-testid="optimise-fps">
             <div className="w-[360px] max-w-[92vw] rounded-2xl bg-[#121822] border border-[#243044] p-5 text-center vb-themed">
               <h3 className="font-[var(--font-retro)] text-white text-sm mb-2">Optimise FPS?</h3>
-              <p className="text-[#8ea0b8] text-xs mb-4">VibeBlox is running slowly on this device. Switch to Low graphics to make it smoother? You can change it back in Settings &gt; Video.</p>
+              <p className="text-[#8ea0b8] text-xs mb-4">Running slow. Switch to Low graphics? You can undo it in Settings &gt; Video.</p>
               <div className="flex gap-2">
                 <button data-testid="optimise-yes" onClick={() => { setAskOptimise(false); setGraphicsQuality('low'); if (renderDistance > 6) setRenderDistance(6); pushMessage('Switched to Low graphics for a smoother game.', '#7cfc7c'); gameHandleRef.current?.relock(); }}
                   className="flex-1 py-2.5 rounded-xl bg-[#00e676] text-[#0a0e14] text-sm font-bold">Yes</button>
@@ -9979,6 +9954,8 @@ export default function App() {
             channels={chatChannels}
             channel={chatChannel}
             onChannel={switchChannel}
+            players={chatPlayerNames}
+            getItems={chatItemNames}
           />
         )}
         {!showMenu && helpOpen && (
@@ -10222,5 +10199,6 @@ export default function App() {
       </DailyUiContext.Provider>
     </StandingContext.Provider>
     </AccountSummaryContext.Provider>
+    </RankShopContext.Provider>
   );
 }

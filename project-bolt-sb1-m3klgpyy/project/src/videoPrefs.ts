@@ -12,9 +12,11 @@ export type VideoPrefs = {
   viewBobbing: boolean;
   /** Your view widens a little while you sprint. */
   dynamicFov: boolean;
+  /** Distance fog. Off shows far chunks sharply (underwater and lava still tint the view). */
+  fog: boolean;
 };
 
-export const DEFAULT_VIDEO: VideoPrefs = { clouds: 'fancy', cloudHeight: 14, stars: true, fastRender: false, maxFps: 0, viewBobbing: true, dynamicFov: true };
+export const DEFAULT_VIDEO: VideoPrefs = { clouds: 'fancy', cloudHeight: 14, stars: true, fastRender: false, maxFps: 0, viewBobbing: true, dynamicFov: true, fog: true };
 export const CLOUD_HEIGHT_RANGE = { min: 0, max: 120 };
 export const FPS_RANGE = { min: 10, max: 360 };
 const KEY = 'vb-video';
@@ -28,7 +30,7 @@ export function cleanVideo(raw: unknown): VideoPrefs {
   const cloudHeight = Number.isFinite(h) ? Math.max(CLOUD_HEIGHT_RANGE.min, Math.min(CLOUD_HEIGHT_RANGE.max, Math.round(h))) : DEFAULT_VIDEO.cloudHeight;
   const f = Number(r.maxFps);
   const maxFps = Number.isFinite(f) && f >= FPS_RANGE.min ? Math.min(FPS_RANGE.max, Math.round(f)) : 0;
-  return { clouds, cloudHeight, stars: bool(r.stars, true), fastRender: bool(r.fastRender, false), maxFps, viewBobbing: bool(r.viewBobbing, true), dynamicFov: bool(r.dynamicFov, true) };
+  return { clouds, cloudHeight, stars: bool(r.stars, true), fastRender: bool(r.fastRender, false), maxFps, viewBobbing: bool(r.viewBobbing, true), dynamicFov: bool(r.dynamicFov, true), fog: bool(r.fog, true) };
 }
 
 export function loadVideo(): VideoPrefs {

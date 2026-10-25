@@ -6,6 +6,8 @@
 // flagged: the game's own files, the ad network, the Cloudflare and Google helpers, and normal extensions that only change the
 // look of the page.
 
+import { PLATFORM } from './adEconomy';
+
 export type Flag = 'userscript manager' | 'injected script' | 'patched browser functions' | 'scripted clicks';
 export const FLAG_LABELS: Record<Flag, string> = {
   'userscript manager': 'A userscript manager (Tampermonkey, Greasemonkey, Violentmonkey) is running a script here',
@@ -15,7 +17,7 @@ export const FLAG_LABELS: Record<Flag, string> = {
 };
 
 /** Script sources that belong to the game's normal setup (ads, analytics and the CDN it is served from). */
-const SAFE_HOSTS = /(^|\.)(google\.com|googlesyndication\.com|doubleclick\.net|googleadservices\.com|gstatic\.com|googletagmanager\.com|google-analytics\.com|googleapis\.com|adtrafficquality\.google|cloudflareinsights\.com|cloudflare\.com|vibeblox\.online)$/i;
+const SAFE_HOSTS = /(^|\.)(google\.com|googlesyndication\.com|doubleclick\.net|googleadservices\.com|gstatic\.com|googletagmanager\.com|google-analytics\.com|googleapis\.com|adtrafficquality\.google|cloudflareinsights\.com|cloudflare\.com|vibeblox\.online|crazygames\.com|poki\.com|poki-cdn\.com|adinplay\.com|gameads\.com|imasdk\.googleapis\.com)$/i;
 /** Names a userscript manager puts on the page (or in it). */
 const GM_GLOBALS = ['GM_info', 'GM_getValue', 'GM_setValue', 'GM_xmlhttpRequest', 'GM_addStyle', 'GM_registerMenuCommand', 'unsafeWindow', 'Tampermonkey', 'Violentmonkey', 'Greasemonkey'];
 const GM_SELECTOR = '[id*="tampermonkey" i],[class*="tampermonkey" i],[id*="violentmonkey" i],[class*="violentmonkey" i],[id*="greasemonkey" i],[class*="greasemonkey" i],[data-tampermonkey],[data-violentmonkey],[data-userscript]';
@@ -87,7 +89,9 @@ export function watchOutsideScripts(onChange: (flags: Flag[]) => void, opts?: { 
   let flags: Flag[] = [];
   let fakeClicks = 0;
   const push = () => {
-    const next = scanOutsideScripts();
+    let next = scanOutsideScripts();
+    // On CrazyGames and Poki the portal owns the page: its SDK adds ad scripts and may wrap timers. Only a userscript manager counts there.
+    if (PLATFORM !== 'web') next = next.filter((f) => f === 'userscript manager');
     if (fakeClicks >= 4) next.push('scripted clicks');
     const key = (a: Flag[]) => a.slice().sort().join(',');
     if (key(next) !== key(flags)) { flags = next; onChange(flags.slice()); }

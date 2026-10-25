@@ -61,14 +61,14 @@ export const OWNER_TAG = '\\crimson\\\\bold\\[OWNER]\\reset\\';
 export type StaffId = 'helper' | 'mod';
 export const STAFF_TAGS: Record<StaffId, string> = {
   helper: '\\mint\\\\bold\\[HELPER]\\reset\\',
-  mod: '\\cyan\\\\bold\\[MOD]\\reset\\',
+  mod: '\\gold\\\\bold\\[MOD]\\reset\\',
 };
 export const isStaffId = (v: unknown): v is StaffId => v === 'helper' || v === 'mod';
 /** [OG]: players who were here before it ended. They keep it for good; nobody can earn it any more. */
 export const OG_TAG = '\\cyan\\\\shiny\\[OG]\\reset\\';
 /** Special ranks the owner gives out by hand ([YOUTUBE] for video makers). They are not staff: no moderation powers. */
 export type SpecialId = 'youtube';
-export const SPECIAL_TAGS: Record<SpecialId, string> = { youtube: '\\red\\\\bold\\[YOUTUBE]\\reset\\' };
+export const SPECIAL_TAGS: Record<SpecialId, string> = { youtube: '\\red\\\\bold\\[\\white\\YOUTUBE\\red\\]\\reset\\' };
 export const SPECIAL_LABELS: Record<SpecialId, string> = { youtube: 'YOUTUBE' };
 export const isSpecialId = (v: unknown): v is SpecialId => v === 'youtube';
 
@@ -84,8 +84,8 @@ export function perkRank(rank: RankId, extra: { staff?: string | null; og?: bool
 }
 export const RANK_TAGS: Record<RankId, string> = {
   none: '',
-  vanguard: '\\aqua\\[Vanguard]\\reset\\',
-  elite: '\\light_purple\\[Elite]\\reset\\',
+  vanguard: '\\brown\\[Vanguard]\\reset\\',
+  elite: '\\cyan\\[Elite]\\reset\\',
   champion: '\\gold\\\\shiny\\[Champion]\\reset\\',
 };
 export type Badge = { owner?: boolean; rank?: RankId | string; tier?: CreatorTier | string; staff?: StaffId | string | null; og?: boolean; special?: SpecialId | string | null; /** /undercover is on: [YOUTUBE], [OG] and the paid rank are hidden (staff tags and the owner tag never are) */ undercover?: boolean };
@@ -127,3 +127,23 @@ export const canUploadSkin = (rank: RankId) => rank === 'champion';
 export const canUploadCape = canUploadSkin;
 /** [YOUTUBE] may hide their rank tags with /undercover. Nobody else can: not even staff. */
 export const canGoUndercover = (special: string | null | undefined) => isSpecialId(special);
+
+/** Questions to the AI helper per day. Champion has no limit. */
+export const AI_DAILY_LIMIT: Record<RankId, number> = { none: 10, vanguard: 40, elite: 100, champion: Infinity };
+const AI_KEY = 'vb-ai-uses';
+const dayKey = (now = Date.now()) => new Date(now).toISOString().slice(0, 10);
+/** How many AI questions are left today for this rank. */
+export function aiLeftToday(rank: RankId, now = Date.now()): number {
+  const cap = AI_DAILY_LIMIT[rank] ?? AI_DAILY_LIMIT.none;
+  if (cap === Infinity) return Infinity;
+  try {
+    const v = JSON.parse(localStorage.getItem(AI_KEY) || 'null') as { day: string; n: number } | null;
+    return Math.max(0, cap - (v && v.day === dayKey(now) ? v.n : 0));
+  } catch { return cap; }
+}
+export function countAiQuestion(now = Date.now()): void {
+  try {
+    const v = JSON.parse(localStorage.getItem(AI_KEY) || 'null') as { day: string; n: number } | null;
+    localStorage.setItem(AI_KEY, JSON.stringify({ day: dayKey(now), n: (v && v.day === dayKey(now) ? v.n : 0) + 1 }));
+  } catch { /* storage blocked */ }
+}
