@@ -1,0 +1,49 @@
+/* Look of the Games area. Colours live here so the whole area can be restyled in one place. */
+.mg {
+  --mg-bg: #161b24; --mg-panel: #1e2530; --mg-panel2: #262f3d; --mg-line: #343f52;
+  --mg-text: #ede9e0; --mg-mute: #9ba5b5; --mg-accent: #3ddc9a; --mg-accent-ink: #06281b;
+  --mg-good: #5cbd9d; --mg-bad: #e87b72; --mg-blue: #6aa8f0;
+  color: var(--mg-text);
+  font-family: ui-rounded, 'SF Pro Rounded', 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+.mg-card { background: var(--mg-panel); border: 1px solid var(--mg-line); border-radius: 14px; }
+.mg-card-flat { background: var(--mg-panel2); border-radius: 10px; }
+.mg-h1 { font-size: 1.6rem; font-weight: 700; letter-spacing: -0.01em; line-height: 1.15; }
+.mg-h2 { font-size: 1.05rem; font-weight: 650; }
+.mg-mute { color: var(--mg-mute); }
+.mg-btn { display: inline-flex; align-items: center; justify-content: center; gap: .4rem; padding: .5rem .9rem; border-radius: 10px; font-size: .85rem; font-weight: 600; border: 1px solid var(--mg-line); background: var(--mg-panel2); color: var(--mg-text); cursor: pointer; transition: background .12s, border-color .12s, transform .06s; }
+.mg-btn:hover:not(:disabled) { background: #2f3a4c; border-color: #46546c; }
+.mg-btn:active:not(:disabled) { transform: translateY(1px); }
+.mg-btn:disabled { opacity: .45; cursor: not-allowed; }
+.mg-btn-primary { background: var(--mg-accent); border-color: var(--mg-accent); color: var(--mg-accent-ink); }
+.mg-btn-primary:hover:not(:disabled) { background: #66e8b4; border-color: #66e8b4; }
+.mg-btn-danger { background: transparent; border-color: #6b3a38; color: #f1a39c; }
+.mg-btn-danger:hover:not(:disabled) { background: #3a2323; border-color: #8a4a47; }
+.mg-btn-ghost { background: transparent; border-color: transparent; color: var(--mg-mute); }
+.mg-btn-ghost:hover:not(:disabled) { background: var(--mg-panel2); color: var(--mg-text); }
+.mg-btn-sm { padding: .3rem .6rem; font-size: .78rem; border-radius: 8px; }
+.mg :focus-visible { outline: 2px solid var(--mg-blue); outline-offset: 2px; }
+.mg-tab { padding: .45rem .8rem; border-radius: 9px; font-size: .84rem; font-weight: 600; color: var(--mg-mute); cursor: pointer; border: 1px solid transparent; background: transparent; }
+.mg-tab:hover { color: var(--mg-text); background: var(--mg-panel2); }
+.mg-tab[aria-selected='true'] { background: var(--mg-panel2); color: var(--mg-text); border-color: var(--mg-line); box-shadow: inset 0 -2px 0 var(--mg-accent); }
+.mg-chip { display: inline-flex; align-items: center; gap: .25rem; padding: .1rem .5rem; border-radius: 999px; font-size: .72rem; background: var(--mg-panel2); color: var(--mg-mute); border: 1px solid var(--mg-line); }
+.mg-input { background: var(--mg-bg); border: 1px solid var(--mg-line); border-radius: 9px; padding: .45rem .7rem; color: var(--mg-text); font-size: .88rem; width: 100%; }
+.mg-input:focus { border-color: var(--mg-accent); outline: none; }
+.mg-scroll { scrollbar-width: thin; scrollbar-color: #3a465a transparent; }
+.mg-clock { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 1.25rem; padding: .15rem .6rem; border-radius: 8px; background: var(--mg-bg); border: 1px solid var(--mg-line); min-width: 4.6rem; text-align: center; }
+.mg-clock[data-active='true'] { background: #f4efe2; color: #1b1b1b; border-color: #f4efe2; }
+.mg-clock[data-low='true'] { background: #5a2420; color: #ffd5d1; border-color: #8a3a34; }
+.mg-seg { display: inline-flex; background: var(--mg-bg); border: 1px solid var(--mg-line); border-radius: 10px; padding: 2px; gap: 2px; }
+.mg-seg button { padding: .3rem .7rem; border-radius: 8px; font-size: .8rem; font-weight: 600; color: var(--mg-mute); cursor: pointer; background: transparent; border: 0; }
+.mg-seg button[aria-pressed='true'] { background: var(--mg-panel2); color: var(--mg-text); box-shadow: 0 0 0 1px var(--mg-line) inset; }
+
+/* board effects: F (fist) and T (throw) */
+@keyframes mg-fall { 0% { transform: translate(0,0) rotate(0); opacity: 1; } 15% { transform: translate(0,-6%) rotate(var(--r0)); } 100% { transform: translate(var(--dx), 420%) rotate(var(--r1)); opacity: 0; } }
+@keyframes mg-throw { 0% { transform: translate(0,0) rotate(0) scale(1); opacity: 1; } 100% { transform: translate(var(--dx), var(--dy)) rotate(var(--r1)) scale(1.5); opacity: 0; } }
+@keyframes mg-return { 0% { opacity: 0; transform: scale(.6); } 100% { opacity: 1; transform: scale(1); } }
+@keyframes mg-shake { 0%,100% { transform: translate(0,0); } 15% { transform: translate(-7px,5px); } 30% { transform: translate(6px,-6px); } 45% { transform: translate(-5px,-3px); } 60% { transform: translate(4px,4px); } 80% { transform: translate(-2px,1px); } }
+@keyframes mg-fist { 0% { transform: translate(-50%,-190%) scale(1.15); } 38% { transform: translate(-50%,-34%) scale(1); } 46% { transform: translate(-50%,-30%) scale(.96); } 100% { transform: translate(-50%,-30%) scale(.96); } }
+@keyframes mg-fistout { to { opacity: 0; transform: translate(-50%,-70%) scale(1); } }
+@keyframes mg-crack { from { opacity: 0; } 30% { opacity: 1; } to { opacity: .9; } }
+.mg-shake { animation: mg-shake .45s .55s both; }
+@media (prefers-reduced-motion: reduce) { .mg-shake { animation: none; } .mg-fx-piece { animation-duration: .01s !important; } }
