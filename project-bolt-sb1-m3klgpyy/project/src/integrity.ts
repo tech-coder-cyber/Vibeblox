@@ -37,6 +37,7 @@ const isNative = (fn: unknown, toString: (f: unknown) => string): boolean => {
 /** Whether a script element is something the game / ad network / CDN put there. */
 export function scriptIsOurs(src: string, text: string, origin: string): boolean {
   if (!src) return !/==UserScript==|GM_[a-zA-Z]+|unsafeWindow|Tampermonkey|Violentmonkey|Greasemonkey/.test(text); // inline: fine unless it talks like a userscript
+  if (/^(chrome|moz|safari|edge|ms-browser)-extension:/i.test(src)) return true; // a browser extension's own helper (translate, spell check, password manager...)
   if (src.startsWith('blob:') || src.startsWith('data:')) return false; // userscript managers hand scripts over as blobs
   try {
     const u = new URL(src, origin || 'https://localhost');
@@ -71,10 +72,14 @@ export function scanOutsideScripts(env?: Partial<Env>): Flag[] {
     if (!/\[native code\]/.test(realToString.call(realToString))) out.add('patched browser functions');
     else {
       const ts = (f: unknown) => realToString.call(f);
+      // Privacy and ad-blocking extensions wrap fetch, WebSocket or timers all the time, so only a swapped CLOCK counts (that is what a speed hack changes),
+      // or several functions at once.
+      let swapped = 0, clock = false;
       for (const [owner, name] of NATIVES) {
         const o = owner === 'window' ? w : (w[owner] as Record<string, unknown> | undefined);
-        if (o && !isNative(o[name], ts)) { out.add('patched browser functions'); break; }
+        if (o && !isNative(o[name], ts)) { swapped++; if (name === 'now') clock = true; }
       }
+      if (clock || swapped >= 3) out.add('patched browser functions');
     }
   } catch { /* ignore */ }
   return [...out];
@@ -92,11 +97,11 @@ export function watchOutsideScripts(onChange: (flags: Flag[]) => void, opts?: { 
     let next = scanOutsideScripts();
     // On CrazyGames and Poki the portal owns the page: its SDK adds ad scripts and may wrap timers. Only a userscript manager counts there.
     if (PLATFORM !== 'web') next = next.filter((f) => f === 'userscript manager');
-    if (fakeClicks >= 4) next.push('scripted clicks');
+    if (fakeClicks >= 8) next.push('scripted clicks');
     const key = (a: Flag[]) => a.slice().sort().join(',');
     if (key(next) !== key(flags)) { flags = next; onChange(flags.slice()); }
   };
-  const onMouse = (e: Event) => { if (!e.isTrusted) { fakeClicks++; if (fakeClicks === 4) push(); } };
+  const onMouse = (e: Event) => { const tg = e.target as { type?: string } | null; if (!e.isTrusted && tg?.type !== 'file') { fakeClicks++; if (fakeClicks === 8) push(); } };
   const types = ['mousedown', 'mouseup', 'click'];
   for (const t of types) window.addEventListener(t, onMouse, true);
   let mo: MutationObserver | null = null;

@@ -31,7 +31,7 @@ type Dict = Record<string, string>;
 const en: Dict = {
   'nav.leaderboard': 'Top', 'lb.title': 'Leaderboard', 'lb.sub': 'Creators with the most plays', 'lb.empty': 'Nobody has any plays yet.', 'lb.plays': '{n} plays', 'lb.seeAll': 'See all', 'lb.rising': 'Rising Creator', 'friend.join': 'Join', 'friend.joinTip': 'Join {name} on their server', 'profile.coins': 'Coins', 'profile.level': 'Level {n}',
   'ob.newPhase': 'New phase: {name}!', 'ob.chestNow': 'Open the chest!',
-  'nav.home': 'Home', 'nav.servers': 'Servers', 'nav.settings': 'Settings', 'nav.social': 'Social', 'nav.planets': 'Planets', 'nav.shop': 'Shop', 'nav.news': 'News',
+  'nav.home': 'Home', 'nav.servers': 'Servers', 'nav.settings': 'Settings', 'nav.social': 'Social', 'nav.planets': 'Planets', 'nav.shop': 'Shop', 'nav.news': 'News', 'nav.games': 'Games',
   'home.welcomeBack': 'WELCOME BACK', 'home.tagline': "Block, build, battle — let's go", 'home.topGames': 'TOP GAMES', 'home.viewAll': 'View All', 'home.playNow': 'Play now', 'home.playing': '{n} playing',
   'menu.title': 'Game Menu', 'menu.resume': 'Resume', 'menu.settings': 'Settings', 'menu.server': 'Manage Server', 'menu.scripts': 'Scripts', 'menu.mods': 'Mods', 'menu.schematics': 'Schematics', 'menu.advancements': 'Advancements', 'menu.exit': 'Exit Game',
   'menu.hint': 'The world keeps running while this menu is open · Esc to resume',
@@ -64,7 +64,7 @@ const en: Dict = {
 const es: Dict = {
   'nav.leaderboard': 'Top', 'lb.title': 'Clasificación', 'lb.sub': 'Creadores con más partidas jugadas', 'lb.empty': 'Todavía nadie tiene partidas jugadas.', 'lb.plays': '{n} partidas', 'lb.seeAll': 'Ver todo', 'lb.rising': 'Creador en ascenso', 'friend.join': 'Unirse', 'friend.joinTip': 'Unirse a {name} en su servidor', 'profile.coins': 'Monedas', 'profile.level': 'Nivel {n}',
   'ob.newPhase': '¡Nueva fase: {name}!', 'ob.chestNow': '¡Abre el cofre!',
-  'nav.home': 'Inicio', 'nav.servers': 'Servidores', 'nav.settings': 'Ajustes', 'nav.social': 'Social', 'nav.planets': 'Planetas', 'nav.shop': 'Tienda', 'nav.news': 'Novedades',
+  'nav.home': 'Inicio', 'nav.servers': 'Servidores', 'nav.settings': 'Ajustes', 'nav.social': 'Social', 'nav.planets': 'Planetas', 'nav.shop': 'Tienda', 'nav.news': 'Novedades', 'nav.games': 'Juegos',
   'home.welcomeBack': 'BIENVENIDO DE NUEVO', 'home.tagline': 'Construye, explora, combate: ¡vamos!', 'home.topGames': 'MEJORES JUEGOS', 'home.viewAll': 'Ver todo', 'home.playNow': 'Jugar ya', 'home.playing': '{n} jugando',
   'menu.title': 'Menú del juego', 'menu.resume': 'Continuar', 'menu.settings': 'Ajustes', 'menu.server': 'Gestionar servidor', 'menu.scripts': 'Scripts', 'menu.mods': 'Mods', 'menu.schematics': 'Esquemas', 'menu.advancements': 'Logros', 'menu.exit': 'Salir del juego',
   'menu.hint': 'El mundo sigue en marcha con el menú abierto · Esc para continuar',
@@ -97,7 +97,7 @@ const es: Dict = {
 const pt: Dict = {
   'nav.leaderboard': 'Top', 'lb.title': 'Classificação', 'lb.sub': 'Criadores com mais partidas', 'lb.empty': 'Ninguém tem partidas ainda.', 'lb.plays': '{n} partidas', 'lb.seeAll': 'Ver tudo', 'lb.rising': 'Criador em ascensão', 'friend.join': 'Entrar', 'friend.joinTip': 'Entrar no servidor de {name}', 'profile.coins': 'Moedas', 'profile.level': 'Nível {n}',
   'ob.newPhase': 'Nova fase: {name}!', 'ob.chestNow': 'Abra o baú!',
-  'nav.home': 'Início', 'nav.servers': 'Servidores', 'nav.settings': 'Configurações', 'nav.social': 'Social', 'nav.planets': 'Planetas', 'nav.shop': 'Loja', 'nav.news': 'Novidades',
+  'nav.home': 'Início', 'nav.servers': 'Servidores', 'nav.settings': 'Configurações', 'nav.social': 'Social', 'nav.planets': 'Planetas', 'nav.shop': 'Loja', 'nav.news': 'Novidades', 'nav.games': 'Jogos',
   'home.welcomeBack': 'BEM-VINDO DE VOLTA', 'home.tagline': 'Construa, explore, lute: vamos!', 'home.topGames': 'JOGOS EM DESTAQUE', 'home.viewAll': 'Ver tudo', 'home.playNow': 'Jogar agora', 'home.playing': '{n} jogando',
   'menu.title': 'Menu do jogo', 'menu.resume': 'Continuar', 'menu.settings': 'Configurações', 'menu.server': 'Gerenciar servidor', 'menu.scripts': 'Scripts', 'menu.mods': 'Mods', 'menu.schematics': 'Esquemas', 'menu.advancements': 'Conquistas', 'menu.exit': 'Sair do jogo',
   'menu.hint': 'O mundo continua rodando com o menu aberto · Esc para continuar',
@@ -130,7 +130,7 @@ const pt: Dict = {
 const fr: Dict = {
   'nav.leaderboard': 'Top', 'lb.title': 'Classement', 'lb.sub': 'Créateurs avec le plus de parties', 'lb.empty': 'Personne n\'a encore de parties.', 'lb.plays': '{n} parties', 'lb.seeAll': 'Tout voir', 'lb.rising': 'Créateur montant', 'friend.join': 'Rejoindre', 'friend.joinTip': 'Rejoindre {name} sur son serveur', 'profile.coins': 'Pièces', 'profile.level': 'Niveau {n}',
   'ob.newPhase': 'Nouvelle phase : {name} !', 'ob.chestNow': 'Ouvrez le coffre !',
-  'nav.home': 'Accueil', 'nav.servers': 'Serveurs', 'nav.settings': 'Paramètres', 'nav.social': 'Social', 'nav.planets': 'Planètes', 'nav.shop': 'Boutique', 'nav.news': 'Actualités',
+  'nav.home': 'Accueil', 'nav.servers': 'Serveurs', 'nav.settings': 'Paramètres', 'nav.social': 'Social', 'nav.planets': 'Planètes', 'nav.shop': 'Boutique', 'nav.news': 'Actualités', 'nav.games': 'Jeux',
   'home.welcomeBack': 'BON RETOUR', 'home.tagline': 'Construis, explore, combats : on y va !', 'home.topGames': 'JEUX POPULAIRES', 'home.viewAll': 'Tout voir', 'home.playNow': 'Jouer', 'home.playing': '{n} en jeu',
   'menu.title': 'Menu du jeu', 'menu.resume': 'Reprendre', 'menu.settings': 'Paramètres', 'menu.server': 'Gérer le serveur', 'menu.scripts': 'Scripts', 'menu.mods': 'Mods', 'menu.schematics': 'Schémas', 'menu.advancements': 'Progrès', 'menu.exit': 'Quitter le jeu',
   'menu.hint': 'Le monde continue pendant que ce menu est ouvert · Échap pour reprendre',
@@ -163,7 +163,7 @@ const fr: Dict = {
 const de: Dict = {
   'nav.leaderboard': 'Top', 'lb.title': 'Bestenliste', 'lb.sub': 'Ersteller mit den meisten Spielen', 'lb.empty': 'Noch hat niemand Spiele.', 'lb.plays': '{n} Spiele', 'lb.seeAll': 'Alle ansehen', 'lb.rising': 'Aufsteigender Ersteller', 'friend.join': 'Beitreten', 'friend.joinTip': '{name} auf seinem Server beitreten', 'profile.coins': 'Münzen', 'profile.level': 'Level {n}',
   'ob.newPhase': 'Neue Phase: {name}!', 'ob.chestNow': 'Öffne die Truhe!',
-  'nav.home': 'Start', 'nav.servers': 'Server', 'nav.settings': 'Einstellungen', 'nav.social': 'Sozial', 'nav.planets': 'Planeten', 'nav.shop': 'Shop', 'nav.news': 'Neuigkeiten',
+  'nav.home': 'Start', 'nav.servers': 'Server', 'nav.settings': 'Einstellungen', 'nav.social': 'Sozial', 'nav.planets': 'Planeten', 'nav.shop': 'Shop', 'nav.news': 'Neuigkeiten', 'nav.games': 'Spiele',
   'home.welcomeBack': 'WILLKOMMEN ZURÜCK', 'home.tagline': 'Bauen, erkunden, kämpfen – los geht’s', 'home.topGames': 'BELIEBTE SPIELE', 'home.viewAll': 'Alle ansehen', 'home.playNow': 'Jetzt spielen', 'home.playing': '{n} spielen',
   'menu.title': 'Spielmenü', 'menu.resume': 'Weiter', 'menu.settings': 'Einstellungen', 'menu.server': 'Server verwalten', 'menu.scripts': 'Skripte', 'menu.mods': 'Mods', 'menu.schematics': 'Baupläne', 'menu.advancements': 'Fortschritte', 'menu.exit': 'Spiel verlassen',
   'menu.hint': 'Die Welt läuft weiter, solange das Menü offen ist · Esc zum Fortsetzen',
@@ -196,7 +196,7 @@ const de: Dict = {
 const ru: Dict = {
   'nav.leaderboard': 'Топ', 'lb.title': 'Рейтинг', 'lb.sub': 'Создатели с наибольшим числом игр', 'lb.empty': 'Пока ни у кого нет игр.', 'lb.plays': 'Игр: {n}', 'lb.seeAll': 'Показать все', 'lb.rising': 'Восходящий создатель', 'friend.join': 'Войти', 'friend.joinTip': 'Присоединиться к {name} на сервере', 'profile.coins': 'Монеты', 'profile.level': 'Уровень {n}',
   'ob.newPhase': 'Новая фаза: {name}!', 'ob.chestNow': 'Откройте сундук!',
-  'nav.home': 'Главная', 'nav.servers': 'Серверы', 'nav.settings': 'Настройки', 'nav.social': 'Друзья', 'nav.planets': 'Планеты', 'nav.shop': 'Магазин', 'nav.news': 'Новости',
+  'nav.home': 'Главная', 'nav.servers': 'Серверы', 'nav.settings': 'Настройки', 'nav.social': 'Друзья', 'nav.planets': 'Планеты', 'nav.shop': 'Магазин', 'nav.news': 'Новости', 'nav.games': 'Игры',
   'home.welcomeBack': 'С ВОЗВРАЩЕНИЕМ', 'home.tagline': 'Строй, исследуй, сражайся — поехали', 'home.topGames': 'ПОПУЛЯРНЫЕ ИГРЫ', 'home.viewAll': 'Показать все', 'home.playNow': 'Играть', 'home.playing': 'Играют: {n}',
   'menu.title': 'Меню игры', 'menu.resume': 'Продолжить', 'menu.settings': 'Настройки', 'menu.server': 'Управление сервером', 'menu.scripts': 'Скрипты', 'menu.mods': 'Моды', 'menu.schematics': 'Схемы', 'menu.advancements': 'Достижения', 'menu.exit': 'Выйти из игры',
   'menu.hint': 'Мир продолжает жить, пока открыто меню · Esc — продолжить',
@@ -229,7 +229,7 @@ const ru: Dict = {
 const zh: Dict = {
   'nav.leaderboard': '排行', 'lb.title': '排行榜', 'lb.sub': '游玩次数最多的创作者', 'lb.empty': '还没有人有游玩次数。', 'lb.plays': '{n} 次游玩', 'lb.seeAll': '查看全部', 'lb.rising': '新晋创作者', 'friend.join': '加入', 'friend.joinTip': '加入 {name} 的服务器', 'profile.coins': '金币', 'profile.level': '等级 {n}',
   'ob.newPhase': '新阶段：{name}！', 'ob.chestNow': '打开箱子！',
-  'nav.home': '首页', 'nav.servers': '服务器', 'nav.settings': '设置', 'nav.social': '好友', 'nav.planets': '星球', 'nav.shop': '商店', 'nav.news': '新闻',
+  'nav.home': '首页', 'nav.servers': '服务器', 'nav.settings': '设置', 'nav.social': '好友', 'nav.planets': '星球', 'nav.shop': '商店', 'nav.news': '新闻', 'nav.games': '游戏',
   'home.welcomeBack': '欢迎回来', 'home.tagline': '建造、探索、战斗——出发吧', 'home.topGames': '热门游戏', 'home.viewAll': '查看全部', 'home.playNow': '立即游玩', 'home.playing': '{n} 人在玩',
   'menu.title': '游戏菜单', 'menu.resume': '继续', 'menu.settings': '设置', 'menu.server': '管理服务器', 'menu.scripts': '脚本', 'menu.mods': '模组', 'menu.schematics': '蓝图', 'menu.advancements': '成就', 'menu.exit': '退出游戏',
   'menu.hint': '打开菜单时世界仍在运行 · 按 Esc 继续',
@@ -262,7 +262,7 @@ const zh: Dict = {
 const ja: Dict = {
   'nav.leaderboard': 'ランキング', 'lb.title': 'リーダーボード', 'lb.sub': 'プレイ数が多いクリエイター', 'lb.empty': 'まだプレイ数のある人はいません。', 'lb.plays': '{n} プレイ', 'lb.seeAll': 'すべて見る', 'lb.rising': 'ライジングクリエイター', 'friend.join': '参加', 'friend.joinTip': '{name} のサーバーに参加', 'profile.coins': 'コイン', 'profile.level': 'レベル {n}',
   'ob.newPhase': '新フェーズ：{name}！', 'ob.chestNow': 'チェストを開けよう！',
-  'nav.home': 'ホーム', 'nav.servers': 'サーバー', 'nav.settings': '設定', 'nav.social': 'ソーシャル', 'nav.planets': 'ワールド', 'nav.shop': 'ショップ', 'nav.news': 'お知らせ',
+  'nav.home': 'ホーム', 'nav.servers': 'サーバー', 'nav.settings': '設定', 'nav.social': 'ソーシャル', 'nav.planets': 'ワールド', 'nav.shop': 'ショップ', 'nav.news': 'お知らせ', 'nav.games': 'ゲーム',
   'home.welcomeBack': 'おかえりなさい', 'home.tagline': '作って、探して、戦おう', 'home.topGames': '人気のゲーム', 'home.viewAll': 'すべて表示', 'home.playNow': '今すぐ遊ぶ', 'home.playing': '{n} 人がプレイ中',
   'menu.title': 'ゲームメニュー', 'menu.resume': '再開', 'menu.settings': '設定', 'menu.server': 'サーバー管理', 'menu.scripts': 'スクリプト', 'menu.mods': 'MOD', 'menu.schematics': '設計図', 'menu.advancements': '進捗', 'menu.exit': 'ゲームを終了',
   'menu.hint': 'メニューを開いていてもワールドは動き続けます · Esc で再開',
@@ -295,7 +295,7 @@ const ja: Dict = {
 const ko: Dict = {
   'nav.leaderboard': '순위', 'lb.title': '리더보드', 'lb.sub': '플레이 수가 가장 많은 제작자', 'lb.empty': '아직 플레이 수가 있는 사람이 없습니다.', 'lb.plays': '{n}회 플레이', 'lb.seeAll': '모두 보기', 'lb.rising': '라이징 크리에이터', 'friend.join': '참가', 'friend.joinTip': '{name}의 서버에 참가', 'profile.coins': '코인', 'profile.level': '레벨 {n}',
   'ob.newPhase': '새 단계: {name}!', 'ob.chestNow': '상자를 여세요!',
-  'nav.home': '홈', 'nav.servers': '서버', 'nav.settings': '설정', 'nav.social': '친구', 'nav.planets': '월드', 'nav.shop': '상점', 'nav.news': '소식',
+  'nav.home': '홈', 'nav.servers': '서버', 'nav.settings': '설정', 'nav.social': '친구', 'nav.planets': '월드', 'nav.shop': '상점', 'nav.news': '소식', 'nav.games': '게임',
   'home.welcomeBack': '다시 오신 것을 환영합니다', 'home.tagline': '짓고, 탐험하고, 싸우자', 'home.topGames': '인기 게임', 'home.viewAll': '모두 보기', 'home.playNow': '지금 플레이', 'home.playing': '{n}명 플레이 중',
   'menu.title': '게임 메뉴', 'menu.resume': '계속하기', 'menu.settings': '설정', 'menu.server': '서버 관리', 'menu.scripts': '스크립트', 'menu.mods': '모드', 'menu.schematics': '설계도', 'menu.advancements': '도전 과제', 'menu.exit': '게임 종료',
   'menu.hint': '메뉴가 열려 있어도 월드는 계속 진행됩니다 · Esc로 계속',
@@ -328,7 +328,7 @@ const ko: Dict = {
 const hi: Dict = {
   'nav.leaderboard': 'टॉप', 'lb.title': 'लीडरबोर्ड', 'lb.sub': 'सबसे ज़्यादा प्ले वाले क्रिएटर', 'lb.empty': 'अभी किसी के प्ले नहीं हैं।', 'lb.plays': '{n} प्ले', 'lb.seeAll': 'सब देखें', 'lb.rising': 'राइजिंग क्रिएटर', 'friend.join': 'जुड़ें', 'friend.joinTip': '{name} के सर्वर से जुड़ें', 'profile.coins': 'सिक्के', 'profile.level': 'लेवल {n}',
   'ob.newPhase': 'नया चरण: {name}!', 'ob.chestNow': 'संदूक खोलो!',
-  'nav.home': 'होम', 'nav.servers': 'सर्वर', 'nav.settings': 'सेटिंग्स', 'nav.social': 'सोशल', 'nav.planets': 'ग्रह', 'nav.shop': 'शॉप', 'nav.news': 'समाचार',
+  'nav.home': 'होम', 'nav.servers': 'सर्वर', 'nav.settings': 'सेटिंग्स', 'nav.social': 'सोशल', 'nav.planets': 'ग्रह', 'nav.shop': 'शॉप', 'nav.news': 'समाचार', 'nav.games': 'खेल',
   'home.welcomeBack': 'वापसी पर स्वागत है', 'home.tagline': 'बनाओ, खोजो, लड़ो — चलो शुरू करें', 'home.topGames': 'टॉप गेम्स', 'home.viewAll': 'सभी देखें', 'home.playNow': 'अभी खेलें', 'home.playing': '{n} खेल रहे हैं',
   'menu.title': 'गेम मेनू', 'menu.resume': 'जारी रखें', 'menu.settings': 'सेटिंग्स', 'menu.server': 'सर्वर प्रबंधन', 'menu.scripts': 'स्क्रिप्ट', 'menu.mods': 'मॉड', 'menu.schematics': 'स्कीमैटिक्स', 'menu.advancements': 'उपलब्धियाँ', 'menu.exit': 'गेम से बाहर',
   'menu.hint': 'मेनू खुला होने पर भी दुनिया चलती रहती है · जारी रखने के लिए Esc',
@@ -361,7 +361,7 @@ const hi: Dict = {
 const tr: Dict = {
   'nav.leaderboard': 'Sıralama', 'lb.title': 'Liderlik Tablosu', 'lb.sub': 'En çok oynanan yaratıcılar', 'lb.empty': 'Henüz kimsenin oynanması yok.', 'lb.plays': '{n} oynanma', 'lb.seeAll': 'Tümünü gör', 'lb.rising': 'Yükselen Yaratıcı', 'friend.join': 'Katıl', 'friend.joinTip': '{name} oyuncusunun sunucusuna katıl', 'profile.coins': 'Madeni para', 'profile.level': 'Seviye {n}',
   'ob.newPhase': 'Yeni aşama: {name}!', 'ob.chestNow': 'Sandığı aç!',
-  'nav.home': 'Ana Sayfa', 'nav.servers': 'Sunucular', 'nav.settings': 'Ayarlar', 'nav.social': 'Sosyal', 'nav.planets': 'Gezegenler', 'nav.shop': 'Mağaza', 'nav.news': 'Haberler',
+  'nav.home': 'Ana Sayfa', 'nav.servers': 'Sunucular', 'nav.settings': 'Ayarlar', 'nav.social': 'Sosyal', 'nav.planets': 'Gezegenler', 'nav.shop': 'Mağaza', 'nav.news': 'Haberler', 'nav.games': 'Oyunlar',
   'home.welcomeBack': 'TEKRAR HOŞ GELDİN', 'home.tagline': 'İnşa et, keşfet, savaş — hadi başlayalım', 'home.topGames': 'EN İYİ OYUNLAR', 'home.viewAll': 'Hepsini gör', 'home.playNow': 'Hemen oyna', 'home.playing': '{n} oynuyor',
   'menu.title': 'Oyun Menüsü', 'menu.resume': 'Devam et', 'menu.settings': 'Ayarlar', 'menu.server': 'Sunucuyu yönet', 'menu.scripts': 'Betikler', 'menu.mods': 'Modlar', 'menu.schematics': 'Şemalar', 'menu.advancements': 'Başarımlar', 'menu.exit': 'Oyundan çık',
   'menu.hint': 'Menü açıkken dünya çalışmaya devam eder · Devam için Esc',
@@ -394,7 +394,7 @@ const tr: Dict = {
 const id: Dict = {
   'nav.leaderboard': 'Top', 'lb.title': 'Papan Peringkat', 'lb.sub': 'Kreator dengan permainan terbanyak', 'lb.empty': 'Belum ada yang punya permainan.', 'lb.plays': '{n} permainan', 'lb.seeAll': 'Lihat semua', 'lb.rising': 'Kreator Berkembang', 'friend.join': 'Gabung', 'friend.joinTip': 'Gabung ke server {name}', 'profile.coins': 'Koin', 'profile.level': 'Level {n}',
   'ob.newPhase': 'Fase baru: {name}!', 'ob.chestNow': 'Buka petinya!',
-  'nav.home': 'Beranda', 'nav.servers': 'Server', 'nav.settings': 'Pengaturan', 'nav.social': 'Sosial', 'nav.planets': 'Planet', 'nav.shop': 'Toko', 'nav.news': 'Berita',
+  'nav.home': 'Beranda', 'nav.servers': 'Server', 'nav.settings': 'Pengaturan', 'nav.social': 'Sosial', 'nav.planets': 'Planet', 'nav.shop': 'Toko', 'nav.news': 'Berita', 'nav.games': 'Permainan',
   'home.welcomeBack': 'SELAMAT DATANG KEMBALI', 'home.tagline': 'Bangun, jelajahi, bertarung — ayo mulai', 'home.topGames': 'GAME TERPOPULER', 'home.viewAll': 'Lihat semua', 'home.playNow': 'Main sekarang', 'home.playing': '{n} bermain',
   'menu.title': 'Menu Game', 'menu.resume': 'Lanjutkan', 'menu.settings': 'Pengaturan', 'menu.server': 'Kelola Server', 'menu.scripts': 'Skrip', 'menu.mods': 'Mod', 'menu.schematics': 'Skema', 'menu.advancements': 'Pencapaian', 'menu.exit': 'Keluar Game',
   'menu.hint': 'Dunia tetap berjalan saat menu terbuka · Esc untuk lanjut',
@@ -427,7 +427,7 @@ const id: Dict = {
 const it: Dict = {
   'nav.leaderboard': 'Top', 'lb.title': 'Classifica', 'lb.sub': 'Creatori con più partite', 'lb.empty': 'Nessuno ha ancora partite.', 'lb.plays': '{n} partite', 'lb.seeAll': 'Vedi tutto', 'lb.rising': 'Creatore in ascesa', 'friend.join': 'Unisciti', 'friend.joinTip': 'Unisciti a {name} sul suo server', 'profile.coins': 'Monete', 'profile.level': 'Livello {n}',
   'ob.newPhase': 'Nuova fase: {name}!', 'ob.chestNow': 'Apri il baule!',
-  'nav.home': 'Home', 'nav.servers': 'Server', 'nav.settings': 'Impostazioni', 'nav.social': 'Social', 'nav.planets': 'Pianeti', 'nav.shop': 'Negozio', 'nav.news': 'Novità',
+  'nav.home': 'Home', 'nav.servers': 'Server', 'nav.settings': 'Impostazioni', 'nav.social': 'Social', 'nav.planets': 'Pianeti', 'nav.shop': 'Negozio', 'nav.news': 'Novità', 'nav.games': 'Games',
   'home.welcomeBack': 'BENTORNATO', 'home.tagline': 'Costruisci, esplora, combatti: si parte', 'home.topGames': 'GIOCHI PIÙ POPOLARI', 'home.viewAll': 'Vedi tutto', 'home.playNow': 'Gioca ora', 'home.playing': '{n} in gioco',
   'menu.title': 'Menu di gioco', 'menu.resume': 'Riprendi', 'menu.settings': 'Impostazioni', 'menu.server': 'Gestisci server', 'menu.scripts': 'Script', 'menu.mods': 'Mod', 'menu.schematics': 'Schemi', 'menu.advancements': 'Obiettivi', 'menu.exit': 'Esci dal gioco',
   'menu.hint': 'Il mondo continua mentre il menu è aperto · Esc per riprendere',
@@ -460,7 +460,7 @@ const it: Dict = {
 const pl: Dict = {
   'nav.leaderboard': 'Top', 'lb.title': 'Ranking', 'lb.sub': 'Twórcy z największą liczbą gier', 'lb.empty': 'Nikt nie ma jeszcze rozegranych gier.', 'lb.plays': '{n} gier', 'lb.seeAll': 'Zobacz wszystko', 'lb.rising': 'Wschodzący Twórca', 'friend.join': 'Dołącz', 'friend.joinTip': 'Dołącz do {name} na jego serwerze', 'profile.coins': 'Monety', 'profile.level': 'Poziom {n}',
   'ob.newPhase': 'Nowy etap: {name}!', 'ob.chestNow': 'Otwórz skrzynię!',
-  'nav.home': 'Start', 'nav.servers': 'Serwery', 'nav.settings': 'Ustawienia', 'nav.social': 'Znajomi', 'nav.planets': 'Planety', 'nav.shop': 'Sklep', 'nav.news': 'Nowości',
+  'nav.home': 'Start', 'nav.servers': 'Serwery', 'nav.settings': 'Ustawienia', 'nav.social': 'Znajomi', 'nav.planets': 'Planety', 'nav.shop': 'Sklep', 'nav.news': 'Nowości', 'nav.games': 'Spiele',
   'home.welcomeBack': 'WITAJ Z POWROTEM', 'home.tagline': 'Buduj, odkrywaj, walcz — ruszamy', 'home.topGames': 'NAJPOPULARNIEJSZE GRY', 'home.viewAll': 'Pokaż wszystkie', 'home.playNow': 'Graj teraz', 'home.playing': 'Gra: {n}',
   'menu.title': 'Menu gry', 'menu.resume': 'Wróć do gry', 'menu.settings': 'Ustawienia', 'menu.server': 'Zarządzaj serwerem', 'menu.scripts': 'Skrypty', 'menu.mods': 'Mody', 'menu.schematics': 'Schematy', 'menu.advancements': 'Osiągnięcia', 'menu.exit': 'Wyjdź z gry',
   'menu.hint': 'Świat działa dalej przy otwartym menu · Esc, aby wrócić',
@@ -493,7 +493,7 @@ const pl: Dict = {
 const vi: Dict = {
   'nav.leaderboard': 'Top', 'lb.title': 'Bảng xếp hạng', 'lb.sub': 'Người sáng tạo có nhiều lượt chơi nhất', 'lb.empty': 'Chưa ai có lượt chơi.', 'lb.plays': '{n} lượt chơi', 'lb.seeAll': 'Xem tất cả', 'lb.rising': 'Nhà sáng tạo mới nổi', 'friend.join': 'Tham gia', 'friend.joinTip': 'Tham gia máy chủ của {name}', 'profile.coins': 'Xu', 'profile.level': 'Cấp {n}',
   'ob.newPhase': 'Giai đoạn mới: {name}!', 'ob.chestNow': 'Mở rương!',
-  'nav.home': 'Trang chủ', 'nav.servers': 'Máy chủ', 'nav.settings': 'Cài đặt', 'nav.social': 'Bạn bè', 'nav.planets': 'Hành tinh', 'nav.shop': 'Cửa hàng', 'nav.news': 'Tin tức',
+  'nav.home': 'Trang chủ', 'nav.servers': 'Máy chủ', 'nav.settings': 'Cài đặt', 'nav.social': 'Bạn bè', 'nav.planets': 'Hành tinh', 'nav.shop': 'Cửa hàng', 'nav.news': 'Tin tức', 'nav.games': 'Trò chơi',
   'home.welcomeBack': 'CHÀO MỪNG TRỞ LẠI', 'home.tagline': 'Xây dựng, khám phá, chiến đấu — đi thôi', 'home.topGames': 'TRÒ CHƠI HÀNG ĐẦU', 'home.viewAll': 'Xem tất cả', 'home.playNow': 'Chơi ngay', 'home.playing': '{n} đang chơi',
   'menu.title': 'Menu trò chơi', 'menu.resume': 'Tiếp tục', 'menu.settings': 'Cài đặt', 'menu.server': 'Quản lý máy chủ', 'menu.scripts': 'Tập lệnh', 'menu.mods': 'Mod', 'menu.schematics': 'Bản thiết kế', 'menu.advancements': 'Thành tựu', 'menu.exit': 'Thoát trò chơi',
   'menu.hint': 'Thế giới vẫn chạy khi mở menu · Nhấn Esc để tiếp tục',

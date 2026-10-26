@@ -116,6 +116,7 @@ export class AntiCheat {
     if (gliding) tr.glideUntil = t + 5000; // elytra and firework boosts are fast and stay in the air on purpose
     const prev = tr.last;
     tr.last = { t, x, y, z };
+    if (prev && t - prev.t > 500) { tr.airSince = 0; tr.speedWindow = []; return; } // a pause in the stream (lag, a hidden tab): what came before says nothing about what comes next
     const judged = mode === 'survival' || mode === 'adventure';
     if (!judged || changedMode || t < tr.graceUntil || t < tr.glideUntil || !prev) { tr.airSince = 0; tr.speedWindow = []; return; }
     const step = Math.hypot(x - prev.x, z - prev.z);

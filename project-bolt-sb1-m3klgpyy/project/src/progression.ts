@@ -14,6 +14,12 @@
 // granted by a server (Tebex webhook), not by this file.
 import { CAPES, SKINS, CUSTOM_SKIN_ID, CUSTOM_CAPE_ID, isCustomSkinData, cleanLook, type PlayerLook } from './cosmetics';
 import { portalStorage } from './adEconomy';
+import { coinMultiplier, xpMultiplier } from './ranks';
+
+/** The rank whose perks you get (set by the app): ranks earn more coins and a bit more XP. */
+let perkRankNow = 'none';
+export function setPerkRank(r: string) { perkRankNow = r; }
+const bonusCoins = (n: number) => Math.round(n * coinMultiplier(perkRankNow));
 
 // ---- Put your links here ----
 export const DISCORD_INVITE_URL = 'https://discord.gg/553EGmB8bf';
@@ -168,18 +174,18 @@ export function addActiveSeconds(seconds: number): number[] {
   const gained: number[] = [], boxesGained: number[] = [];
   while (s.activeSeconds >= SECONDS_PER_PERIOD) {
     s.activeSeconds -= SECONDS_PER_PERIOD;
-    s.xp += XP_PER_PERIOD;
+    s.xp += Math.round(XP_PER_PERIOD * xpMultiplier(perkRankNow));
     const lvl = levelForXp(s.xp);
-    while (s.level < lvl) { s.level++; s.coins += LEVEL_UP_COINS; const boxes = 1 + (Math.random() < 0.5 ? 1 : 0); s.lootboxes = (s.lootboxes ?? 0) + boxes; boxesGained.push(boxes); gained.push(s.level); }
+    while (s.level < lvl) { s.level++; s.coins += bonusCoins(LEVEL_UP_COINS); const boxes = 1 + (Math.random() < 0.5 ? 1 : 0); s.lootboxes = (s.lootboxes ?? 0) + boxes; boxesGained.push(boxes); gained.push(s.level); }
   }
   // Saving every tick would be wasteful: save on XP gains, and every ~30 s otherwise
   if (gained.length || s.xp !== state.xp || Math.floor(s.totalActiveSeconds / 30) !== Math.floor(state.totalActiveSeconds / 30) || (state.boosterSeconds > 0 && s.boosterSeconds === 0)) commit(s);
   else { state = s; for (const l of listeners) l(); }
-  gained.forEach((lvl, i) => { for (const fn of levelListeners) fn(lvl, LEVEL_UP_COINS, boxesGained[i]); });
+  gained.forEach((lvl, i) => { for (const fn of levelListeners) fn(lvl, bonusCoins(LEVEL_UP_COINS), boxesGained[i]); });
   return gained;
 }
 
-export function rewardAdCoins() { commit({ ...state, coins: state.coins + AD_COINS }); }
+export function rewardAdCoins() { commit({ ...state, coins: state.coins + bonusCoins(AD_COINS) }); }
 export function rewardAdBooster() { commit({ ...state, boosterSeconds: state.boosterSeconds + BOOSTER_SECONDS }); }
 
 export type ClaimStatus = {
@@ -201,7 +207,7 @@ export function claimCoins(now = Date.now()): ClaimResult {
   const st = claimStatus(now);
   if (st.coinsLeft <= 0) return { ok: false, waitMs: st.coinsWaitMs };
   const recent = (state.coinClaims ?? []).filter((t) => t > now - COIN_CLAIM_WINDOW_MS);
-  commit({ ...state, coins: state.coins + AD_COINS, coinClaims: [...recent, now] });
+  commit({ ...state, coins: state.coins + bonusCoins(AD_COINS), coinClaims: [...recent, now] });
   return { ok: true };
 }
 /** Claim the 2x XP booster without watching an ad (ranks): once every 15 minutes. */
@@ -287,6 +293,7 @@ export function claimDaily(double: boolean, now = Date.now(), rng: () => number 
     else coins = WEEKLY_FALLBACK_COINS; // you own every skin already: coins instead
   }
   if (double) { coins *= 2; boxes *= 2; }
+  coins = bonusCoins(coins);
   s.coins += coins;
   if (boxes) s.lootboxes = (s.lootboxes ?? 0) + boxes;
   s.daily = { last: today, streak, best: Math.max(state.daily?.best ?? 0, streak), total: (state.daily?.total ?? 0) + 1 };

@@ -151,3 +151,28 @@ html.vb-gray .vb-themed .hover\:bg-\[\#1a2230\]:hover { background-color: #3a3d4
 /* CrazyGames: no accidental text selection while playing (inputs and chat stay selectable) */
 body { -webkit-user-select: none; user-select: none; }
 input, textarea, [contenteditable="true"], [data-testid="legal-text"] { -webkit-user-select: text; user-select: text; }
+
+/* ---------------- The default (dark) look, a little softer and warmer ----------------
+   Same layout, calmer colours: a warm slate instead of blue-black, easier-to-read grey text, and a gentler green.
+   The Light, Super dark and Gray themes above are untouched (these rules only apply when none of them is on). */
+html:not(.vb-light):not(.vb-superdark):not(.vb-gray) .vb-themed .bg-\[\#05080c\], html:not(.vb-light):not(.vb-superdark):not(.vb-gray) .vb-themed.bg-\[\#05080c\] { background-color: #11151c !important; }
+html:not(.vb-light):not(.vb-superdark):not(.vb-gray) .vb-themed .bg-\[\#0a0e14\], html:not(.vb-light):not(.vb-superdark):not(.vb-gray) .vb-themed.bg-\[\#0a0e14\] { background-color: #161b24 !important; }
+html:not(.vb-light):not(.vb-superdark):not(.vb-gray) .vb-themed .bg-\[\#0d131b\], html:not(.vb-light):not(.vb-superdark):not(.vb-gray) .vb-themed.bg-\[\#0d131b\] { background-color: #1b212c !important; }
+html:not(.vb-light):not(.vb-superdark):not(.vb-gray) .vb-themed .bg-\[\#121822\], html:not(.vb-light):not(.vb-superdark):not(.vb-gray) .vb-themed.bg-\[\#121822\] { background-color: #1e2530 !important; }
+html:not(.vb-light):not(.vb-superdark):not(.vb-gray) .vb-themed .bg-\[\#1a2230\], html:not(.vb-light):not(.vb-superdark):not(.vb-gray) .vb-themed.bg-\[\#1a2230\] { background-color: #262f3d !important; }
+html:not(.vb-light):not(.vb-superdark):not(.vb-gray) .vb-themed .bg-\[\#243044\], html:not(.vb-light):not(.vb-superdark):not(.vb-gray) .vb-themed.bg-\[\#243044\] { background-color: #2f3a4c !important; }
+html:not(.vb-light):not(.vb-superdark):not(.vb-gray) .vb-themed .bg-\[\#2a3444\], html:not(.vb-light):not(.vb-superdark):not(.vb-gray) .vb-themed.bg-\[\#2a3444\] { background-color: #364256 !important; }
+html:not(.vb-light):not(.vb-superdark):not(.vb-gray) .vb-themed .border-\[\#243044\], html:not(.vb-light):not(.vb-superdark):not(.vb-gray) .vb-themed.border-\[\#243044\] { border-color: #343f52 !important; }
+html:not(.vb-light):not(.vb-superdark):not(.vb-gray) .vb-themed .border-\[\#1a2230\], html:not(.vb-light):not(.vb-superdark):not(.vb-gray) .vb-themed.border-\[\#1a2230\] { border-color: #2a3342 !important; }
+html:not(.vb-light):not(.vb-superdark):not(.vb-gray) .vb-themed .border-\[\#364860\], html:not(.vb-light):not(.vb-superdark):not(.vb-gray) .vb-themed.border-\[\#364860\] { border-color: #46546c !important; }
+html:not(.vb-light):not(.vb-superdark):not(.vb-gray) .vb-themed .border-\[\#3a4a60\], html:not(.vb-light):not(.vb-superdark):not(.vb-gray) .vb-themed.border-\[\#3a4a60\] { border-color: #4d5b74 !important; }
+html:not(.vb-light):not(.vb-superdark):not(.vb-gray) .vb-themed .text-\[\#8ea0b8\], html:not(.vb-light):not(.vb-superdark):not(.vb-gray) .vb-themed.text-\[\#8ea0b8\] { color: #a8b2c2 !important; }
+html:not(.vb-light):not(.vb-superdark):not(.vb-gray) .vb-themed .text-\[\#5a6b80\], html:not(.vb-light):not(.vb-superdark):not(.vb-gray) .vb-themed.text-\[\#5a6b80\] { color: #8a95a6 !important; }
+html:not(.vb-light):not(.vb-superdark):not(.vb-gray) .vb-themed .text-\[\#364860\], html:not(.vb-light):not(.vb-superdark):not(.vb-gray) .vb-themed.text-\[\#364860\] { color: #6b7788 !important; }
+html:not(.vb-light):not(.vb-superdark):not(.vb-gray) .vb-themed .text-\[\#d6e2f0\], html:not(.vb-light):not(.vb-superdark):not(.vb-gray) .vb-themed.text-\[\#d6e2f0\] { color: #ece8df !important; }
+html:not(.vb-light):not(.vb-superdark):not(.vb-gray) .vb-themed .text-\[\#c8d2e0\], html:not(.vb-light):not(.vb-superdark):not(.vb-gray) .vb-themed.text-\[\#c8d2e0\] { color: #e0dcd2 !important; }
+html:not(.vb-light):not(.vb-superdark):not(.vb-gray) .vb-themed .text-\[\#00e676\], html:not(.vb-light):not(.vb-superdark):not(.vb-gray) .vb-themed.text-\[\#00e676\] { color: #3ddc9a !important; }
+html:not(.vb-light):not(.vb-superdark):not(.vb-gray) .vb-themed .bg-\[\#00e676\], html:not(.vb-light):not(.vb-superdark):not(.vb-gray) .vb-themed.bg-\[\#00e676\] { background-color: #3ddc9a !important; }
+html:not(.vb-light):not(.vb-superdark):not(.vb-gray) .vb-themed .border-\[\#00e676\], html:not(.vb-light):not(.vb-superdark):not(.vb-gray) .vb-themed.border-\[\#00e676\] { border-color: #3ddc9a !important; }
+html:not(.vb-light):not(.vb-superdark):not(.vb-gray) .vb-themed .from-\[\#00e676\], html:not(.vb-light):not(.vb-superdark):not(.vb-gray) .vb-themed.from-\[\#00e676\] { --tw-gradient-from: #3ddc9a var(--tw-gradient-from-position) !important; }
+html:not(.vb-light):not(.vb-superdark):not(.vb-gray) .vb-themed button, html:not(.vb-light):not(.vb-superdark):not(.vb-gray) .vb-themed input { font-family: inherit; }

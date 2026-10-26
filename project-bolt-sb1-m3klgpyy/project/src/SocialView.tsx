@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Users, UserPlus, Send, UserMinus, Check, X, MessageCircle, LogOut, LogIn, Loader2, ShieldCheck, Pencil, Gamepad2, Star, ArrowLeft } from 'lucide-react';
 import {
-  loadFriends, addFriend, acceptFriend, removeFriend, sendDM, loadConversation, DM_MAX, NAME_CHANGE_WAIT_MS, lastOnlineLine,
+  loadFriends, addFriend, acceptFriend, removeFriend, loadConversation, NAME_CHANGE_WAIT_MS, lastOnlineLine,
   type Account, type Friend, type FriendState, type DM, type Standing, type Result,
 } from './social';
+import DmThread from './DmThread';
 import { t } from './i18n';
 import { creatorTier, CREATOR_PLAYS, CREATOR_NAMES, badgeTags } from './ranks';
 import { FancyText } from './fancytext';
@@ -36,10 +37,9 @@ type Props = {
 
 const EMPTY: FriendState = { friends: [], incoming: [], outgoing: [] };
 
-function clock(iso: string): string {
-  const d = new Date(iso);
-  return Number.isFinite(d.getTime()) ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
-}
+/** Changes when a message is added, edited or deleted. */
+const sig = (list: DM[]) => list.map((m) => `${m.id}${m.edited ? 'e' : ''}:${m.text}`).join('|');
+
 
 /** A friend's rank tags ([OWNER] [HELPER] [YOUTUBE] [OG] [Champion]...), wrapping onto more lines when there are many. */
 function Tags({ f, testid }: { f: Friend; testid?: string }) {
@@ -52,7 +52,10 @@ function Dot({ online }: { online: boolean }) {
   return <span className={`inline-block w-2.5 h-2.5 rounded-full shrink-0 ${online ? 'bg-[#00e676] shadow-[0_0_6px_#00e676]' : 'bg-[#3a4a60]'}`} title={online ? 'Online' : 'Offline'} />;
 }
 
+/** The button text on a friend: Join their world, join the board game they are looking for, or watch the one they are in. */
+const joinTextFor = (t: (k: string) => string, server?: string) => (server?.startsWith('mg:') ? 'Spectate' : server?.startsWith('mgq:') ? 'Join game' : t('friend.join'));
 export default function SocialView({ account, checking, isAdmin, onOpenPanel, unread, onOpenChat, onSignIn, onSignOut, onFriendsChanged, onRename, standing, onJoinFriend, joining, joinError }: Props) {
+  const joinText = (server?: string) => joinTextFor(t, server);
   const [tab, setTab] = useState<'friends' | 'requests' | 'add'>('friends');
   const [state, setState] = useState<FriendState>(EMPTY);
   const [loading, setLoading] = useState(false);
@@ -62,12 +65,10 @@ export default function SocialView({ account, checking, isAdmin, onOpenPanel, un
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState<Friend | null>(null);
   const [messages, setMessages] = useState<DM[]>([]);
-  const [draft, setDraft] = useState('');
   const [confirmUnfriend, setConfirmUnfriend] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [newName, setNewName] = useState('');
   const [renameBusy, setRenameBusy] = useState(false);
-  const listEnd = useRef<HTMLDivElement>(null);
   const me = account?.userId ?? '';
 
   async function refreshFriends(quiet = false) {
@@ -95,7 +96,7 @@ export default function SocialView({ account, checking, isAdmin, onOpenPanel, un
     let dead = false;
     const load = async () => {
       const r = await loadConversation(account.userId, selected.id);
-      if (!dead && r.ok) setMessages((prev) => (prev.length === r.messages.length && prev[prev.length - 1]?.id === r.messages[r.messages.length - 1]?.id ? prev : r.messages));
+      if (!dead && r.ok) setMessages((prev) => (sig(prev) === sig(r.messages) ? prev : r.messages));
     };
     void load();
     const t = setInterval(load, 4000);
@@ -103,7 +104,6 @@ export default function SocialView({ account, checking, isAdmin, onOpenPanel, un
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [account?.userId, selected?.id]);
 
-  useEffect(() => { listEnd.current?.scrollIntoView({ block: 'end' }); }, [messages.length, selected?.id]);
   useEffect(() => { setConfirmUnfriend(false); }, [selected?.id]);
 
   // keep the selected friend's online dot fresh
@@ -143,16 +143,6 @@ export default function SocialView({ account, checking, isAdmin, onOpenPanel, un
     setConfirmUnfriend(false);
     void refreshFriends(true);
   }
-  async function handleSend(e: FormEvent) {
-    e.preventDefault();
-    if (!account || !live || !draft.trim()) return;
-    const text = draft;
-    setDraft('');
-    const r = await sendDM(account, live.id, text);
-    if (r.ok) setMessages((m) => [...m, r.dm]);
-    else { setError(r.error); setDraft(text); }
-  }
-
   const card = 'bg-[#0d131b] border border-[#243044] rounded-2xl';
 
   if (checking) {
@@ -280,7 +270,7 @@ export default function SocialView({ account, checking, isAdmin, onOpenPanel, un
                         onClick={(e) => { e.stopPropagation(); if (!joining) onJoinFriend(f); }}
                         onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); if (!joining) onJoinFriend(f); } }}
                         className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#00e676] text-[#0a0e14] text-xs font-bold hover:bg-[#00e676]/90"
-                      >{joining ? <Loader2 className="w-3 h-3 animate-spin" /> : <Gamepad2 className="w-3 h-3" />}{t('friend.join')}</span>
+                      >{joining ? <Loader2 className="w-3 h-3 animate-spin" /> : <Gamepad2 className="w-3 h-3" />}{joinText(f.server)}</span>
                     )}
                     {(unread[f.id] ?? 0) > 0 && <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-[#ff5252] text-white text-[11px] font-bold flex items-center justify-center">{unread[f.id]}</span>}
                   </button>
@@ -352,7 +342,7 @@ export default function SocialView({ account, checking, isAdmin, onOpenPanel, un
                     disabled={joining}
                     onClick={() => onJoinFriend(live)}
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#00e676] text-[#0a0e14] text-xs font-bold hover:bg-[#00e676]/90 disabled:opacity-60"
-                  >{joining ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Gamepad2 className="w-3.5 h-3.5" />}{t('friend.join')} {live.username}</button>
+                  >{joining ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Gamepad2 className="w-3.5 h-3.5" />}{joinText(live.server)} {live.username}</button>
                 )}
                 {confirmUnfriend ? (
                   <div className="flex items-center gap-2 text-xs">
@@ -366,32 +356,8 @@ export default function SocialView({ account, checking, isAdmin, onOpenPanel, un
                   </button>
                 )}
               </div>
-              <div className="flex-1 overflow-y-auto px-3 md:px-5 py-4 space-y-2 min-h-0">
-                {!messages.length && <div className="text-center text-[#5a6b80] text-sm py-10">No messages yet. Say hi!</div>}
-                {messages.map((m) => {
-                  const mine = m.from === me;
-                  return (
-                    <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-                      <div className={`max-w-[85%] md:max-w-[75%] rounded-2xl px-4 py-2 text-sm break-words ${mine ? 'bg-[#00e676] text-[#0a0e14] rounded-br-md' : 'bg-[#1a2230] text-white rounded-bl-md'}`}>
-                        {m.text}
-                        <div className={`text-[10px] mt-0.5 ${mine ? 'text-[#0a0e14]/60' : 'text-[#5a6b80]'}`}>{clock(m.at)}</div>
-                      </div>
-                    </div>
-                  );
-                })}
-                <div ref={listEnd} />
-              </div>
-              <form onSubmit={handleSend} className="flex gap-2 p-3 border-t border-[#243044]">
-                <input
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value.slice(0, DM_MAX))}
-                  placeholder={`Message ${live.username}`}
-                  className="flex-1 bg-[#0a0e14] border border-[#243044] rounded-xl px-4 py-3 text-white text-sm placeholder:text-[#5a6b80] focus:border-[#00e676]/50 focus:outline-none"
-                />
-                <button type="submit" disabled={!draft.trim()} className="w-12 rounded-xl bg-[#00e676] text-[#0a0e14] flex items-center justify-center disabled:opacity-40 hover:bg-[#00e676]/90 active:scale-95 transition-all" title="Send">
-                  <Send className="w-5 h-5" />
-                </button>
-              </form>
+              <DmThread account={account} friendId={live.id} friendName={live.username} pingable={state.friends.map((f) => f.username)}
+                messages={messages} setMessages={setMessages} setError={setError} setNote={setNote} />
             </>
           )}
         </div>

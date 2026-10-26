@@ -1,5 +1,5 @@
 import { setBgInterval, clearBgInterval } from './bgTimer';
-import { useState, useEffect, useRef, useMemo, useCallback, useSyncExternalStore, createContext, useContext, type FormEvent, type ChangeEvent, type MouseEvent as ReactMouseEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
+import { lazy, Suspense, useState, useEffect, useRef, useMemo, useCallback, useSyncExternalStore, createContext, useContext, type FormEvent, type ChangeEvent, type MouseEvent as ReactMouseEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
 import { ADVANCEMENT_TABS, rewardText, advancementsFor, checkItems, checkEvent, loadAdvancements, saveAdvancements, clearAdvancements, type Advancement, type AdvancementTab } from './advancements';
 import { SKINS, CAPES, CUSTOM_SKIN_ID, CUSTOM_CAPE_ID, isCustomSkinData, type PlayerLook } from '@/cosmetics';
 import { LegalText, LegalFirstVisit } from './LegalNotice';
@@ -9,6 +9,7 @@ import {
   getProgress, subscribeProgress, onLevelUp, setCustomSkin, setCustomCape, addActiveSeconds, rewardAdCoins, rewardAdBooster, claimCoins, claimBooster, claimStatus, COIN_CLAIMS_PER_HOUR, buyCosmetic, equipCosmetic, currentLook, reloadProgress, progressForAccount, mergeAccountProgress,
   dailyStatus, claimDaily, openLootbox, buyShopItem, FREEZE_PRICE, BOOSTER_PRICE, LOOTBOX_PRICE, LOOTBOX_PACK_PRICE, MAX_FREEZES, DAILY_COINS, DAILY_LOOTBOX_DAYS, WEEKLY_FALLBACK_COINS, type DailyGrant, type LootResult,
   xpForLevel, DISCORD_INVITE_URL, TEBEX_STORE_URL, AD_COINS, LEVEL_UP_COINS, XP_PER_PERIOD, SECONDS_PER_PERIOD, BOOSTER_SECONDS, IDLE_AFTER_SECONDS,
+  setPerkRank,
 } from '@/progression';
 import { ModBuilder } from '@/ModBuilder';
 import { parseModCode } from '@/modBuilderLogic';
@@ -62,6 +63,7 @@ import { WORLD_TAGS, MAX_WORLD_TAGS, cleanTags, toggleTag, tagInfo } from './wor
 import { randomGuestName, fetchProfile, type PlayerProfile, type Account } from './social';
 import { openProfile, setProfileOpener } from './profileBus';
 import { watchOutsideScripts, FLAG_LABELS, type Flag } from './integrity';
+import type { GameIntent } from './minigames/ui/MinigamesView';
 import { setWorldLike, saveProgressToAccount, loadProgressFromAccount, fetchLevelLeaderboard, reportCheat, cleanWorldImage, type LevelRow, addFriend, unfriendByName, loadFriends, sendDM, startPolling, isGuestName, reportActivity, fetchPlayingCounts, fetchLeaderboard, fetchStanding, recordPlay, setServerPresence, isOwnerName, listHostedWorlds, publishHostedWorld, unpublishHostedWorld, verifyToken, isFriendOf, isBannedName, isAdminToken, banEverywhere, unbanEverywhere, type DM, type Activity, type Friend, type LeaderRow, type Standing, type HostedWorld } from './social';
 
 // Multiplayer is optional: Vite only includes src/multiplayer.ts if the file
@@ -278,10 +280,12 @@ import {
   Newspaper,
   Gift,
   Snowflake,
+  Puzzle,
   X,
 } from 'lucide-react';
 
-type View = 'home' | 'shop' | 'settings' | 'create-world' | 'servers' | 'planets' | 'social' | 'news' | 'leaderboard';
+const MinigamesView = lazy(() => import('./minigames/ui/MinigamesView'));
+type View = 'home' | 'shop' | 'settings' | 'create-world' | 'servers' | 'planets' | 'social' | 'news' | 'leaderboard' | 'games';
 type GameMode = 'menu' | 'playing';
 
 type NavItem = {
@@ -296,6 +300,7 @@ const navItems: NavItem[] = [
   { label: 'Servers', icon: Gamepad2, view: 'servers' },
   { label: 'Settings', icon: Settings, view: 'settings' },
   { label: 'Social', icon: Users, view: 'social' },
+  { label: 'Games', icon: Puzzle, view: 'games' },
   { label: 'Top', icon: Trophy, view: 'leaderboard' },
   { label: 'Planets', icon: Globe, view: 'planets' },
   { label: 'Shop', icon: ShoppingBag, view: 'shop' },
@@ -2242,11 +2247,13 @@ function MainContent({
   sfxVolume,
   onSfxVolumeChange,
   socialView,
+  gamesView,
   onMinigame,
   playingCounts,
 }: {
   compact?: boolean;
   socialView?: ReactNode;
+  gamesView?: ReactNode;
   onMinigame: (kind: ArenaKind, d: BotDifficulty, size: MinigameSize, online?: MinigameOnline) => void;
   playingCounts: Record<string, number> | null;
   username: string;
@@ -2291,6 +2298,9 @@ function MainContent({
   useEffect(() => { void findDefaultBackground(); }, []);
   if (view === 'social') {
     return <main className="flex-1 flex flex-col overflow-hidden bg-[#0a0e14] min-w-0">{socialView}</main>;
+  }
+  if (view === 'games') {
+    return <main className="flex-1 min-h-0 overflow-y-auto vb-scroll bg-[#0a0e14] min-w-0" data-testid="games-main">{gamesView}</main>;
   }
   return (
     <main className="flex-1 min-h-0 overflow-y-auto vb-scroll bg-[#0a0e14]" style={backgroundStyle(bgPic)} data-testid="main-bg" data-bg={bgPic.url ? 'on' : 'off'}>
@@ -6178,6 +6188,7 @@ export default function App() {
   const [autoPlay, setAutoPlay] = useState(false);
   const [ready, setReady] = useState(false);
   const [view, setView] = useState<View>('home');
+  const [gameIntent, setGameIntent] = useState<GameIntent>(null);
   const viewRef = useRef<View>('home');
   viewRef.current = view;
   // ---- accounts, friends, private messages, admin ----
@@ -6221,6 +6232,9 @@ export default function App() {
   const myOg = !!account && !isGuestName(account.username) && account.og === true;
   const mySpecial: SpecialId | null = account && !isGuestName(account.username) && isSpecialId(account.special) ? account.special : null;
   const myPerk: RankId = perkRank(myRank, { staff: myStaff, og: myOg, special: mySpecial });
+  const myPerkRef = useRef(myPerk);
+  myPerkRef.current = myPerk;
+  useEffect(() => { setPerkRank(myPerk); }, [myPerk]);
   useEffect(() => { setCustomThemeAllowed(canCustomTheme(myPerk)); }, [myPerk]); // Custom menu colours: Vanguard and up
   /** [YOUTUBE] only: /undercover hides your tags from everyone (and from your own name plate, so you can see it works) */
   const myUndercover = mySpecial === 'youtube' && account?.undercover === true;
@@ -7865,7 +7879,7 @@ export default function App() {
     const save = h.getSaveData();
     const mode = cfg.mode === 'creative' || cfg.mode === 'adventure' ? cfg.mode : 'survival';
     const worldType = cfg.worldType === 'superflat' ? 'superflat' : 'default';
-    const max = playerCap(isOwnerRef.current ? 'star' : myTierRef.current);
+    const max = playerCap(isOwnerRef.current ? 'star' : myTierRef.current, myPerkRef.current);
     const id = hMod.randomId(16);
     // every world you open has a saved copy online, so it can be joined even when you are not playing it
     let sid = cfg.sharedId;
@@ -8119,6 +8133,13 @@ export default function App() {
   /** Social > Join: connect to the server a friend is playing on. */
   function joinFriend(friend: Friend) {
     if (!friend.server) return;
+    // a friend who is looking for a board game, or playing one: open the Games tab instead of a world
+    if (friend.server.startsWith('mgq:')) { setGameIntent({ kind: 'join', friendId: friend.id, friendName: friend.username }); setView('games'); return; }
+    if (friend.server.startsWith('mg:')) {
+      const [, game, gid] = friend.server.split(':');
+      if ((game === 'chess' || game === 'checkers') && gid) { setGameIntent({ kind: 'spectate', game, gameId: gid }); setView('games'); }
+      return;
+    }
     if (netStatus === 'connecting') return;
     if (!friend.server.startsWith('p2p:')) setServerUrl(friend.server);
     setJoiningFriend(true);
@@ -9794,6 +9815,11 @@ export default function App() {
           onPlayWorld={launchWorld}
           onCreatePreset={handleCreatePreset}
           onNavClick={handleNavClick}
+          gamesView={view === 'games' ? (
+            <Suspense fallback={<div className="p-8 text-[#5a6b80]">Loading games…</div>}>
+              <MinigamesView account={account && !isGuestName(account.username) ? { userId: account.userId, username: account.username } : null} rank={myPerk} intent={gameIntent} onIntentDone={() => setGameIntent(null)} />
+            </Suspense>
+          ) : null}
           socialView={(
             <SocialView
               account={account}

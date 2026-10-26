@@ -11654,6 +11654,7 @@ export function createVoxelGame(
       if (dir.lengthSq() > 0) dir.normalize();
       playerKnock.set(dir.x * knock, 0, dir.z * knock);
       velocityY = Math.max(velocityY, 5);
+      if (knock > 12) launchedUntil = performance.now() + 4000;
     }
     {
       const lcause = cause.toLowerCase();
@@ -13522,6 +13523,8 @@ export function createVoxelGame(
     return { dmg, crit, smash, fall, breach, sprintKb, wind: smash ? enchLevel(st, 'wind_burst') : 0 };
   }
   let windSafe = false; // after a Wind Burst launch the first landing does not hurt
+  /** Until when the player counts as launched (wind charge, wind burst): sent as act bit 512 so anti-cheat does not call it flying. */
+  let launchedUntil = 0;
   function windBurst(level: number) {
     const h = [0, 6.5, 10.5, 14.5][Math.max(0, Math.min(3, level))];
     if (h <= 0) return;
@@ -13529,6 +13532,7 @@ export function createVoxelGame(
     wasGrounded = false;
     fallPeakY = camera.position.y;
     windSafe = true;
+    launchedUntil = performance.now() + 9000; // (the host's anti-cheat is told this is a launch, not a high jump)
     playSfx('windburst', null);
     spawnParticles(playerFeet().add(new THREE.Vector3(0, 0.2, 0)), ['#ffffff', '#cfe9ff', '#9bd0ff'], 22, 4, 0.1, 0.7);
   }
@@ -15279,7 +15283,7 @@ export function createVoxelGame(
       const b = sleepBodyPos(sleeping);
       return { x: b.x, y: b.y, z: b.z, yaw: sleeping.lieYaw, pitch: 0, mode, held: 0, act: 16 };
     }
-    return { x: camera.position.x, y: camera.position.y - PLAYER_EYE, z: camera.position.z, yaw, pitch, mode, held: heldItem ?? 0, act: (punchPhase > 0 || isMining ? 1 : 0) | (gunAiming ? 2 : 0) | (bowDrawing ? 4 : 0) | (swordBlocking ? 8 : 0) | (crouchNow ? 32 : 0) | (swimming ? 64 : 0) | (gliding ? 128 : 0) | (burnTimer > 0 ? 256 : 0) };
+    return { x: camera.position.x, y: camera.position.y - PLAYER_EYE, z: camera.position.z, yaw, pitch, mode, held: heldItem ?? 0, act: (dimension !== 'overworld' ? 1024 : 0) | ((performance.now() < launchedUntil || effectLevel('slow_falling') > 0 || effectLevel('jump_boost') > 2) ? 512 : 0) | (punchPhase > 0 || isMining ? 1 : 0) | (gunAiming ? 2 : 0) | (bowDrawing ? 4 : 0) | (swordBlocking ? 8 : 0) | (crouchNow ? 32 : 0) | (swimming ? 64 : 0) | (gliding ? 128 : 0) | (burnTimer > 0 ? 256 : 0) };
   }
 
   type RemotePlayer = {

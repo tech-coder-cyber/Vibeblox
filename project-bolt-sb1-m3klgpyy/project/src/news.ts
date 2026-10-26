@@ -2,11 +2,28 @@
 // a small update to the current one is a point release (Indev 26.1, 26.2...), a big one is the next number.
 //
 // The News page in the sidebar shows this list, and a dot appears on it until the newest one has been read.
-export const GAME_VERSION = 36.1;
+export const GAME_VERSION = 37;
 
 export type NewsEntry = { version: number; date: string; title: string; changes: string[] };
 
 export const NEWS: NewsEntry[] = [
+  {
+    version: 37,
+    date: 'October 26, 2026',
+    title: 'Games, chess and a softer look',
+    changes: [
+      'New Games tab in the sidebar. Play chess and checkers against bots or other players, 2048 (works offline) and tic tac toe (easy, normal or hard). Bots work with no internet. Online games need a connection.',
+      'Chess: bots with different styles and personalities, right-click to draw red squares, right-click and drag to draw arrows, offer a draw, resign, and undo (bots only). Press F for a crashout and T to throw the pieces. Both only work in chess.',
+      'Crowns: beat a bot for 3 crowns, 2 if you used a hint or a takeback, 1 if you used several. Hints show the best move and only work against bots. Turn on bot chat to read what a bot says. You cannot chat back to a bot, but you can chat with real players.',
+      'Ratings: your first 5 games against real players set an estimated rating. Ratings and levels follow club, USCF and FIDE ideas much more closely. Puzzle rating is separate and only changes when you solve puzzles. Game history keeps every game.',
+      '100 puzzles, lessons that teach the pieces and strategy, and openings (Queen\'s Gambit, King\'s Gambit, Italian Game, Four Knights, Ruy Lopez and more). Analysis with an evaluation bar. Pick our engine or Stockfish if it is installed.',
+      'Your own board theme and piece style, for chess and checkers. Games have their own leaderboards: chess, checkers, 2048, tic tac toe and puzzles.',
+      'Social: when a friend is looking for a game you can join. When they are in a match the button says Spectate, and spectators see the moves live. You can also edit your private messages (a small "edited" shows, and stays "edited" after a second edit), delete them, and report them. Pings show in blue and @ autocompletes names.',
+      'Fair play: like chess.com, we check for leaving the tab, very slow moves and playing far above your usual level. One signal alone never flags you. Flagged games go to staff review, nobody is banned automatically.',
+      'Ranks: Vanguard, Elite and Champion get more coins (x1.25, x1.5, x2), a little extra XP, and bigger worlds (24, 32, 48 players). Elite and Champion can play every bot. Vanguard opens 5 bots in each level.',
+      'New overworld music. The anti-cheat no longer flags normal play like flying in the sidebar. A softer, warmer look for the default dark theme.',
+    ],
+  },
   {
     version: 36.1,
     date: 'October 25, 2026',

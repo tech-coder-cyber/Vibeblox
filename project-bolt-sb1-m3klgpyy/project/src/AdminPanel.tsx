@@ -9,10 +9,11 @@ import AccountPanel from './AccountPanel';
 import { ShieldCheck, Megaphone, Gavel, UserX, Ban, X, Loader2, Undo2, Crown, Sun, Moon, ShieldAlert, Tv, UserPlus } from 'lucide-react';
 import {
   postAnnouncement, banEverywhere, unbanEverywhere, listBans, getLastAnnouncement, setLastAnnouncement, isOwnerName, giveRank, rankInfo, rankPending, RANKS, RANK_LABELS, ANNOUNCE_MAX, USERNAME_RE,
-  listAdmins, setAdmin, listCheatReports, dismissCheatReports, clearCheatReports, listStaff, setStaffRank, STAFF_RANKS, STAFF_LABELS, listSpecial, setSpecialRank, setOgRank,
+  listAdmins, setAdmin, listMessageReports, dismissMessageReport, type MessageReport, listCheatReports, dismissCheatReports, clearCheatReports, listStaff, setStaffRank, STAFF_RANKS, STAFF_LABELS, listSpecial, setSpecialRank, setOgRank,
   ADMIN_PERMS, ADMIN_PERM_LABELS, ADMIN_PERM_HELP, type AdminPerm, type AdminRow, type SpecialRow, type StaffRank, type StaffRow, type Account, type Ban as BanRow, type RankName, type CheatReport,
 } from './social';
 import { adStatus } from './adEconomy';
+import { adminFairplay, adminResolveFairplay, type FairplayRow } from './minigames/api';
 import { useTheme, setTheme } from './layout';
 
 export type PanelPlayer = { id: number; name: string; mode: string };
@@ -59,6 +60,8 @@ const SECTIONS: Section[] = [
   { id: 'players', label: 'Players', staffOk: true, render: (c) => <PlayersSection {...c} /> },
   { id: 'bans', label: 'Bans', perm: 'bans', render: (c) => <BansSection {...c} /> },
   { id: 'anticheat', label: 'Anti-cheat', perm: 'anticheat', render: (c) => <AntiCheatSection {...c} /> },
+  { id: 'fairplay', label: 'Fair play', perm: 'anticheat', render: (c) => <FairplaySection {...c} /> },
+  { id: 'reports', label: 'Reports', perm: 'bans', render: (c) => <MessageReportsSection {...c} /> },
   { id: 'ranks', label: 'Ranks', perm: 'ranks', render: (c) => <RanksSection {...c} /> },
   { id: 'admins', label: 'Admins', ownerOnly: true, render: (c) => <AdminsSection {...c} /> },
   { id: 'ads', label: 'Ads', render: () => <AdsSection /> },
@@ -257,6 +260,92 @@ function BansSection({ account, online, players, onBan, say }: Ctx) {
                 {(b.reason || b.by) && <div className="text-[11px] text-[#5a6b80] truncate">{b.reason}{b.reason && b.by ? ' · ' : ''}{b.by && `by ${b.by}`}</div>}
               </div>
               <button onClick={() => unban(b.username)} className={`${ui.btn} inline-flex items-center gap-1 border border-[#243044] text-[#8ea0b8] hover:text-white`}><Undo2 className="w-3 h-3" />Unban</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------- Fair play in online chess and checkers ----------------
+function FairplaySection({ say }: Ctx) {
+  const [rows, setRows] = useState<FairplayRow[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [days, setDays] = useState(7);
+  const load = async () => {
+    const r = await adminFairplay('open');
+    if (r.ok) { setRows(r.value); setError(null); } else { setRows([]); setError(r.error); }
+  };
+  useEffect(() => { void load(); }, []);
+  const resolve = async (row: FairplayRow, action: 'clear' | 'confirm') => {
+    setRows((prev) => (prev ?? []).filter((x) => x.id !== row.id));
+    const r = await adminResolveFairplay(row.id, action, days);
+    if (!r.ok) { say(false, r.error); void load(); } else say(true, action === 'clear' ? `Cleared ${row.target}.` : `${row.target} can't play rated games for ${days} days.`);
+  };
+  return (
+    <div className={ui.section} data-testid="admin-fairplay">
+      <div className={ui.h2}><ShieldCheck className="w-5 h-5 text-[#00e676]" />Fair play: online chess and checkers</div>
+      <p className="text-[#5a6b80] text-xs mb-3">Games where the opponent's computer thought a player's play looked unusual. A flag is a reason to look, not proof. Look at the signals and the game before you confirm. Nothing happens to a player unless a person confirms it here.</p>
+      <div className="flex items-center gap-2 mb-3 text-xs text-[#8ea0b8]">If confirmed, pause rated games for
+        <select value={days} onChange={(e) => setDays(Number(e.target.value))} className={ui.input + ' !py-1 !px-2 w-auto'} data-testid="fp-days">{[1, 3, 7, 14, 30].map((d) => <option key={d} value={d}>{d} day{d === 1 ? '' : 's'}</option>)}</select></div>
+      {error && <p className="text-[#ff9a3c] text-xs mb-2">{error}</p>}
+      {rows === null ? <p className={ui.muted}>Loading…</p> : !rows.length ? <p className={ui.muted} data-testid="fp-empty">Nothing to look at.</p> : (
+        <div className="space-y-2 max-h-[460px] overflow-y-auto vb-scroll">
+          {rows.map((r) => (
+            <div key={r.id} className="bg-[#121822] rounded-xl px-3 py-2.5" data-testid="fp-row">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-white font-semibold">{r.target}</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#243044] text-[#8ea0b8]">{r.game}</span>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${r.level === 'review' ? 'bg-[#ff5252]/20 text-[#ff8a8a]' : 'bg-[#ffb02e]/20 text-[#ffc65c]'}`}>{r.level} · {r.score}/100</span>
+                {r.previous > 0 && <span className="text-[10px] text-[#ff9a3c]">{r.previous} earlier flag{r.previous === 1 ? '' : 's'}</span>}
+                <span className="flex-1" />
+                <button onClick={() => resolve(r, 'clear')} data-testid="fp-clear" className={`${ui.btn} bg-[#243044] text-[#8ea0b8] hover:text-white`}>Looks fine</button>
+                <button onClick={() => resolve(r, 'confirm')} data-testid="fp-confirm" className={`${ui.btn} bg-[#ff5252]/15 text-[#ff7a7a] hover:bg-[#ff5252]/25`}>Confirm</button>
+              </div>
+              <ul className="mt-1.5 text-xs text-[#8ea0b8] list-disc pl-5 space-y-0.5">{r.signals.map((s, i) => <li key={i}>{s.text}</li>)}</ul>
+              <div className="text-[10px] text-[#5a6b80] mt-1">Reported by {r.reporter} · {new Date(r.at).toLocaleString()} · game {r.gameId.slice(0, 8)}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------- Reported private messages ----------------
+function MessageReportsSection({ account, say }: Ctx) {
+  const [reports, setReports] = useState<MessageReport[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  async function refresh() {
+    const r = await listMessageReports();
+    if (r.ok) { setReports(r.reports); setError(null); } else { setReports([]); setError(r.error); }
+  }
+  useEffect(() => { void refresh(); }, []);
+  async function dismiss(id: number) {
+    setReports((prev) => (prev ?? []).filter((x) => x.id !== id));
+    const r = await dismissMessageReport(id);
+    if (!r.ok) { say(false, r.error); void refresh(); }
+  }
+  async function ban(name: string) {
+    const r = await banEverywhere(account, name, 'Reported message');
+    say(r.ok, r.ok ? `${name} is banned from every world.` : r.error);
+  }
+  return (
+    <div className={ui.section} data-testid="admin-reports">
+      <div className={ui.h2}><ShieldAlert className="w-5 h-5 text-[#ff6b6b]" />Reported messages</div>
+      <p className="text-[#5a6b80] text-xs mb-3">Private messages that players reported. A copy is kept even if the sender deletes the message.</p>
+      {error && <p className="text-[#ff9a3c] text-xs mb-2">{error}</p>}
+      {reports === null ? <p className={ui.muted}>Loading…</p> : !reports.length ? <p className={ui.muted} data-testid="mr-empty">No reports.</p> : (
+        <div className="space-y-1.5 max-h-[420px] overflow-y-auto vb-scroll">
+          {reports.map((r) => (
+            <div key={r.id} className={ui.row} data-testid="mr-report">
+              <div className="flex-1 min-w-0 text-xs">
+                <div><span className="text-white font-semibold">{r.reported}</span> <span className="text-[#8ea0b8]">said:</span> <span className="text-[#ffd0d0] break-words">"{r.body}"</span></div>
+                <div className="text-[10px] text-[#5a6b80]">{r.reason || 'No reason'} · reported by {r.reporter} · {new Date(r.at).toLocaleString()}</div>
+              </div>
+              {!isOwnerName(r.reported) && <button onClick={() => ban(r.reported)} className={`${ui.btn} bg-[#ff5252]/15 text-[#ff7a7a] hover:bg-[#ff5252]/25`}>Ban</button>}
+              <button onClick={() => dismiss(r.id)} data-testid="mr-dismiss" className={`${ui.btn} bg-[#243044] text-[#8ea0b8] hover:text-white`}>Dismiss</button>
             </div>
           ))}
         </div>

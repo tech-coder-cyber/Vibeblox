@@ -31,7 +31,11 @@ export const PLAYLISTS: Record<FileStyle, Song[]> = {
     { id: 'song5', title: 'Phonk Aura', artist: 'MondaMusic' },
   ],
   classical: numbered(4),
-  overworld: numbered(3),
+  overworld: [
+    { id: 'song1', title: 'Rain in the Overworld', artist: 'ThatLofiShow' },
+    { id: 'song2', title: 'Ambient Dreamscape', artist: 'Morgan' },
+    { id: 'song3', title: 'Ambient Calm', artist: 'QuietPhase' },
+  ],
 };
 export const isFileStyle = (s: string): s is FileStyle => s in PLAYLISTS;
 export const songLabel = (s: Song) => (s.artist ? `${s.title} · ${s.artist}` : s.title);

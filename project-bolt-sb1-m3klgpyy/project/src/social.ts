@@ -66,6 +66,8 @@ async function rest(method: string, path: string, body?: unknown, extra: Record<
   }
 }
 const fail = (error: string): { ok: false; error: string } => ({ ok: false, error });
+/** The minigames module uses the same signed-in REST helper (it lives in minigames/api.ts). */
+export { rest as socialRest, config as socialConfig };
 
 // ---------------- Who is playing what (anyone, signed in or not) ----------------
 export type Activity = 'survival' | 'creative' | 'superflat' | 'oneblock' | 'eggwars' | 'bridge' | 'other';
@@ -413,6 +415,8 @@ export function agoText(iso: string | undefined | null, now = Date.now()): strin
 }
 /** The line under a friend's name: where they play, "Online", or when they were last online. */
 export function lastOnlineLine(f: { online: boolean; lastSeen?: string; server?: string; worldName?: string }, now = Date.now()): string {
+  if (f.server?.startsWith('mgq:')) return `Looking for a ${f.server.slice(4)} game`;
+  if (f.server?.startsWith('mg:')) return `Playing ${f.server.split(':')[1]}`;
   if (f.server) return f.worldName ? `Playing ${f.worldName}` : 'Playing online';
   if (f.online) return 'Online';
   const ago = agoText(f.lastSeen, now);
@@ -545,9 +549,19 @@ export async function unfriendByName(me: Account, name: string): Promise<Result<
 }
 
 // ---------------- Private messages ----------------
-export type DM = { id: number; from: string; to: string; text: string; at: string };
-type DMRow = { id: number; sender: string; recipient: string; body: string; created_at: string };
-const toDM = (r: DMRow): DM => ({ id: r.id, from: r.sender, to: r.recipient, text: filterProfanity(r.body), at: r.created_at });
+export type DM = { id: number; from: string; to: string; text: string; at: string; /** the sender changed it after sending (shows a small "edited") */ edited?: boolean };
+type DMRow = { id: number; sender: string; recipient: string; body: string; created_at: string; edited_at?: string | null };
+const toDM = (r: DMRow): DM => ({ id: r.id, from: r.sender, to: r.recipient, text: filterProfanity(r.body), at: r.created_at, ...(r.edited_at ? { edited: true } : {}) });
+/** Until vibeblox_indev37.sql is run the column does not exist; the first failed read turns it off so messages keep working. */
+let dmEditCol = true;
+const dmCols = () => (dmEditCol ? 'id,sender,recipient,body,created_at,edited_at' : 'id,sender,recipient,body,created_at');
+async function dmGet(path: (cols: string) => string) {
+  let r = await rest('GET', path(dmCols()));
+  if (!r.ok && dmEditCol && /edited_at|column/i.test(r.error)) { dmEditCol = false; r = await rest('GET', path(dmCols())); }
+  return r;
+}
+const NEEDS_37 = 'Run vibeblox_indev37.sql in Supabase to edit, delete and report messages';
+const rpcMissing = (r: { error: string; status: number }) => r.status === 404 || /function|schema cache|not find/i.test(r.error);
 export const DM_MAX = 300;
 
 export async function sendDM(me: Account, friendId: string, text: string): Promise<Result<{ dm: DM }>> {
@@ -557,15 +571,50 @@ export async function sendDM(me: Account, friendId: string, text: string): Promi
   if (!r.ok) return r.status === 403 ? fail('You can only message your friends') : fail(r.error);
   return { ok: true, dm: toDM((r.data as DMRow[])[0]) };
 }
+/** Change one of your own messages. A second edit just keeps it marked "edited" (never "edited x2"). */
+export async function editDM(id: number, text: string): Promise<Result<{ text: string }>> {
+  const body = filterProfanity(text.trim().slice(0, DM_MAX));
+  if (!body) return fail('A message cannot be empty. Delete it instead');
+  const r = await rest('POST', 'rpc/edit_dm', { p_id: id, p_body: body });
+  if (!r.ok) return fail(rpcMissing(r) ? NEEDS_37 : r.error);
+  return { ok: true, text: body };
+}
+/** Delete one of your own messages (for both of you). */
+export async function deleteDM(id: number): Promise<Result> {
+  const r = await rest('POST', 'rpc/delete_dm', { p_id: id });
+  if (!r.ok) return fail(rpcMissing(r) ? NEEDS_37 : r.error);
+  return { ok: true };
+}
+export const REPORT_REASONS = ['Harassment or bullying', 'Spam or scam', 'Hate speech', 'Inappropriate content', 'Something else'] as const;
+/** Report a message someone sent you. A copy of the message goes to the moderators (so it still counts if it is deleted later). */
+export async function reportDM(id: number, reason: string): Promise<Result> {
+  const r = await rest('POST', 'rpc/report_dm', { p_id: id, p_reason: reason.slice(0, 200) });
+  if (!r.ok) return fail(rpcMissing(r) ? NEEDS_37 : r.error);
+  return { ok: true };
+}
+export type MessageReport = { id: number; reporter: string; reported: string; body: string; reason: string; at: string };
+/** Admins: the reported messages. */
+export async function listMessageReports(): Promise<Result<{ reports: MessageReport[] }>> {
+  const r = await rest('POST', 'rpc/list_message_reports', {});
+  if (!r.ok) return fail(rpcMissing(r) ? NEEDS_37 : r.error);
+  return { ok: true, reports: (r.data as MessageReport[]) ?? [] };
+}
+export async function dismissMessageReport(id: number): Promise<Result> {
+  const r = await rest('POST', 'rpc/dismiss_message_report', { p_id: id });
+  return r.ok ? { ok: true } : fail(rpcMissing(r) ? NEEDS_37 : r.error);
+}
+/** The names written as @name in a message (case kept as typed). */
+export const MENTION_RE = /@([A-Za-z0-9_]{3,16})/g;
+
 /** The conversation with one friend, oldest first. */
 export async function loadConversation(me: string, friendId: string, limit = 60): Promise<Result<{ messages: DM[] }>> {
-  const r = await rest('GET', `direct_messages?select=id,sender,recipient,body,created_at&or=(and(sender.eq.${me},recipient.eq.${friendId}),and(sender.eq.${friendId},recipient.eq.${me}))&order=id.desc&limit=${limit}`);
+  const r = await dmGet((cols) => `direct_messages?select=${cols}&or=(and(sender.eq.${me},recipient.eq.${friendId}),and(sender.eq.${friendId},recipient.eq.${me}))&order=id.desc&limit=${limit}`);
   if (!r.ok) return fail(r.error);
   return { ok: true, messages: (r.data as DMRow[]).map(toDM).reverse() };
 }
 /** Messages sent to you after `afterId` (for notifications and unread counts). */
 export async function loadNewMessages(me: string, afterId: number): Promise<Result<{ messages: DM[] }>> {
-  const r = await rest('GET', `direct_messages?select=id,sender,recipient,body,created_at&recipient=eq.${me}&id=gt.${Math.max(0, afterId)}&order=id.asc&limit=100`);
+  const r = await dmGet((cols) => `direct_messages?select=${cols}&recipient=eq.${me}&id=gt.${Math.max(0, afterId)}&order=id.asc&limit=100`);
   if (!r.ok) return fail(r.error);
   return { ok: true, messages: (r.data as DMRow[]).map(toDM) };
 }

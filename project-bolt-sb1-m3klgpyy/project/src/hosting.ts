@@ -658,9 +658,9 @@ export class HostRoom {
         p.x = msg.x as number; p.y = msg.y as number; p.z = msg.z as number; p.yaw = msg.yaw as number; p.pitch = msg.pitch as number;
         p.mode = typeof msg.mode === 'string' ? msg.mode.slice(0, 12) : 'survival';
         p.held = int(msg.held) && msg.held >= 0 && msg.held < 4000 ? msg.held : 0;
-        p.act = int(msg.act) ? msg.act & 511 : 0; // (64: swimming, 128: gliding with an elytra, 256: burning)
+        p.act = int(msg.act) ? msg.act & 2047 : 0; // (1024: in another dimension, the host cannot see what is under them) (64: swimming, 128: gliding with an elytra, 256: burning, 512: launched by a wind charge or floating with slow falling)
         p.moved = true;
-        if (!p.conn.local && !this.exemptFromAntiCheat(p)) this.anticheat.onMove(p.id, p.name, p.x, p.y, p.z, p.mode, (p.act & 128) !== 0);
+        if (!p.conn.local && !this.exemptFromAntiCheat(p)) this.anticheat.onMove(p.id, p.name, p.x, p.y, p.z, p.mode, (p.act & (128 | 512 | 1024)) !== 0);
         return;
       case 'look': {
         const ok = (v: unknown): v is string => typeof v === 'string' && /^[a-z0-9_]{1,24}$/.test(v);

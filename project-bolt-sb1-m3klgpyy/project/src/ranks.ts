@@ -54,7 +54,21 @@ const TIER_ORDER: CreatorTier[] = ['none', 'rising', 'popular', 'star'];
 export const tierAtLeast = (t: CreatorTier, min: CreatorTier) => TIER_ORDER.indexOf(t) >= TIER_ORDER.indexOf(min);
 /** How many players can be in your world at once (bigger for bigger creators). */
 export const PLAYER_CAP: Record<CreatorTier, number> = { none: 18, rising: 24, popular: 32, star: 48 };
-export const playerCap = (tier: CreatorTier | boolean) => PLAYER_CAP[tier === true ? 'rising' : tier === false ? 'none' : tier];
+/** A paid rank also raises the cap on your own world: Vanguard 24, Elite 32, Champion 48 (whichever is bigger, creator tier or rank, counts). */
+export const RANK_PLAYER_CAP: Record<RankId, number> = { none: 0, vanguard: 24, elite: 32, champion: 48 };
+export const playerCap = (tier: CreatorTier | boolean, rank: RankId | string = 'none') =>
+  Math.max(PLAYER_CAP[tier === true ? 'rising' : tier === false ? 'none' : tier], RANK_PLAYER_CAP[rank as RankId] ?? 0);
+/** More coins from every source (levels, ads, the hourly claim, the daily reward) and a little extra XP. */
+export const COIN_MULTIPLIER: Record<RankId, number> = { none: 1, vanguard: 1.25, elite: 1.5, champion: 2 };
+export const XP_MULTIPLIER: Record<RankId, number> = { none: 1, vanguard: 1.1, elite: 1.25, champion: 1.5 };
+export const coinMultiplier = (rank: RankId | string | undefined | null): number => COIN_MULTIPLIER[(rank as RankId) ?? 'none'] ?? 1;
+export const xpMultiplier = (rank: RankId | string | undefined | null): number => XP_MULTIPLIER[(rank as RankId) ?? 'none'] ?? 1;
+/** Everything the ranks give, for the shop and rank pages. */
+export const RANK_PERKS: Record<Exclude<RankId, 'none'>, string[]> = {
+  vanguard: ['x1.25 coins', '+10% XP', 'Worlds for 24 players', '8 planets', 'No ads', '40 AI questions a day'],
+  elite: ['x1.5 coins', '+25% XP', 'Worlds for 32 players', '10 planets', 'All chess and checkers bots', '100 AI questions a day'],
+  champion: ['x2 coins', '+50% XP', 'Worlds for 48 players', '15 planets', 'All chess and checkers bots', 'Unlimited AI questions', 'Your own skin and cape'],
+};
 
 /** The tags shown in front of a name for the things the game itself knows (owner, staff, paid rank, creator tier). */
 export const OWNER_TAG = '\\crimson\\\\bold\\[OWNER]\\reset\\';
