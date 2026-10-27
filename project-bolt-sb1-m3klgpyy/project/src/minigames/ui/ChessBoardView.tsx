@@ -1,9 +1,9 @@
-// A chess board wired to a Game: pick a piece, see where it can go, move by click or drag, choose a promotion.
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+// A chess board wired to a Game: pick a piece, see where it can go, move by click or drag, queue a premove, choose a promotion.
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Game, Position, moveFrom, moveTo, movePromo, moveFlags, F_CAPTURE, F_EP, K, sqName, parseSq } from '../chess/rules';
 import Board, { type Arrow, type Fx } from './Board';
 import { PieceSvg } from './pieces';
-import { BOARD_THEMES, type Prefs } from '../store';
+import { BOARD_THEMES, type BoardTheme, type Celebration, type Prefs } from '../store';
 
 export function positionAt(game: Game, ply: number | null): Position {
   if (ply === null || ply >= game.plies.length) return game.pos;
@@ -13,6 +13,21 @@ export function kingSquare(pos: Position, color: 0 | 1): number {
   const want = color === 0 ? K : -K;
   for (let i = 0; i < 64; i++) if (pos.board[i] === want) return i;
   return -1;
+}
+/** The squares a piece could reach if it were its side's turn, ignoring checks and pins (for queuing a premove). */
+export function premoveTargets(pos: Position, from: number): number[] {
+  const p = pos.board[from];
+  if (!p) return [];
+  const color = p > 0 ? 0 : 1;
+  let q = pos;
+  if (pos.turn !== color) {
+    const parts = pos.toFen().split(' ');
+    parts[1] = color === 0 ? 'w' : 'b'; parts[3] = '-';
+    try { q = Position.fromFen(parts.join(' ')); } catch { return []; }
+  }
+  const out = new Set<number>();
+  for (const m of q.pseudoMoves([])) if (moveFrom(m) === from) out.add(moveTo(m));
+  return [...out];
 }
 
 export type ChessBoardViewProps = {
@@ -27,26 +42,53 @@ export type ChessBoardViewProps = {
   arrows?: Arrow[];
   squareColors?: Record<number, string>;
   fx?: Fx;
+  /** turn premoves off for this board (puzzles, analysis) */ noPremove?: boolean;
+  /** show another board colour than the player's own (bot themes) */ theme?: BoardTheme;
+  celebrate?: { id: number; kind: Celebration } | null;
+  fallSq?: number | null;
   children?: ReactNode;
 };
 
 export default function ChessBoardView(p: ChessBoardViewProps) {
   const [sel, setSel] = useState<number | null>(null);
   const [promo, setPromo] = useState<{ from: number; to: number } | null>(null);
+  const [pre, setPre] = useState<{ from: number; to: number } | null>(null);
   const reviewing = p.viewPly !== null && p.viewPly < p.game.plies.length;
   const pos = useMemo(() => positionAt(p.game, reviewing ? p.viewPly : null), [p.game, p.version, p.viewPly, reviewing]);
+  const myTurn = p.canMove && !reviewing && p.myColor !== null && !p.game.over && pos.turn === p.myColor;
   const interactive = p.canMove && !reviewing && p.myColor !== null && !p.game.over;
+  const canPremove = !!p.prefs.premoves && !p.noPremove && p.myColor !== null && !p.game.over && !reviewing && pos.turn !== p.myColor;
+  const mode = p.prefs.moveInput;
 
   useEffect(() => { setSel(null); setPromo(null); }, [p.version, p.viewPly]);
+  useEffect(() => { if (p.game.over || !p.prefs.premoves) setPre(null); }, [p.game.over, p.prefs.premoves, p.version]);
+
+  // a queued move is played as soon as it is our turn, if it is still legal
+  const preRef = useRef(pre); preRef.current = pre;
+  useEffect(() => {
+    if (!myTurn || !preRef.current) return;
+    const { from, to } = preRef.current;
+    setPre(null);
+    const cands = pos.movesFrom(from).filter((m) => moveTo(m) === to);
+    if (!cands.length) return;
+    const uci = sqName(from) + sqName(to) + (cands.some((m) => movePromo(m)) ? 'q' : '');
+    const id = window.setTimeout(() => p.onUserMove(uci), 70);
+    return () => window.clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myTurn, p.version]);
 
   const pieces = useMemo(() => { const out: Array<{ sq: number; v: number }> = []; for (let i = 0; i < 64; i++) if (pos.board[i]) out.push({ sq: i, v: pos.board[i] }); return out; }, [pos, p.version]);
-  const moves = useMemo(() => (sel !== null && interactive ? pos.movesFrom(sel) : []), [sel, pos, interactive, p.version]);
-  const targets = useMemo(() => [...new Set(moves.map(moveTo))], [moves]);
-  const captures = useMemo(() => moves.filter((m) => moveFlags(m) & (F_CAPTURE | F_EP)).map(moveTo), [moves]);
+  const moves = useMemo(() => (sel !== null && interactive && myTurn ? pos.movesFrom(sel) : []), [sel, pos, interactive, myTurn, p.version]);
+  const preTargets = useMemo(() => (sel !== null && canPremove ? premoveTargets(pos, sel) : []), [sel, pos, canPremove, p.version]);
+  const targets = useMemo(() => (canPremove ? preTargets : [...new Set(moves.map(moveTo))]), [canPremove, preTargets, moves]);
+  const captures = useMemo(() => (canPremove ? preTargets.filter((t) => pos.board[t] !== 0) : moves.filter((m) => moveFlags(m) & (F_CAPTURE | F_EP)).map(moveTo)), [canPremove, preTargets, moves, pos]);
   const lastIdx = (reviewing ? p.viewPly! : p.game.plies.length) - 1;
   const last = lastIdx >= 0 ? p.game.plies[lastIdx]?.move : undefined;
   const lastMove: [number, number] | null = last ? [moveFrom(last), moveTo(last)] : null;
   const check = pos.inCheck() ? kingSquare(pos, pos.turn as 0 | 1) : null;
+
+  const own = (sq: number) => { const v = pos.board[sq]; return v !== 0 && (v > 0 ? 0 : 1) === p.myColor; };
+  const mine = (sq: number) => own(sq) && pos.turn === p.myColor;
 
   const tryMove = (from: number, to: number) => {
     const cands = pos.movesFrom(from).filter((m) => moveTo(m) === to);
@@ -57,24 +99,38 @@ export default function ChessBoardView(p: ChessBoardViewProps) {
     setSel(null);
     return true;
   };
-  const mine = (sq: number) => { const v = pos.board[sq]; return v !== 0 && (v > 0 ? 0 : 1) === p.myColor && pos.turn === p.myColor; };
-  const onSquare = (sq: number) => {
-    if (!interactive) return;
-    if (sel !== null && sel !== sq && tryMove(sel, sq)) return;
-    setSel(mine(sq) && sel !== sq ? sq : null);
+  const tryPremove = (from: number, to: number) => {
+    if (!premoveTargets(pos, from).includes(to)) return false;
+    setPre({ from, to }); setSel(null);
+    return true;
   };
-  const onMove = (from: number, to: number) => { if (interactive && mine(from)) tryMove(from, to); };
+  const onSquare = (sq: number) => {
+    if (interactive && myTurn) {
+      if (sel !== null && sel !== sq && tryMove(sel, sq)) return;
+      setSel(mine(sq) && sel !== sq ? sq : null);
+    } else if (canPremove) {
+      if (sel !== null && sel !== sq && tryPremove(sel, sq)) return;
+      if (own(sq) && sel !== sq) setSel(sq); else { setSel(null); setPre(null); }
+    }
+  };
+  const onPick = (sq: number | null) => { if (sq === null) { setSel(null); return; } setSel(myTurn ? (mine(sq) ? sq : null) : canPremove && own(sq) ? sq : null); };
+  const onMove = (from: number, to: number) => {
+    if (interactive && myTurn && mine(from)) tryMove(from, to);
+    else if (canPremove && own(from)) tryPremove(from, to);
+  };
 
   return (
-    <Board kind="chess" pieces={pieces} orientation={p.orientation} theme={p.prefs.boardTheme} set={p.prefs.pieceSet} coords={p.prefs.coords}
+    <Board kind="chess" pieces={pieces} orientation={p.orientation} theme={p.theme ?? p.prefs.boardTheme} set={p.prefs.pieceSet} coords={p.prefs.coords}
       lastMove={p.prefs.highlightLast ? lastMove : null} selected={sel} targets={targets} captureTargets={captures} checkSq={check}
-      hint={p.hint} arrows={p.arrows} squareColors={p.squareColors} interactive={interactive} canDrag={mine} onSquare={onSquare} onMove={onMove}
-      clearKey={p.version} fx={p.fx} animate={p.prefs.animate && !reviewing} showLegalDots={p.prefs.legalDots} label="Chess board">
+      hint={p.hint} arrows={p.arrows} squareColors={p.squareColors} interactive={(interactive && myTurn) || canPremove} canDrag={(sq) => (myTurn ? mine(sq) : canPremove ? own(sq) : false)}
+      onSquare={onSquare} onPick={onPick} onMove={onMove} inputMode={mode} premove={pre} onCancelPremove={() => setPre(null)}
+      clearKey={p.version} fx={p.fx} animate={p.prefs.animate && !reviewing} animSpeed={p.prefs.animSpeed} showLegalDots={p.prefs.legalDots} label="Chess board"
+      celebrate={p.prefs.resultAnims ? p.celebrate : null} fallSq={p.prefs.resultAnims ? p.fallSq : null}>
       {promo && (
         <div className="absolute inset-0 z-20 flex items-center justify-center" style={{ background: 'rgba(10,12,16,.55)' }} data-testid="promo">
           <div className="mg-card p-3 flex gap-2">
             {[5, 4, 3, 2].map((t) => (
-              <button key={t} className="w-16 h-16 rounded-lg p-1.5 hover:brightness-125" style={{ background: BOARD_THEMES[p.prefs.boardTheme].dark }} data-testid={`promo-${'  nbrq'[t]}`}
+              <button key={t} className="w-16 h-16 rounded-lg p-1.5 hover:brightness-125" style={{ background: BOARD_THEMES[p.theme ?? p.prefs.boardTheme].dark }} data-testid={`promo-${'  nbrq'[t]}`}
                 onClick={() => { p.onUserMove(sqName(promo.from) + sqName(promo.to) + 'nbrq'[t - 2]); setPromo(null); setSel(null); }}>
                 <PieceSvg set={p.prefs.pieceSet} type={t} white={p.myColor === 0} id={'pr' + t} />
               </button>

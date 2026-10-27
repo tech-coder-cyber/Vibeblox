@@ -2,7 +2,7 @@
 import { handle, type EngineRequest, type EngineReply } from './engineCore';
 import type { AnalysisEngine } from './chess/analysis';
 import { Position } from './chess/rules';
-import { startStockfish, stockfishAvailable } from './chess/uci';
+import { startStockfish, stockfishAvailable, ELO_MIN_SF, type PlayEngine } from './chess/uci';
 
 type Pending = { res: (r: EngineReply) => void; rej: (e: unknown) => void };
 class Client {
@@ -46,7 +46,7 @@ class Client {
 }
 const client = new Client();
 export const engine = {
-  chessBot: async (botId: string, startFen: string, moves: string[]) => (await client.call({ type: 'chessBot', botId, startFen, moves })) as Extract<EngineReply, { type: 'chessBot' }>,
+  chessBot: async (botId: string, startFen: string, moves: string[], elo?: number) => (await client.call({ type: 'chessBot', botId, startFen, moves, elo })) as Extract<EngineReply, { type: 'chessBot' }>,
   checkersBot: async (botId: string, moves: string[]) => (await client.call({ type: 'checkersBot', botId, moves })) as Extract<EngineReply, { type: 'checkersBot' }>,
   checkersHint: async (moves: string[], depth = 8, timeMs = 800) => (await client.call({ type: 'checkersHint', moves, depth, timeMs })) as Extract<EngineReply, { type: 'checkersHint' }>,
   newGame: async () => { await client.call({ type: 'newGame' }); },
@@ -58,7 +58,7 @@ export const builtinAnalysis: AnalysisEngine = {
     return r.lines;
   },
 };
-let sf: (AnalysisEngine & { ready: Promise<void> }) | null = null;
+let sf: PlayEngine | null = null;
 let sfChecked: boolean | null = null;
 /** True when Stockfish files were put in public/engines/stockfish/. */
 export async function hasStockfish(): Promise<boolean> { if (sfChecked === null) sfChecked = await stockfishAvailable(); return sfChecked; }
@@ -68,5 +68,10 @@ export async function analysisEngine(choice: 'builtin' | 'stockfish'): Promise<A
     try { if (!sf) { sf = startStockfish(); } await sf.ready; return sf; } catch { sf = null; }
   }
   return builtinAnalysis;
+}
+/** A move (uci) from Stockfish at the given rating, or null when it is unavailable or the rating is below its range (use the built-in bot then). */
+export async function stockfishMove(fen: string, elo: number): Promise<string | null> {
+  if (elo < ELO_MIN_SF || !(await hasStockfish())) return null;
+  try { if (!sf) sf = startStockfish(); await sf.ready; return await sf.play(fen, elo); } catch { sf = null; sfChecked = false; return null; }
 }
 void Position;

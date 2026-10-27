@@ -1,3 +1,4 @@
+import { namedOpening, inBook as namedInBook } from './openingBook';
 // Openings: used by the Learn page (annotated lines you can play through and practice) and by the bots (their opening books).
 // Every line is checked by the tests, so a typo in a move cannot slip in.
 
@@ -202,5 +203,12 @@ export function openingName(sanMoves: string[]): string | null {
     while (n < line.length && n < mine.length && strip(line[n]) === mine[n]) n++;
     if (n >= Math.min(4, line.length) && (!best || n > best.n)) best = { name: o.name, n };
   }
-  return best?.name ?? null;
+  return namedOpening(sanMoves) ?? best?.name ?? null;
+}
+/** Is the game still inside a known opening line (so its last move is a book move)? */
+export function inBook(sanMoves: string[]): boolean {
+  if (namedInBook(sanMoves)) return true;
+  const strip = (s: string) => s.replace(/[+#]/g, '');
+  const mine = sanMoves.map(strip);
+  return [...OPENINGS.map((o) => o.line.split(' ')), ...EXTRA_LINES.map((l) => l.split(' '))].some((line) => line.length >= mine.length && mine.every((m, i) => strip(line[i]) === m));
 }

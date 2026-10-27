@@ -2,6 +2,8 @@
 import { Position, Game } from './rules';
 import { MATE, type SearchLine } from './engine';
 import type { MoveRecord } from '../fairplay';
+import { inBook } from './openings';
+import { PIECE_VALUES } from './rules';
 
 /** Anything that can score a position: the built-in engine or Stockfish. Scores are from the side to move. */
 export interface AnalysisEngine {
@@ -14,9 +16,9 @@ export interface AnalysisEngine {
   dispose?(): void;
 }
 
-export type MoveClass = 'book' | 'best' | 'excellent' | 'good' | 'inaccuracy' | 'mistake' | 'blunder';
-export const CLASS_LABEL: Record<MoveClass, string> = { book: 'Book', best: 'Best', excellent: 'Excellent', good: 'Good', inaccuracy: 'Inaccuracy', mistake: 'Mistake', blunder: 'Blunder' };
-export const CLASS_SYMBOL: Record<MoveClass, string> = { book: '', best: '★', excellent: '!', good: '', inaccuracy: '?!', mistake: '?', blunder: '??' };
+export type MoveClass = 'brilliant' | 'great' | 'book' | 'best' | 'excellent' | 'good' | 'inaccuracy' | 'mistake' | 'blunder';
+export const CLASS_LABEL: Record<MoveClass, string> = { brilliant: 'Brilliant', great: 'Great', book: 'Book', best: 'Best', excellent: 'Excellent', good: 'Good', inaccuracy: 'Inaccuracy', mistake: 'Mistake', blunder: 'Blunder' };
+export const CLASS_SYMBOL: Record<MoveClass, string> = { brilliant: '!!', great: '!', book: '📖', best: '★', excellent: '!', good: '', inaccuracy: '?!', mistake: '?', blunder: '??' };
 
 export type PlyAnalysis = {
   ply: number; // 1-based
@@ -65,6 +67,8 @@ export async function analyzeGame(game: Game, engine: AnalysisEngine, opts: Anal
   const pos = Position.fromFen(game.startFen);
   const total = game.plies.length;
   const nLines = opts.lines ?? 3;
+  const sans: string[] = [];
+  let leftBook = false;
   for (let i = 0; i < total; i++) {
     if (opts.signal?.cancelled) break;
     const played = game.plies[i].move;
@@ -89,11 +93,17 @@ export async function analyzeGame(game: Game, engine: AnalysisEngine, opts: Anal
     }
     const san = pos.san(played);
     const sorted = lines.map((l) => ({ move: l.move, san: pos.san(l.move), score: l.score }));
-    const isBook = i < (opts.bookPlies ?? 0);
+    sans.push(san);
+    const isBook = !leftBook && i < 30 && inBook(sans);
+    if (!isBook) leftBook = true;
     const wlBefore = winChance(best.score), wlAfter = winChance(playedScore);
     const winLoss = Math.max(0, wlBefore - wlAfter);
     const cpLoss = Math.max(0, Math.min(300, best.score - playedScore));
-    const cls = classify(winLoss, played === best.move, isBook);
+    let cls = classify(winLoss, played === best.move, isBook);
+    if (!isBook && winLoss < 2) {
+      const a = brilliance(pos, played, best.score, playedScore, lines);
+      if (a) cls = a;
+    }
     out.push({
       ply: i + 1, color: turn, san, move: played,
       evalBefore: toWhite(best.score, turn), evalAfter: toWhite(playedScore, turn),
@@ -108,7 +118,7 @@ export async function analyzeGame(game: Game, engine: AnalysisEngine, opts: Anal
 
 export function sideAccuracy(a: PlyAnalysis[], color: 0 | 1): number { return accuracy(a.filter((x) => x.color === color && x.cls !== 'book').map((x) => x.winLoss)); }
 export function classCounts(a: PlyAnalysis[], color: 0 | 1): Record<MoveClass, number> {
-  const c: Record<MoveClass, number> = { book: 0, best: 0, excellent: 0, good: 0, inaccuracy: 0, mistake: 0, blunder: 0 };
+  const c: Record<MoveClass, number> = { brilliant: 0, great: 0, book: 0, best: 0, excellent: 0, good: 0, inaccuracy: 0, mistake: 0, blunder: 0 };
   for (const x of a) if (x.color === color) c[x.cls]++;
   return c;
 }
@@ -131,4 +141,39 @@ export function builtinEngine(searcher: { analyze(pos: Position, n: number, o: {
     id: 'builtin', name,
     async lines(fen, n, depth, timeMs) { return searcher.analyze(Position.fromFen(fen), n, { depth, timeMs }); },
   };
+}
+
+/** "Brilliant": a good move that gives up material (a piece left hanging or traded down) in a position that was not already won.
+ *  "Great": the only move that holds or wins, when the next best choices are clearly worse. Both are given sparingly. */
+export function brilliance(pos: Position, move: number, bestScore: number, playedScore: number, lines: Array<{ move: number; score: number }>): MoveClass | null {
+  const from = move & 63, to = (move >> 6) & 63, piece = Math.abs(pos.board[from]), victim = Math.abs(pos.board[to]);
+  const me = pos.board[from] > 0 ? 0 : 1, them = (me ^ 1) as 0 | 1;
+  const before = winChance(bestScore), after = winChance(playedScore);
+  if (before > 92 || after < 40) return null; // already decided, or not good enough
+  if (piece >= 2 && piece <= 5) {
+    pos.make(move);
+    let sac = false;
+    try {
+      const hung = pos.attacked(to, them) && !pos.attacked(to, me as 0 | 1);
+      const pawnHit = piece >= 2 && pos.attacked(to, them) && lowAttacker(pos, to, them, PIECE_VALUES[piece]);
+      sac = (hung || pawnHit) && PIECE_VALUES[piece] - PIECE_VALUES[victim] >= 200;
+    } finally { pos.unmake(); }
+    if (sac && after >= before - 3) return 'brilliant';
+  }
+  if (lines.length > 1 && lines[0].move === move) {
+    const second = winChance(lines[1].score);
+    if (before - second >= 14 && before >= 35 && before <= 90 && (victim === 0 || PIECE_VALUES[victim] < PIECE_VALUES[piece] || before - second >= 25)) return 'great';
+  }
+  return null;
+}
+/** Does a cheaper piece than `value` attack the square? (A pawn or a minor piece hitting a rook or queen, etc.) */
+function lowAttacker(pos: Position, sq: number, by: 0 | 1, value: number): boolean {
+  const f = sq & 7, r = sq >> 3, dir = by === 0 ? -1 : 1;
+  for (const df of [-1, 1]) {
+    const ff = f + df, rr = r + dir;
+    if (ff < 0 || ff > 7 || rr < 0 || rr > 7) continue;
+    const v = pos.board[rr * 8 + ff];
+    if (v === (by === 0 ? 1 : -1) && PIECE_VALUES[1] < value - 100) return true;
+  }
+  return false;
 }

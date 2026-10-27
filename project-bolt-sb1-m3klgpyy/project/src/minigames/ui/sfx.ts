@@ -25,12 +25,18 @@ function noise(dur: number, vol: number, when = 0, lowpass = 1200) {
   const g = c.createGain(); g.gain.value = vol;
   s.connect(f); f.connect(g); g.connect(c.destination); s.start(c.currentTime + when);
 }
-export type Sfx = 'move' | 'capture' | 'check' | 'end' | 'win' | 'lose' | 'slam' | 'throw' | 'tick' | 'ping';
-export function playSfx(kind: Sfx, on = true) {
+export type Sfx = 'move' | 'capture' | 'check' | 'end' | 'win' | 'lose' | 'slam' | 'throw' | 'tick' | 'ping' | 'castle' | 'promote';
+import type { SoundTheme } from '../store';
+export type { SoundTheme };
+/** Plays one sound. `theme` changes how moves, captures and checks sound. */
+export function playSfx(kind: Sfx, on = true, theme: SoundTheme = 'default') {
   if (!on) return;
+  if (theme !== 'default' && themed(kind, theme)) return;
   switch (kind) {
     case 'move': tone(210, 0.07, 'triangle', 0.16, 0, -60); noise(0.04, 0.12, 0, 2200); break;
     case 'capture': tone(160, 0.12, 'triangle', 0.22, 0, -70); noise(0.09, 0.25, 0, 1800); break;
+    case 'castle': tone(210, 0.07, 'triangle', 0.16, 0, -60); noise(0.04, 0.12, 0, 2200); tone(190, 0.08, 'triangle', 0.16, 0.1, -60); noise(0.04, 0.12, 0.1, 2200); break;
+    case 'promote': [440, 554, 659].forEach((f, i) => tone(f, 0.1, 'triangle', 0.12, i * 0.06)); break;
     case 'check': tone(620, 0.1, 'square', 0.07); tone(820, 0.12, 'square', 0.07, 0.09); break;
     case 'end': tone(330, 0.2, 'sine', 0.14); tone(247, 0.3, 'sine', 0.14, 0.18); break;
     case 'win': [523, 659, 784, 1046].forEach((f, i) => tone(f, 0.18, 'triangle', 0.14, i * 0.1)); break;
@@ -39,5 +45,32 @@ export function playSfx(kind: Sfx, on = true) {
     case 'throw': noise(0.35, 0.18, 0, 3500); tone(300, 0.3, 'sawtooth', 0.04, 0, 500); break;
     case 'tick': tone(900, 0.03, 'square', 0.04); break;
     case 'ping': tone(880, 0.1, 'sine', 0.1); tone(1320, 0.12, 'sine', 0.08, 0.08); break;
+  }
+}
+/** The sounds that change with the theme; returns true when it played one. */
+function themed(kind: Sfx, t: SoundTheme): boolean {
+  switch (t) {
+    case 'wood': // dry knocks
+      if (kind === 'move' || kind === 'castle') { noise(0.05, 0.4, 0, 900); tone(140, 0.06, 'sine', 0.22, 0, -40); return true; }
+      if (kind === 'capture') { noise(0.09, 0.55, 0, 1100); tone(110, 0.1, 'sine', 0.3, 0, -40); noise(0.05, 0.3, 0.05, 700); return true; }
+      if (kind === 'check') { noise(0.04, 0.4, 0, 1500); noise(0.04, 0.4, 0.11, 1500); return true; }
+      return false;
+    case 'bubble': // soft pops
+      if (kind === 'move' || kind === 'castle') { tone(520, 0.09, 'sine', 0.16, 0, 380); return true; }
+      if (kind === 'capture') { tone(700, 0.1, 'sine', 0.2, 0, -450); tone(300, 0.12, 'sine', 0.14, 0.05, 200); return true; }
+      if (kind === 'check') { tone(900, 0.08, 'sine', 0.12); tone(1200, 0.1, 'sine', 0.12, 0.07); return true; }
+      return false;
+    case 'retro': // 8-bit beeps
+      if (kind === 'move' || kind === 'castle') { tone(440, 0.05, 'square', 0.07); return true; }
+      if (kind === 'capture') { tone(330, 0.06, 'square', 0.09); tone(220, 0.08, 'square', 0.09, 0.06); return true; }
+      if (kind === 'check') { tone(880, 0.05, 'square', 0.07); tone(660, 0.05, 'square', 0.07, 0.06); tone(880, 0.05, 'square', 0.07, 0.12); return true; }
+      if (kind === 'win') { [392, 523, 659, 784, 1046].forEach((f, i) => tone(f, 0.09, 'square', 0.07, i * 0.07)); return true; }
+      return false;
+    case 'blocks': // blocky clunks, a nod to the game
+      if (kind === 'move' || kind === 'castle') { tone(180, 0.06, 'square', 0.1, 0, -90); noise(0.03, 0.18, 0, 1600); return true; }
+      if (kind === 'capture') { tone(130, 0.1, 'square', 0.14, 0, -70); noise(0.08, 0.3, 0, 1300); tone(90, 0.1, 'square', 0.1, 0.07, -30); return true; }
+      if (kind === 'check') { tone(300, 0.06, 'square', 0.09); tone(300, 0.06, 'square', 0.09, 0.1); return true; }
+      return false;
+    default: return false;
   }
 }

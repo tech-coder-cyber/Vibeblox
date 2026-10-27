@@ -7,7 +7,7 @@ import { Checkers, CheckersGame, type Move as CkMove } from './checkers/rules';
 import { checkersBot, chooseCheckersMove } from './checkers/bots';
 
 export type EngineRequest =
-  | { type: 'chessBot'; botId: string; startFen: string; moves: string[] }
+  | { type: 'chessBot'; botId: string; startFen: string; moves: string[]; elo?: number }
   | { type: 'lines'; fen: string; n: number; depth: number; timeMs: number }
   | { type: 'checkersBot'; botId: string; moves: string[] }
   | { type: 'checkersHint'; moves: string[]; depth: number; timeMs: number }
@@ -26,7 +26,7 @@ export function handle(req: EngineRequest): EngineReply {
     case 'newGame': chess.newGame(); checkers.newGame(); return { type: 'ok' };
     case 'chessBot': {
       const g = Game.fromMoves(req.moves, req.startFen).game;
-      const r = chooseBotMove(chessBot(req.botId), g, chess);
+      const r = chooseBotMove(chessBot(req.botId, req.elo), g, chess);
       return { type: 'chessBot', uci: r.move ? g.pos.uci(r.move) : '', score: r.score, book: r.book };
     }
     case 'lines': return { type: 'lines', lines: analysis.analyze(Position.fromFen(req.fen), req.n, { depth: req.depth, timeMs: req.timeMs }) };

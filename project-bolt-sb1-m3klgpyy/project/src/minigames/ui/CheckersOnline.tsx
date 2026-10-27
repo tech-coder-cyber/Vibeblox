@@ -14,6 +14,9 @@ export default function CheckersOnline({ gameId, me, prefs, onReview, onBack }: 
   const gameRef = useRef(new CheckersGame());
   const game = gameRef.current;
   const [mg, setMg] = useState<api.MgGame | null>(null);
+  const [badges, setBadges] = useState<Record<string, api.PlayerBadge>>({});
+  const p0Id = mg?.p0, p1Id = mg?.p1;
+  useEffect(() => { if (p0Id && p1Id) void api.playerBadges([p0Id, p1Id]).then(setBadges); }, [p0Id, p1Id]);
   const mgRef = useRef<api.MgGame | null>(null);
   const [ver, setVer] = useState(0);
   const [view, setView] = useState<number | null>(null);
@@ -25,7 +28,7 @@ export default function CheckersOnline({ gameId, me, prefs, onReview, onBack }: 
   const [draft, setDraft] = useState('');
   const clock = useRef(new MoveClock());
   const clockPly = useRef(-1), reported = useRef(false), lastClaim = useRef(0), lastSettle = useRef(0), chatAfter = useRef(0);
-  const { fx, trigger } = useBoardFx({ allowSlam: false, sound: prefs.sound });
+  const { fx, trigger } = useBoardFx({ allowSlam: false, sound: prefs.sound, soundTheme: prefs.soundTheme });
   const myColor: 0 | 1 | null = mg ? (me === mg.p0 ? 0 : me === mg.p1 ? 1 : null) : null;
   mgRef.current = mg;
 
@@ -36,7 +39,7 @@ export default function CheckersOnline({ gameId, me, prefs, onReview, onBack }: 
     for (const m of r.value) {
       if (m.ply !== game.moves.length + 1) continue;
       if (!game.play(m.mv)) { setError('The other player sent a move that is not legal. The game was stopped on your side.'); break; }
-      changed = true; playSfx(m.mv.includes('x') ? 'capture' : 'move', prefs.sound);
+      changed = true; playSfx(m.mv.includes('x') ? 'capture' : 'move', prefs.sound, prefs.soundTheme);
     }
     if (changed) { setView(null); setVer((v) => v + 1); }
   }, [gameId, game, prefs.sound]);
@@ -63,7 +66,7 @@ export default function CheckersOnline({ gameId, me, prefs, onReview, onBack }: 
       chatAfter.current = r.value[r.value.length - 1].id;
       const g = mgRef.current;
       setChat((c) => [...c, ...r.value.map((m) => ({ id: m.id, who: (m.userId === me ? 'me' : 'them') as 'me' | 'them', name: g ? (m.userId === g.p0 ? g.p0Name : g.p1Name) : '', text: m.body }))].slice(-60));
-      if (r.value.some((m) => m.userId !== me)) playSfx('ping', prefs.sound);
+      if (r.value.some((m) => m.userId !== me)) playSfx('ping', prefs.sound, prefs.soundTheme);
     }, 2000);
     return () => clearInterval(id);
   }, [gameId, me, prefs.sound]);
@@ -90,7 +93,7 @@ export default function CheckersOnline({ gameId, me, prefs, onReview, onBack }: 
     if (!game.play(m)) return;
     const text = game.moves[game.moves.length - 1].text;
     const t = clock.current.stop();
-    setView(null); setVer((v) => v + 1); playSfx(m.caps.length ? 'capture' : 'move', prefs.sound);
+    setView(null); setVer((v) => v + 1); playSfx(m.caps.length ? 'capture' : 'move', prefs.sound, prefs.soundTheme);
     const r = await api.sendMove(gameId, game.moves.length, text, t.blurMs, t.blurs);
     if (!r.ok) { game.undo(); setVer((v) => v + 1); clockPly.current = -1; setError(r.error); await refresh(); } else void refresh();
   };
@@ -111,7 +114,7 @@ export default function CheckersOnline({ gameId, me, prefs, onReview, onBack }: 
   const result = mg.result ? api.resultFor(mg, myColor ?? 0) : null;
   const delta = myColor === null ? null : myColor === 0 ? mg.p0Delta : mg.p1Delta;
   const offerFromOpp = mg.drawOffer !== null && myColor !== null && mg.drawOffer !== myColor;
-  const bar = (s: 0 | 1) => <PlayerBar name={nm(s)} rating={rt(s)} clock={api.clockText(clk(s))} active={live && mg.turn === s && mg.plies >= 2} low={live && clk(s) < 20000} sub={s === 0 ? 'Red' : 'White'} />;
+  const bar = (s: 0 | 1) => <PlayerBar name={nm(s)} badge={badges[s === 0 ? mg.p0 : mg.p1]} rating={rt(s)} clock={api.clockText(clk(s))} active={live && mg.turn === s && mg.plies >= 2} low={live && clk(s) < 20000} sub={s === 0 ? 'Red' : 'White'} />;
 
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,640px)_1fr]" data-testid="ck-online">

@@ -56,7 +56,7 @@ export default function CheckersBoardView(p: CheckersBoardProps) {
     <Board kind="checkers" pieces={pieces} orientation={p.orientation} theme={p.prefs.boardTheme} set={p.prefs.pieceSet} coords={p.prefs.coords}
       lastMove={p.prefs.highlightLast ? lastMove : null} selected={sel} targets={targets} captureTargets={captures}
       hint={p.hint} arrows={p.arrows} interactive={interactive} canDrag={mine} onSquare={onSquare} onMove={onMove}
-      clearKey={p.version} fx={p.fx} animate={p.prefs.animate && !reviewing} showLegalDots={p.prefs.legalDots} label="Checkers board">
+      clearKey={p.version} fx={p.fx} animate={p.prefs.animate && !reviewing} animSpeed={p.prefs.animSpeed} showLegalDots={p.prefs.legalDots} label="Checkers board">
       {p.children}
     </Board>
   );

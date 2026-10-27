@@ -1,19 +1,37 @@
 // Game analysis: an evaluation bar and graph, a grade for every move, accuracy, and the moments that mattered.
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Game } from '../chess/rules';
+import { Game, Position } from '../chess/rules';
 import { analyzeGame, classCounts, evalSeries, keyMoments, sideAccuracy, CLASS_LABEL, CLASS_SYMBOL, type MoveClass, type PlyAnalysis } from '../chess/analysis';
 import { barFraction, scoreText } from '../chess/engine';
 import { openingName } from '../chess/openings';
 import { analysisEngine, hasStockfish } from '../engineClient';
-import type { Prefs } from '../store';
+import { reviewKey, reviewLimit, reviewsLeft, useReview, type Prefs } from '../store';
 import ChessBoardView, { uciSquares } from './ChessBoardView';
 import { useBoardFx } from './Board';
 import { MoveList, Seg } from './kit';
 import type { ReviewRequest } from './ChessBotGame';
 
-const CLS_COLOR: Record<MoveClass, string> = { book: '#8c8f98', best: '#5cbd9d', excellent: '#7fcf8a', good: '#a9c97a', inaccuracy: '#e8c34f', mistake: '#ee9a4d', blunder: '#e8665d' };
+const CLS_COLOR: Record<MoveClass, string> = { brilliant: '#26c2a3', great: '#5b9bd5', book: '#8c8f98', best: '#5cbd9d', excellent: '#7fcf8a', good: '#a9c97a', inaccuracy: '#e8c34f', mistake: '#ee9a4d', blunder: '#e8665d' };
 
-export default function AnalysisView({ req, prefs, onPrefs, onBack }: { req: ReviewRequest; prefs: Prefs; onPrefs: (p: Prefs) => void; onBack: () => void }) {
+/** The evaluation bar, with the number on it (like chess.com): at the bottom when White is better, at the top when Black is. */
+export function EvalBar({ score, flipped, testid = 'an-eval-bar' }: { score: number; flipped?: boolean; testid?: string }) {
+  const f = barFraction(score), txt = scoreText(score).replace('+', '');
+  const whiteBetter = score >= 0;
+  const atBottom = whiteBetter !== !!flipped;
+  return (
+    <div className="w-7 rounded overflow-hidden shrink-0 border relative flex flex-col" style={{ borderColor: 'var(--mg-line)', minHeight: 120, flexDirection: flipped ? 'column-reverse' : 'column' }} data-testid={testid} title={scoreText(score)}>
+      <div style={{ flexGrow: 1 - f, background: '#403d39', transition: 'flex-grow .25s' }} /><div style={{ flexGrow: f, background: '#f2efe6', transition: 'flex-grow .25s' }} />
+      <span className="absolute left-0 right-0 text-center font-bold" data-testid={testid + '-num'} style={{ fontSize: 10, [atBottom ? 'bottom' : 'top']: 3, color: whiteBetter ? '#262522' : '#f2efe6' }}>{txt}</span>
+    </div>
+  );
+}
+
+export default function AnalysisView(p: { req: ReviewRequest; rank: string; prefs: Prefs; onPrefs: (p: Prefs) => void; onBack: () => void }) {
+  return p.req.explore ? <ExploreView {...p} /> : <ReviewView {...p} />;
+}
+
+function ReviewView({ req, rank, prefs, onPrefs, onBack }: { req: ReviewRequest; rank: string; prefs: Prefs; onPrefs: (p: Prefs) => void; onBack: () => void }) {
+  const [blocked, setBlocked] = useState(false);
   const game = useMemo(() => Game.fromMoves(req.moves, req.startFen).game, [req]);
   const [an, setAn] = useState<PlyAnalysis[] | null>(null);
   const [progress, setProgress] = useState(0);
@@ -22,13 +40,14 @@ export default function AnalysisView({ req, prefs, onPrefs, onBack }: { req: Rev
   const [note, setNote] = useState('');
   const [flip, setFlip] = useState(false);
   const token = useRef({ cancelled: false });
-  const { fx } = useBoardFx({ allowSlam: false, sound: prefs.sound, enabled: false });
+  const { fx } = useBoardFx({ allowSlam: false, sound: prefs.sound, enabled: false, soundTheme: prefs.soundTheme });
   const total = game.plies.length;
 
   useEffect(() => { void hasStockfish().then(setSf); }, []);
   useEffect(() => {
     const t = { cancelled: false }; token.current = t;
-    setAn(null); setProgress(0); setNote('');
+    setAn(null); setProgress(0); setNote(''); setBlocked(false);
+    if (!useReview(rank, reviewKey(req.moves, req.startFen))) { setBlocked(true); return; }
     void (async () => {
       let eng = await analysisEngine(prefs.engine);
       if (prefs.engine === 'stockfish' && eng.id !== 'stockfish') setNote('Stockfish is not installed here, so the built-in engine is checking your game.');
@@ -39,7 +58,7 @@ export default function AnalysisView({ req, prefs, onPrefs, onBack }: { req: Rev
       eng = null as never;
     })();
     return () => { t.cancelled = true; };
-  }, [game, prefs.engine]);
+  }, [game, prefs.engine, rank, req]);
 
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
@@ -70,9 +89,7 @@ export default function AnalysisView({ req, prefs, onPrefs, onBack }: { req: Rev
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,640px)_1fr]" data-testid="analysis">
       <div className="flex gap-2 min-w-0">
-        <div className="w-4 rounded overflow-hidden shrink-0 border flex flex-col" style={{ borderColor: 'var(--mg-line)' }} data-testid="an-eval-bar" title={scoreText(cur)}>
-          <div style={{ height: `${(1 - barFraction(cur)) * 100}%`, background: '#23262c', transition: 'height .25s' }} /><div style={{ height: `${barFraction(cur) * 100}%`, background: '#f2efe6', transition: 'height .25s' }} />
-        </div>
+        <EvalBar score={cur} flipped={orient === 1} />
         <div className="flex-1 min-w-0">
           <div className="text-sm font-semibold mb-1 flex justify-between"><span>{req.title}</span><span className="mg-mute" data-testid="an-score">{an ? scoreText(cur) : '...'}</span></div>
           <ChessBoardView game={g} version={view} orientation={orient} myColor={null} canMove={false} onUserMove={() => undefined} viewPly={null} prefs={prefs} arrows={arrows} fx={fx} />
@@ -87,7 +104,13 @@ export default function AnalysisView({ req, prefs, onPrefs, onBack }: { req: Rev
       </div>
       <div className="space-y-3 min-w-0">
         <div className="mg-card p-3">
-          {!an ? (
+          {blocked ? (
+            <div data-testid="an-blocked" className="text-sm space-y-2">
+              <div className="mg-h2">You've used today's game reviews</div>
+              <p className="mg-mute">Your rank allows {reviewLimit(rank)} new game reviews a day. {rank === 'none' || !rank ? 'Vanguard gets 10, Elite has no limit, and Champion is unlimited.' : rank === 'vanguard' ? 'Elite has no limit, and Champion is unlimited.' : ''} Games you already reviewed today stay free, and you can explore a position or set one up any time.</p>
+              <button className="mg-btn" onClick={onBack}>Back</button>
+            </div>
+          ) : !an ? (
             <div data-testid="an-progress"><div className="text-sm mb-2">Looking at every move... {Math.round(progress * 100)}%</div><div className="h-2 rounded bg-[var(--mg-bg)] overflow-hidden"><div className="h-full" style={{ width: `${progress * 100}%`, background: 'var(--mg-accent)' }} /></div></div>
           ) : (
             <>
@@ -109,7 +132,7 @@ export default function AnalysisView({ req, prefs, onPrefs, onBack }: { req: Rev
           <div className="mg-card p-3 text-sm" data-testid="an-classes">
             <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 gap-y-1">
               <span /><span className="mg-mute text-xs text-right">White</span><span className="mg-mute text-xs text-right">Black</span>
-              {(['best', 'excellent', 'good', 'inaccuracy', 'mistake', 'blunder'] as MoveClass[]).map((c) => (
+              {(['brilliant', 'great', 'best', 'excellent', 'good', 'book', 'inaccuracy', 'mistake', 'blunder'] as MoveClass[]).map((c) => (
                 <div key={c} className="contents"><span><span className="inline-block w-2.5 h-2.5 rounded-full mr-2" style={{ background: CLS_COLOR[c] }} />{CLASS_LABEL[c]}</span><span className="text-right">{cw[c]}</span><span className="text-right">{cb[c]}</span></div>
               ))}
             </div>
@@ -117,9 +140,9 @@ export default function AnalysisView({ req, prefs, onPrefs, onBack }: { req: Rev
         )}
         <div className="mg-card p-3">
           <div className="mg-h2 mb-1">{openingName(sans) ?? 'Moves'}</div>
-          <MoveList moves={sans} view={view} onView={setView} extra={(ply) => an && an[ply - 1] && an[ply - 1].cls !== 'good' && an[ply - 1].cls !== 'best' && an[ply - 1].cls !== 'book' && an[ply - 1].cls !== 'excellent' ? <span className="ml-0.5 font-bold" style={{ color: CLS_COLOR[an[ply - 1].cls] }}>{CLASS_SYMBOL[an[ply - 1].cls]}</span> : null} />
+          <MoveList moves={sans} view={view} onView={setView} extra={(ply) => { const c = an?.[ply - 1]?.cls; return c && c !== 'good' && c !== 'best' && c !== 'excellent' ? <span className="ml-0.5 font-bold" style={{ color: CLS_COLOR[c] }} data-testid={`mark-${c}`}>{CLASS_SYMBOL[c]}</span> : null; }} />
           {here && (
-            <div className="text-sm mt-2" data-testid="an-here"><b style={{ color: CLS_COLOR[here.cls] }}>{here.san} · {CLASS_LABEL[here.cls]}</b>
+            <div className="text-sm mt-2" data-testid="an-here"><b style={{ color: CLS_COLOR[here.cls] }}>{here.san} {CLASS_SYMBOL[here.cls]} · {CLASS_LABEL[here.cls]}{here.cls === 'book' ? (openingName(sans.slice(0, view)) ? ` (${openingName(sans.slice(0, view))})` : '') : ''}</b>
               {here.best !== here.move && here.cls !== 'book' && <span className="mg-mute"> The engine liked {here.bestSan}.</span>}</div>
           )}
         </div>
@@ -136,3 +159,79 @@ export default function AnalysisView({ req, prefs, onPrefs, onBack }: { req: Rev
     </div>
   );
 }
+
+
+function ExploreView({ req, prefs, onPrefs, onBack }: { req: ReviewRequest; rank: string; prefs: Prefs; onPrefs: (p: Prefs) => void; onBack: () => void }) {
+  const gameRef = useRef(new Game(req.startFen));
+  const game = gameRef.current;
+  const [ver, setVer] = useState(0);
+  const [flip, setFlip] = useState(false);
+  const [lines, setLines] = useState<Array<{ score: number; san: string; pv: string }>>([]);
+  const [busy, setBusy] = useState(true);
+  const [note, setNote] = useState('');
+  const [sf, setSf] = useState(false);
+  const { fx } = useBoardFx({ allowSlam: false, sound: prefs.sound, enabled: false, soundTheme: prefs.soundTheme });
+  const orient = (flip ? (req.orientation ^ 1) : req.orientation) as 0 | 1;
+
+  useEffect(() => { void hasStockfish().then(setSf); }, []);
+  useEffect(() => {
+    let live = true;
+    setBusy(true);
+    void (async () => {
+      try {
+        const eng = await analysisEngine(prefs.engine);
+        if (prefs.engine === 'stockfish' && eng.id !== 'stockfish') setNote('Stockfish is not installed here, so the built-in engine is thinking.'); else setNote('');
+        const pos = game.pos;
+        if (game.over) { if (live) { setLines([]); setBusy(false); } return; }
+        const ls = await eng.lines(pos.toFen(), 3, eng.id === 'stockfish' ? 16 : 9, eng.id === 'stockfish' ? 900 : 700);
+        if (!live) return;
+        setLines(ls.map((l) => {
+          const q = Position.fromFen(pos.toFen()); const out: string[] = [];
+          for (const m of l.pv.slice(0, 6)) { out.push(q.san(m)); q.make(m); }
+          return { score: pos.turn === 0 ? l.score : -l.score, san: pos.san(l.move), pv: out.join(' ') };
+        }));
+        setBusy(false);
+      } catch { if (live) { setNote('The engine stopped. Try again, or pick the built-in engine.'); setBusy(false); } }
+    })();
+    return () => { live = false; };
+  }, [ver, game, prefs.engine]);
+
+  const cur = game.over ? (game.result === '1-0' ? 99000 : game.result === '0-1' ? -99000 : 0) : lines[0]?.score ?? 0;
+  const sans = game.sanList();
+  const best = lines[0] ? uciSquares(game.pos.uci(game.pos.parseSan(lines[0].san))) : null;
+  const onUserMove = (uci: string) => { if (game.play(uci)) setVer((v) => v + 1); };
+  const undo = () => { if (game.undo()) setVer((v) => v + 1); };
+  const opening = openingName(sans);
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,640px)_1fr]" data-testid="analysis-explore">
+      <div className="flex gap-2 min-w-0">
+        <EvalBar score={cur} flipped={orient === 1} />
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-semibold mb-1 flex justify-between"><span>{req.title}{opening ? ` · ${opening}` : ''}</span><span className="mg-mute" data-testid="an-score">{busy ? '...' : scoreText(cur)}</span></div>
+          <ChessBoardView game={game} version={ver} orientation={orient} myColor={game.turn} canMove={!game.over} onUserMove={onUserMove} viewPly={null} prefs={{ ...prefs, autoQueen: true }} arrows={best && !busy ? [{ ...best, color: '#3fae5a' }] : []} fx={fx} noPremove />
+          <div className="flex gap-2 mt-3">
+            <button className="mg-btn" onClick={undo} disabled={!game.plies.length} data-testid="ex-undo">Take back</button>
+            <button className="mg-btn" onClick={() => setFlip((f) => !f)}>Flip</button>
+          </div>
+        </div>
+      </div>
+      <div className="space-y-3 min-w-0">
+        <div className="mg-card p-3" data-testid="ex-lines">
+          <div className="mg-h2 mb-1">Best moves</div>
+          {busy && <div className="text-sm mg-mute">Thinking...</div>}
+          {!busy && !lines.length && <div className="text-sm mg-mute">{game.over ? 'The game is over.' : 'No moves found.'}</div>}
+          {lines.map((l, i) => <div key={i} className="text-sm py-1 flex gap-2" data-testid="ex-line"><b className="w-14 shrink-0">{scoreText(l.score)}</b><span className="truncate"><b>{l.san}</b> <span className="mg-mute">{l.pv.split(' ').slice(1).join(' ')}</span></span></div>)}
+          {note && <div className="text-xs mg-mute mt-1">{note}</div>}
+        </div>
+        <div className="mg-card p-3"><div className="mg-h2 mb-1">{opening ?? 'Moves'}</div><MoveList moves={sans} view={sans.length} onView={() => undefined} /></div>
+        <div className="mg-card p-3 flex items-center gap-3 flex-wrap">
+          <span className="text-sm">Engine</span>
+          <Seg value={prefs.engine} onChange={(v) => onPrefs({ ...prefs, engine: v })} options={[{ id: 'stockfish', label: sf ? 'Stockfish' : 'Stockfish (not installed)' }, { id: 'builtin', label: 'VibeBlox' }]} testid="an-engine" />
+        </div>
+        <button className="mg-btn mg-btn-ghost" onClick={onBack}>Back</button>
+      </div>
+    </div>
+  );
+}
+void reviewsLeft;

@@ -16,6 +16,7 @@ export default function PuzzlesView({ prefs, signedIn, onBack }: { prefs: Prefs;
   const [puzzle, setPuzzle] = useState<Puzzle>(() => pickPuzzle(loadProgress().puzzle.r, loadProgress().solved));
   const [list, setList] = useState(false);
   const [nonce, setNonce] = useState(0);
+  const [retry, setRetry] = useState(false);
   const rating = progress.puzzle;
   return list ? (
     <div data-testid="puzzle-list">
@@ -29,13 +30,13 @@ export default function PuzzlesView({ prefs, signedIn, onBack }: { prefs: Prefs;
       </div>
     </div>
   ) : (
-    <PuzzleRunView key={puzzle.id + ':' + nonce} puzzle={puzzle} prefs={prefs} signedIn={signedIn}
-      progress={progress} onDone={() => setProgress(loadProgress())} onNext={() => { const p = loadProgress(); setProgress(p); setPuzzle(pickPuzzle(p.puzzle.r, p.solved)); setNonce((n) => n + 1); }}
+    <PuzzleRunView key={puzzle.id + ':' + nonce} retry={retry} onRetry={() => { setRetry(true); setNonce((n) => n + 1); }} puzzle={puzzle} prefs={prefs} signedIn={signedIn}
+      progress={progress} onDone={() => setProgress(loadProgress())} onNext={() => { setRetry(false); const p = loadProgress(); setProgress(p); setPuzzle(pickPuzzle(p.puzzle.r, p.solved)); setNonce((n) => n + 1); }}
       onList={() => setList(true)} onBack={onBack} />
   );
 }
 
-function PuzzleRunView({ puzzle, prefs, signedIn, progress, onDone, onNext, onList, onBack }: { puzzle: Puzzle; prefs: Prefs; signedIn: boolean; progress: ReturnType<typeof loadProgress>; onDone: () => void; onNext: () => void; onList: () => void; onBack: () => void }) {
+function PuzzleRunView({ retry, onRetry, puzzle, prefs, signedIn, progress, onDone, onNext, onList, onBack }: { retry: boolean; onRetry: () => void; puzzle: Puzzle; prefs: Prefs; signedIn: boolean; progress: ReturnType<typeof loadProgress>; onDone: () => void; onNext: () => void; onList: () => void; onBack: () => void }) {
   const runRef = useRef(new PuzzleRun(puzzle));
   const run = runRef.current;
   const gameRef = useRef(new Game(puzzle.fen));
@@ -51,6 +52,10 @@ function PuzzleRunView({ puzzle, prefs, signedIn, progress, onDone, onNext, onLi
 
   const settle = (score: number) => {
     if (counted.current) return; counted.current = true;
+    if (retry) { // a second go at the same puzzle never moves the rating
+      if (score > 0) { const p = update((q) => { if (!q.solved.includes(puzzle.id)) q.solved.push(puzzle.id); }); if (signedIn) void api.savePuzzle(p.puzzle.r, p.puzzle.n, p.solved); onDone(); }
+      return;
+    }
     const before = loadProgress();
     const next = applyPuzzle(before.puzzle, puzzle.rating, score);
     const p = update((q) => {
@@ -66,12 +71,12 @@ function PuzzleRunView({ puzzle, prefs, signedIn, progress, onDone, onNext, onLi
     if (phase !== 'play') return;
     const r = run.attempt(uci);
     if (r === 'wrong') {
-      playSfx('lose', prefs.sound); setHint(null); setPhase('failed'); setNote("That's not the move."); settle(0); return;
+      playSfx('lose', prefs.sound, prefs.soundTheme); setHint(null); setPhase('failed'); setNote("That's not the move."); settle(0); return;
     }
-    game.play(uci); setHint(null); setVer((v) => v + 1); playSfx('move', prefs.sound);
-    if (r === 'solved') { setPhase('solved'); setNote(run.hints ? 'Solved with a hint.' : 'Solved!'); playSfx('win', prefs.sound); settle(run.score); return; }
+    game.play(uci); setHint(null); setVer((v) => v + 1); playSfx('move', prefs.sound, prefs.soundTheme);
+    if (r === 'solved') { setPhase('solved'); setNote(run.hints ? 'Solved with a hint.' : 'Solved!'); playSfx('win', prefs.sound, prefs.soundTheme); settle(run.score); return; }
     const reply = run.reply;
-    if (reply) setTimeout(() => { game.play(reply); setVer((v) => v + 1); playSfx('move', prefs.sound); }, 450);
+    if (reply) setTimeout(() => { game.play(reply); setVer((v) => v + 1); playSfx('move', prefs.sound, prefs.soundTheme); }, 450);
   };
   const askHint = () => { if (phase !== 'play') return; const h = run.hint(); setHint({ from: parseSq(h.from), to: h.to ? parseSq(h.to) : undefined }); };
   const showAnswer = () => { const m = run.puzzle.moves[run.step]; if (m) setHint(sq(m)); };
@@ -84,7 +89,7 @@ function PuzzleRunView({ puzzle, prefs, signedIn, progress, onDone, onNext, onLi
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,640px)_1fr]" data-testid="puzzles">
       <div className="min-w-0">
-        <ChessBoardView game={game} version={ver} orientation={run.toMove} myColor={run.toMove} canMove={phase === 'play'} onUserMove={onUserMove} viewPly={null} prefs={{ ...prefs, autoQueen: true }} hint={hint} fx={fx} />
+        <ChessBoardView game={game} version={ver} orientation={run.toMove} myColor={run.toMove} canMove={phase === 'play'} onUserMove={onUserMove} viewPly={null} prefs={{ ...prefs, autoQueen: true }} hint={hint} fx={fx} noPremove />
       </div>
       <div className="space-y-3 min-w-0">
         <div className="mg-card p-4">
@@ -93,7 +98,8 @@ function PuzzleRunView({ puzzle, prefs, signedIn, progress, onDone, onNext, onLi
           <div className="mt-3 text-sm" data-testid="pz-status">
             {phase === 'play' && 'Find the best move.'}
             {phase === 'solved' && <span style={{ color: 'var(--mg-good)' }}>{note}</span>}
-            {phase === 'failed' && <span style={{ color: 'var(--mg-bad)' }}>{note} The answer is marked on the board.</span>}
+            {phase === 'failed' && <span style={{ color: 'var(--mg-bad)' }}>{note} Try again, or look at the answer.</span>}
+            {retry && phase === 'play' && <span className="mg-mute"> (Second try: your puzzle rating won't change.)</span>}
           </div>
           {delta !== null && <div className="text-sm mt-1" data-testid="pz-delta">Puzzle rating {delta >= 0 ? '+' : ''}{delta}</div>}
           <div className="grid grid-cols-2 gap-2 mt-3">
@@ -105,7 +111,8 @@ function PuzzleRunView({ puzzle, prefs, signedIn, progress, onDone, onNext, onLi
             ) : (
               <>
                 {phase === 'failed' && <button className="mg-btn" onClick={showAnswer} data-testid="pz-show">Show the move</button>}
-                <button className="mg-btn mg-btn-primary" style={phase === 'solved' ? { gridColumn: 'span 2' } : undefined} onClick={onNext} data-testid="pz-next">Next puzzle</button>
+                <button className="mg-btn" onClick={onRetry} data-testid="pz-retry">Try again</button>
+                <button className="mg-btn mg-btn-primary" style={{ gridColumn: 'span 2' }} onClick={onNext} data-testid="pz-next">Next puzzle</button>
               </>
             )}
           </div>

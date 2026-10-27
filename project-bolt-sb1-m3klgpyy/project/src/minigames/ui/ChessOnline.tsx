@@ -9,7 +9,7 @@ import { displayRating } from '../ratings';
 import * as api from '../api';
 import { filterProfanity } from '../../profanity';
 import type { Prefs } from '../store';
-import ChessBoardView, { uciSquares } from './ChessBoardView';
+import ChessBoardView, { kingSquare, uciSquares } from './ChessBoardView';
 import { useBoardFx } from './Board';
 import { Confirm, MoveList, PlayerBar, type ChatLine } from './kit';
 import { playSfx } from './sfx';
@@ -21,6 +21,9 @@ export default function ChessOnline({ gameId, me, prefs, onReview, onBack }: { g
   const gameRef = useRef(new Game());
   const game = gameRef.current;
   const [mg, setMg] = useState<api.MgGame | null>(null);
+  const [badges, setBadges] = useState<Record<string, api.PlayerBadge>>({});
+  const p0Id = mg?.p0, p1Id = mg?.p1;
+  useEffect(() => { if (p0Id && p1Id) void api.playerBadges([p0Id, p1Id]).then(setBadges); }, [p0Id, p1Id]);
   const mgRef = useRef<api.MgGame | null>(null);
   const [ver, setVer] = useState(0);
   const [view, setView] = useState<number | null>(null);
@@ -39,7 +42,7 @@ export default function ChessOnline({ gameId, me, prefs, onReview, onBack }: { g
   const chatAfter = useRef(0);
   const fairChecked = useRef(false);
   const [fair, setFair] = useState<string | null>(null);
-  const { fx, trigger } = useBoardFx({ allowSlam: true, sound: prefs.sound });
+  const { fx, trigger } = useBoardFx({ allowSlam: true, sound: prefs.sound, soundTheme: prefs.soundTheme });
 
   const myColor: 0 | 1 | null = mg ? (me === mg.p0 ? 0 : me === mg.p1 ? 1 : null) : null;
   mgRef.current = mg;
@@ -54,7 +57,7 @@ export default function ChessOnline({ gameId, me, prefs, onReview, onBack }: { g
       if (!game.play(m.mv)) { setError('The other player sent a move that is not legal. The game was stopped on your side.'); break; }
       times.current[m.ply - 1] = { ms: m.ms, blurMs: m.blurMs, blurs: m.blurs };
       changed = true;
-      playSfx(game.pos.inCheck() ? 'check' : cap ? 'capture' : 'move', prefs.sound);
+      playSfx(game.pos.inCheck() ? 'check' : cap ? 'capture' : 'move', prefs.sound, prefs.soundTheme);
     }
     if (changed) { setView(null); setVer((v) => v + 1); }
   }, [gameId, game, prefs.sound]);
@@ -85,7 +88,7 @@ export default function ChessOnline({ gameId, me, prefs, onReview, onBack }: { g
       chatAfter.current = r.value[r.value.length - 1].id;
       const g = mgRef.current;
       setChat((c) => [...c, ...r.value.map((m) => ({ id: m.id, who: (m.userId === me ? 'me' : 'them') as 'me' | 'them', name: g ? (m.userId === g.p0 ? g.p0Name : g.p1Name) : '', text: m.body }))].slice(-60));
-      if (r.value.some((m) => m.userId !== me)) playSfx('ping', prefs.sound);
+      if (r.value.some((m) => m.userId !== me)) playSfx('ping', prefs.sound, prefs.soundTheme);
     }, 2000);
     return () => clearInterval(id);
   }, [gameId, me, prefs.sound]);
@@ -139,7 +142,7 @@ export default function ChessOnline({ gameId, me, prefs, onReview, onBack }: { g
     const t = clock.current.stop();
     times.current[game.plies.length - 1] = t;
     setView(null); setVer((v) => v + 1);
-    playSfx(game.pos.inCheck() ? 'check' : cap ? 'capture' : 'move', prefs.sound);
+    playSfx(game.pos.inCheck() ? 'check' : cap ? 'capture' : 'move', prefs.sound, prefs.soundTheme);
     const r = await api.sendMove(gameId, game.plies.length, uci, t.blurMs, t.blurs);
     if (!r.ok) { game.undo(); setVer((v) => v + 1); clockPly.current = -1; setError(r.error); await refresh(); }
     else void refresh();
@@ -167,14 +170,14 @@ export default function ChessOnline({ gameId, me, prefs, onReview, onBack }: { g
   const delta = myColor === null ? null : myColor === 0 ? mg.p0Delta : mg.p1Delta;
   const offerFromOpp = mg.drawOffer !== null && myColor !== null && mg.drawOffer !== myColor;
   const reviewing = view !== null && view < game.plies.length;
-  const bar = (s: 0 | 1) => <PlayerBar name={nm(s)} rating={rt(s)} clock={clockText(clk(s))} active={live && mg.turn === s && mg.plies >= 2} low={live && clk(s) < 20000} sub={cap(s)} />;
+  const bar = (s: 0 | 1) => <PlayerBar name={nm(s)} badge={badges[s === 0 ? mg.p0 : mg.p1]} rating={rt(s)} clock={clockText(clk(s))} active={live && mg.turn === s && mg.plies >= 2} low={live && clk(s) < 20000} sub={cap(s)} />;
   const clockText = api.clockText;
 
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,640px)_1fr]" data-testid="chess-online">
       <div className="min-w-0">
         {bar(topSide)}
-        <ChessBoardView game={game} version={ver} orientation={orientation} myColor={myColor} canMove={live && !error} onUserMove={(u) => void onUserMove(u)} viewPly={view} prefs={prefs} fx={fx}>
+        <ChessBoardView game={game} version={ver} orientation={orientation} myColor={myColor} canMove={live && !error} onUserMove={(u) => void onUserMove(u)} viewPly={view} prefs={prefs} fx={fx} celebrate={!live && result === 'win' ? { id: 1, kind: prefs.celebration } : null} fallSq={!live && result === 'loss' && mg.reason === 'checkmate' && myColor !== null ? kingSquare(game.pos, myColor) : null}>
           {!live && (
             <div className="absolute inset-0 z-30 flex items-center justify-center p-3" style={{ background: 'rgba(10,12,16,.62)' }} data-testid="end-card">
               <div className="mg-card p-5 text-center w-full max-w-xs">

@@ -38,7 +38,15 @@ export async function stockfishAvailable(url = STOCKFISH_URL): Promise<boolean> 
 type WorkerLike = { postMessage(m: string): void; terminate(): void; onmessage: ((e: { data: unknown }) => void) | null };
 
 /** Wrap a UCI worker as an AnalysisEngine. `make` is injectable for tests. */
-export function uciEngine(make: () => WorkerLike, name = 'Stockfish'): AnalysisEngine & { ready: Promise<void> } {
+/** Stockfish settings for a target rating. Below ELO_MIN_SF the built-in engine plays instead. */
+export const ELO_MIN_SF = 1350;
+export function sfStrength(elo: number): { skill: number; movetime: number; depth: number } {
+  const e = Math.max(ELO_MIN_SF, Math.min(3200, elo));
+  const skill = Math.max(0, Math.min(20, Math.round(((e - ELO_MIN_SF) / (2900 - ELO_MIN_SF)) * 20)));
+  return { skill, movetime: Math.round(120 + ((e - ELO_MIN_SF) / 1850) * 1500), depth: e >= 3000 ? 22 : Math.max(4, Math.round(4 + ((e - ELO_MIN_SF) / 1650) * 14)) };
+}
+export type PlayEngine = AnalysisEngine & { ready: Promise<void>; play(fen: string, elo: number): Promise<string | null> };
+export function uciEngine(make: () => WorkerLike, name = 'Stockfish'): PlayEngine {
   const w = make();
   let waiter: ((line: string) => void) | null = null;
   w.onmessage = (e) => { const s = typeof e.data === 'string' ? e.data : String((e.data as { data?: string })?.data ?? ''); for (const line of s.split('\n')) waiter?.(line.trim()); };
@@ -82,11 +90,29 @@ export function uciEngine(make: () => WorkerLike, name = 'Stockfish'): AnalysisE
       busy = p.catch(() => undefined);
       return p;
     },
+    play(fen, elo) {
+      const run = async (): Promise<string | null> => {
+        await ready;
+        const st = sfStrength(elo);
+        let best: string | null = null;
+        const done = new Promise<void>((res) => { waiter = (l) => { const b = parseBestMove(l); if (b !== null) { best = b; waiter = null; res(); } }; });
+        send('setoption name MultiPV value 1');
+        send(`setoption name Skill Level value ${st.skill}`);
+        send(`position fen ${fen}`);
+        send(`go depth ${st.depth} movetime ${st.movetime}`);
+        await done;
+        send('setoption name Skill Level value 20');
+        return best && best !== '(none)' ? best : null;
+      };
+      const p = busy.then(run, run);
+      busy = p.catch(() => undefined);
+      return p;
+    },
     stop() { send('stop'); },
     dispose() { try { send('quit'); } catch { /* gone */ } w.terminate(); },
   };
 }
 /** Start the real Stockfish worker (browser only). */
-export function startStockfish(url = STOCKFISH_URL): AnalysisEngine & { ready: Promise<void> } {
+export function startStockfish(url = STOCKFISH_URL): PlayEngine {
   return uciEngine(() => new Worker(url) as unknown as WorkerLike);
 }

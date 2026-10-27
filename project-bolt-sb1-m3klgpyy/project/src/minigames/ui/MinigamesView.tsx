@@ -1,7 +1,6 @@
 // The Games area: chess, checkers, 2048, tic tac toe, puzzles, lessons, analysis, leaderboards, history and settings.
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { Game } from '../chess/rules';
-import { loadPrefs, savePrefs, loadProgress, type HistoryEntry, type Prefs } from '../store';
+import { loadPrefs, savePrefs, loadProgress, reviewsLeft, type HistoryEntry, type Prefs } from '../store';
 import * as api from '../api';
 import { setServerPresence } from '../../social';
 import ChessBotGame, { type ReviewRequest } from './ChessBotGame';
@@ -12,6 +11,8 @@ import { Game2048, TicTacToe } from './ArcadeGames';
 import PuzzlesView from './PuzzlesView';
 import LearnView from './LearnView';
 import AnalysisView from './AnalysisView';
+import AnalysisSetup from './AnalysisSetup';
+import { RankBadges, SelfBadgeContext, type BadgeInfo } from './Badge';
 import { CheckersReplay, HistoryView, Leaderboards, RatingCard, Settings } from './Panels';
 import './mg.css';
 
@@ -21,9 +22,10 @@ export type MgAccount = { userId: string; username: string } | null;
 type Screen =
   | { k: 'home' } | { k: 'chessBot'; bot?: string } | { k: 'ckBot' } | { k: 'lobby'; game: api.GameKind }
   | { k: 'online'; game: api.GameKind; id: string } | { k: 'puzzles' } | { k: 'learn' } | { k: 'g2048' } | { k: 'ttt' }
-  | { k: 'analysis'; req: ReviewRequest } | { k: 'loadAnalysis' } | { k: 'ckReplay'; req: CheckersReview } | { k: 'boards' } | { k: 'history' } | { k: 'settings' };
+  | { k: 'analysis'; req: ReviewRequest } | { k: 'loadAnalysis' } | { k: 'ckReplay'; req: CheckersReview } | { k: 'boards' } | { k: 'history' }
+  | { k: 'chessHub' } | { k: 'ckHub' } | { k: 'chessSettings' } | { k: 'ckSettings' };
 
-export default function MinigamesView({ account, rank, intent, onIntentDone }: { account: MgAccount; rank: string; intent?: GameIntent; onIntentDone?: () => void }) {
+export default function MinigamesView({ account, rank, badge = null, intent, onIntentDone }: { account: MgAccount; rank: string; badge?: BadgeInfo | null; intent?: GameIntent; onIntentDone?: () => void }) {
   const [screen, setScreen] = useState<Screen>({ k: 'home' });
   const [prefs, setPrefsState] = useState<Prefs>(loadPrefs);
   const [presence, setPresence] = useState<string | null>(null);
@@ -66,28 +68,32 @@ export default function MinigamesView({ account, rank, intent, onIntentDone }: {
 
   let body: ReactNode;
   switch (screen.k) {
-    case 'home': body = <Home onGo={go} account={account} signedIn={signedIn} notice={notice} />; break;
-    case 'chessBot': body = <ChessBotGame rank={rank} prefs={prefs} onPrefs={setPrefs} onReview={review} initialBot={screen.bot} onBack={home} />; break;
-    case 'ckBot': body = <CheckersBotGame rank={rank} prefs={prefs} onPrefs={setPrefs} onReview={ckReview} onBack={home} />; break;
-    case 'lobby': body = account ? <Lobby game={screen.game} account={account} onPresence={setPresence} onStart={(id) => go({ k: 'online', game: screen.game, id })} onBack={home} /> : <NeedAccount onBack={home} />; break;
+    case 'home': body = <Home onGo={go} account={account} signedIn={signedIn} notice={notice} badge={badge} />; break;
+    case 'chessHub': body = <ChessHub signedIn={signedIn} onGo={go} onBack={home} />; break;
+    case 'ckHub': body = <CheckersHub signedIn={signedIn} onGo={go} onBack={home} />; break;
+    case 'chessBot': body = <ChessBotGame rank={rank} prefs={prefs} onPrefs={setPrefs} onReview={review} initialBot={screen.bot} onBack={() => go({ k: 'chessHub' })} />; break;
+    case 'ckBot': body = <CheckersBotGame rank={rank} prefs={prefs} onPrefs={setPrefs} onReview={ckReview} onBack={() => go({ k: 'ckHub' })} />; break;
+    case 'lobby': body = account ? <Lobby game={screen.game} account={account} onPresence={setPresence} onStart={(id) => go({ k: 'online', game: screen.game, id })} onBack={() => go({ k: screen.game === 'chess' ? 'chessHub' : 'ckHub' })} /> : <NeedAccount onBack={home} />; break;
     case 'online': body = screen.game === 'chess'
       ? <ChessOnline key={screen.id} gameId={screen.id} me={account?.userId ?? ''} prefs={prefs} onReview={review} onBack={home} />
       : <CheckersOnline key={screen.id} gameId={screen.id} me={account?.userId ?? ''} prefs={prefs} onReview={ckReview} onBack={home} />; break;
-    case 'puzzles': body = <PuzzlesView prefs={prefs} signedIn={signedIn} onBack={home} />; break;
-    case 'learn': body = <LearnView prefs={prefs} onBack={home} />; break;
+    case 'puzzles': body = <PuzzlesView prefs={prefs} signedIn={signedIn} onBack={() => go({ k: 'chessHub' })} />; break;
+    case 'learn': body = <LearnView prefs={prefs} onBack={() => go({ k: 'chessHub' })} />; break;
     case 'g2048': body = <Game2048 prefs={prefs} signedIn={signedIn} onBack={home} />; break;
     case 'ttt': body = <TicTacToe prefs={prefs} signedIn={signedIn} onBack={home} />; break;
-    case 'analysis': body = <AnalysisView req={screen.req} prefs={prefs} onPrefs={setPrefs} onBack={home} />; break;
-    case 'loadAnalysis': body = <LoadAnalysis onLoad={review} onBack={home} />; break;
+    case 'analysis': body = <AnalysisView req={screen.req} rank={rank} prefs={prefs} onPrefs={setPrefs} onBack={() => go({ k: 'loadAnalysis' })} />; break;
+    case 'loadAnalysis': body = <AnalysisSetup prefs={prefs} onLoad={review} left={reviewsLeft(rank)} onBack={() => go({ k: 'chessHub' })} />; break;
     case 'ckReplay': body = <CheckersReplay moves={screen.req.moves} orientation={screen.req.orientation} title={screen.req.title} prefs={prefs} onBack={home} />; break;
     case 'boards': body = <Leaderboards signedIn={signedIn} onBack={home} />; break;
     case 'history': body = <HistoryView onAnalyse={fromHistory} onReplay={(h) => ckReview({ kind: 'checkers', moves: h.moves, orientation: h.color, title: `Checkers vs ${h.opp}` })} onBack={home} />; break;
-    case 'settings': body = <Settings prefs={prefs} onPrefs={setPrefs} onBack={home} />; break;
+    case 'chessSettings': body = <Settings game="chess" prefs={prefs} onPrefs={setPrefs} onBack={() => go({ k: 'chessHub' })} />; break;
+    case 'ckSettings': body = <Settings game="checkers" prefs={prefs} onPrefs={setPrefs} onBack={() => go({ k: 'ckHub' })} />; break;
   }
   // online games must not remember a stale "searching" status
   useEffect(() => { if (screen.k === 'online' && account) { setPresence(`mg:${screen.game}:${screen.id}`); } else if (screen.k !== 'lobby') setPresence(null); }, [screen, account]);
 
   return (
+    <SelfBadgeContext.Provider value={badge}>
     <div className="mg min-h-full p-4 sm:p-6 max-w-6xl mx-auto" data-testid="minigames">
       {screen.k === 'home' ? (
         <div className="grid gap-5 lg:grid-cols-[1fr_300px]">
@@ -96,10 +102,11 @@ export default function MinigamesView({ account, rank, intent, onIntentDone }: {
         </div>
       ) : body}
     </div>
+    </SelfBadgeContext.Provider>
   );
 }
 
-function Home({ onGo, account, signedIn, notice }: { onGo: (s: Screen) => void; account: MgAccount; signedIn: boolean; notice: string }) {
+function Home({ onGo, account, signedIn, notice, badge }: { onGo: (s: Screen) => void; account: MgAccount; signedIn: boolean; notice: string; badge: BadgeInfo | null }) {
   const Card = ({ title, blurb, tag, children, testid }: { title: string; blurb: string; tag: string; children: ReactNode; testid: string }) => (
     <div className="mg-card p-4 flex flex-col gap-3" data-testid={testid}>
       <div><div className="flex items-center justify-between"><h3 className="mg-h2">{title}</h3><span className="mg-chip">{tag}</span></div><p className="text-sm mg-mute mt-1">{blurb}</p></div>
@@ -110,26 +117,59 @@ function Home({ onGo, account, signedIn, notice }: { onGo: (s: Screen) => void; 
   return (
     <div data-testid="games-home">
       <h1 className="mg-h1 mb-1">Games</h1>
-      <p className="text-sm mg-mute mb-4">Board games and puzzles to play while you take a break from building{account ? `, ${account.username}` : ''}. Most of them work with no internet.</p>
+      <p className="text-sm mg-mute mb-4">Board games and puzzles to play while you take a break from building{account ? `, ${account.username}` : ''} <RankBadges badge={badge} />. Most of them work with no internet.</p>
       {notice && <div className="mg-card p-3 text-sm mb-3" style={{ borderColor: 'var(--mg-bad)' }} data-testid="games-notice">{notice}</div>}
       <div className="grid gap-4 sm:grid-cols-2">
-        <Card testid="card-chess" title="Chess" tag="Online and offline" blurb="Play real people, or one of 32 bots that each have their own style and personality.">
-          <button className="mg-btn mg-btn-primary" disabled={!signedIn} title={online} onClick={() => onGo({ k: 'lobby', game: 'chess' })} data-testid="chess-online">Play online</button>
-          <button className="mg-btn" onClick={() => onGo({ k: 'chessBot' })} data-testid="chess-bots">Play a bot</button>
+        <Card testid="card-chess" title="Chess" tag="Online and offline" blurb="Play real people or one of 32 bots, solve puzzles, learn openings, analyse games, and set up your board.">
+          <button className="mg-btn mg-btn-primary" onClick={() => onGo({ k: 'chessHub' })} data-testid="open-chess">Open chess</button>
         </Card>
         <Card testid="card-checkers" title="Checkers" tag="Online and offline" blurb="American checkers with jumps you must take. 24 bots to play, from careful to wild.">
-          <button className="mg-btn mg-btn-primary" disabled={!signedIn} title={online} onClick={() => onGo({ k: 'lobby', game: 'checkers' })} data-testid="ck-online-btn">Play online</button>
-          <button className="mg-btn" onClick={() => onGo({ k: 'ckBot' })} data-testid="ck-bots">Play a bot</button>
+          <button className="mg-btn mg-btn-primary" onClick={() => onGo({ k: 'ckHub' })} data-testid="open-checkers">Open checkers</button>
         </Card>
-        <Card testid="card-puzzles" title="Puzzles" tag="Offline" blurb="100 chess puzzles from easy to hard, with your own puzzle rating."><button className="mg-btn mg-btn-primary" onClick={() => onGo({ k: 'puzzles' })} data-testid="open-puzzles">Solve puzzles</button></Card>
-        <Card testid="card-learn" title="Learn chess" tag="Offline" blurb="How the pieces move, the rules, simple tactics, and openings like the Queen's Gambit and Ruy Lopez."><button className="mg-btn mg-btn-primary" onClick={() => onGo({ k: 'learn' })} data-testid="open-learn">Start learning</button></Card>
         <Card testid="card-2048" title="2048" tag="Offline" blurb="Slide the tiles and join matching numbers."><button className="mg-btn mg-btn-primary" onClick={() => onGo({ k: 'g2048' })} data-testid="open-2048">Play 2048</button></Card>
         <Card testid="card-ttt" title="Tic Tac Toe" tag="Offline" blurb="Play the computer on easy, normal or hard. Hard never loses."><button className="mg-btn mg-btn-primary" onClick={() => onGo({ k: 'ttt' })} data-testid="open-ttt">Play</button></Card>
-        <Card testid="card-analysis" title="Analysis" tag="Offline" blurb="Check a game move by move, with an evaluation bar and a grade for each move."><button className="mg-btn" onClick={() => onGo({ k: 'loadAnalysis' })} data-testid="open-analysis">Analyse a game</button><button className="mg-btn" onClick={() => onGo({ k: 'history' })} data-testid="open-history">Game history</button></Card>
-        <Card testid="card-more" title="Boards and style" tag="Everyone" blurb="See who's on top, and pick your board colours and piece style."><button className="mg-btn" onClick={() => onGo({ k: 'boards' })} data-testid="open-boards">Leaderboards</button><button className="mg-btn" onClick={() => onGo({ k: 'settings' })} data-testid="open-settings">Board and pieces</button></Card>
+        <Card testid="card-more" title="Leaderboards and history" tag="Everyone" blurb="See who is on top, and look back at the games you played."><button className="mg-btn" onClick={() => onGo({ k: 'boards' })} data-testid="open-boards">Leaderboards</button><button className="mg-btn" onClick={() => onGo({ k: 'history' })} data-testid="open-history">History</button></Card>
       </div>
     </div>
   );
+}
+
+type HubItem = { id: string; title: string; blurb: string; icon: string; onClick: () => void; disabled?: boolean; hint?: string; primary?: boolean };
+function HubGrid({ title, blurb, items, onBack }: { title: string; blurb: string; items: HubItem[]; onBack: () => void }) {
+  return (
+    <div data-testid="game-hub">
+      <div className="flex items-center gap-3 mb-1"><h1 className="mg-h1 flex-1">{title}</h1><button className="mg-btn mg-btn-ghost" onClick={onBack} data-testid="hub-back">All games</button></div>
+      <p className="text-sm mg-mute mb-4">{blurb}</p>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {items.map((it) => (
+          <button key={it.id} className="mg-card p-4 text-left flex gap-3 items-start transition-colors disabled:opacity-50" disabled={it.disabled} title={it.hint} onClick={it.onClick} data-testid={it.id}>
+            <span className="text-3xl shrink-0">{it.icon}</span><span><span className="font-semibold block">{it.title}</span><span className="text-sm mg-mute">{it.blurb}</span></span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+function ChessHub({ signedIn, onGo, onBack }: { signedIn: boolean; onGo: (s: Screen) => void; onBack: () => void }) {
+  const hint = signedIn ? undefined : 'Sign in from the Social tab to play online';
+  return <HubGrid title="Chess" blurb="Everything for chess in one place." onBack={onBack} items={[
+    { id: 'chess-bots', icon: '🤖', title: 'Play bots', blurb: '32 bots with their own styles, or the Engine from 100 to 3000.', onClick: () => onGo({ k: 'chessBot' }) },
+    { id: 'chess-online', icon: '🌐', title: 'Play online', blurb: 'Find a real opponent and play for a rating.', onClick: () => onGo({ k: 'lobby', game: 'chess' }), disabled: !signedIn, hint },
+    { id: 'open-puzzles', icon: '🧩', title: 'Puzzles', blurb: '100 puzzles from easy to hard with your own puzzle rating.', onClick: () => onGo({ k: 'puzzles' }) },
+    { id: 'open-learn', icon: '📚', title: 'Learn', blurb: 'The pieces, the rules, tactics and openings.', onClick: () => onGo({ k: 'learn' }) },
+    { id: 'open-analysis', icon: '🔍', title: 'Analysis', blurb: 'Review a game, paste a PGN or FEN, or set up any position.', onClick: () => onGo({ k: 'loadAnalysis' }) },
+    { id: 'open-chess-settings', icon: '⚙️', title: 'Chess settings', blurb: 'Board, pieces, moves, animations, board effects and sounds.', onClick: () => onGo({ k: 'chessSettings' }) },
+    { id: 'open-chess-history', icon: '🕘', title: 'History', blurb: 'Your past games, ready to review.', onClick: () => onGo({ k: 'history' }) },
+  ]} />;
+}
+function CheckersHub({ signedIn, onGo, onBack }: { signedIn: boolean; onGo: (s: Screen) => void; onBack: () => void }) {
+  const hint = signedIn ? undefined : 'Sign in from the Social tab to play online';
+  return <HubGrid title="Checkers" blurb="American checkers: jumps are forced." onBack={onBack} items={[
+    { id: 'ck-bots', icon: '🤖', title: 'Play bots', blurb: '24 bots, from careful to wild.', onClick: () => onGo({ k: 'ckBot' }) },
+    { id: 'ck-online-btn', icon: '🌐', title: 'Play online', blurb: 'Find a real opponent and play for a rating.', onClick: () => onGo({ k: 'lobby', game: 'checkers' }), disabled: !signedIn, hint },
+    { id: 'open-ck-history', icon: '🕘', title: 'History and replay', blurb: 'Step through your past games.', onClick: () => onGo({ k: 'history' }) },
+    { id: 'open-ck-settings', icon: '⚙️', title: 'Checkers settings', blurb: 'Board, pieces, animations, board effects and sounds.', onClick: () => onGo({ k: 'ckSettings' }) },
+  ]} />;
 }
 
 function NeedAccount({ onBack }: { onBack: () => void }) {
@@ -215,33 +255,6 @@ function LiveGames({ onSpectate, signedIn }: { onSpectate: (g: api.MgGame) => vo
           </div>
         ))}
       </div>
-    </div>
-  );
-}
-
-function LoadAnalysis({ onLoad, onBack }: { onLoad: (r: ReviewRequest) => void; onBack: () => void }) {
-  const [text, setText] = useState('');
-  const [err, setErr] = useState('');
-  const recent = loadProgress().history.filter((h) => h.game === 'chess').slice(0, 6);
-  const go = () => {
-    const g = Game.fromPgn(text);
-    if (!g || !g.plies.length) { setErr('That does not look like a list of chess moves. Try something like: 1. e4 e5 2. Nf3 Nc6'); return; }
-    onLoad({ moves: g.uciList(), startFen: g.startFen, orientation: 0, title: 'Pasted game' });
-  };
-  return (
-    <div className="max-w-xl mx-auto space-y-3" data-testid="load-analysis">
-      <h2 className="mg-h1">Analyse a game</h2>
-      <div className="mg-card p-4 space-y-2">
-        <div className="text-sm">Paste moves or a PGN:</div>
-        <textarea className="mg-input" rows={5} value={text} onChange={(e) => { setText(e.target.value); setErr(''); }} placeholder="1. e4 e5 2. Nf3 Nc6 3. Bb5 a6" data-testid="pgn-input" />
-        {err && <div className="text-sm" style={{ color: 'var(--mg-bad)' }} data-testid="pgn-error">{err}</div>}
-        <button className="mg-btn mg-btn-primary" onClick={go} data-testid="pgn-go">Analyse</button>
-      </div>
-      {recent.length > 0 && (
-        <div className="mg-card p-4"><div className="mg-h2 mb-2">Or pick one of your games</div>
-          {recent.map((h) => <button key={h.id} className="mg-btn w-full justify-between mb-2" onClick={() => onLoad({ moves: h.moves, startFen: h.startFen, orientation: h.color, title: `vs ${h.opp}` })}><span>vs {h.opp}</span><span className="mg-mute">{h.result} · {h.moves.length} moves</span></button>)}</div>
-      )}
-      <button className="mg-btn mg-btn-ghost" onClick={onBack}>Back to games</button>
     </div>
   );
 }

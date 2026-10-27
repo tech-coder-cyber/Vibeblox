@@ -1,52 +1,125 @@
 // Playing chess against a bot: pick one, then play with hints, takebacks, draw offers, resignation and bot chat.
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Game, Position, materialBalance, moveFrom, moveTo, unicodePiece } from '../chess/rules';
-import { CHESS_BOTS, chessBot, botAcceptsDraw, botShouldResign, type ChessBot } from '../chess/bots';
+import { CHESS_BOTS, chessBot, engineBot, botAcceptsDraw, botShouldResign, type ChessBot } from '../chess/bots';
 import { openingName } from '../chess/openings';
 import { barFraction, scoreText } from '../chess/engine';
-import { engine, analysisEngine } from '../engineClient';
-import { botSays, type ChatEvent } from '../botCore';
-import { crownsFor, bestCrowns } from '../ratings';
-import { addHistory, update, loadProgress, type Prefs, type HistoryEntry } from '../store';
-import ChessBoardView, { uciSquares } from './ChessBoardView';
+import { engine, analysisEngine, hasStockfish, stockfishMove } from '../engineClient';
+import { botSays, botsOpen, botsByTier, TIERS, type ChatEvent } from '../botCore';
+import { crownsFor, bestCrowns, crownText } from '../ratings';
+import { addHistory, update, loadProgress, type Prefs, type HistoryEntry, type BoardTheme, type Celebration } from '../store';
+import { PieceSvg } from './pieces';
+import ChessBoardView, { uciSquares, kingSquare } from './ChessBoardView';
 import { useBoardFx } from './Board';
-import { BotPicker, BotChat, Confirm, Crowns, MoveList, PlayerBar, Toggle, type ChatLine } from './kit';
+import { BotChat, Confirm, Crowns, MoveList, PlayerBar, Toggle, type ChatLine } from './kit';
 import { playSfx } from './sfx';
 
-export type ReviewRequest = { moves: string[]; startFen?: string; orientation: 0 | 1; title: string };
+export type ReviewRequest = { moves: string[]; startFen?: string; orientation: 0 | 1; title: string; /** an analysis board: play moves and watch the engine, instead of grading a game */ explore?: boolean };
 
 const END_TEXT: Record<string, string> = { checkmate: 'checkmate', stalemate: 'stalemate', insufficient: 'insufficient material', fifty: 'the 50-move rule', repetition: 'repetition', agreement: 'agreement', resign: 'resignation' };
 
+const THEME_POOL: BoardTheme[] = ['green', 'brown', 'blue', 'slate', 'rose', 'night', 'grass', 'candy', 'sand', 'ice'];
+/** The board a bot "brings" when Showcase Opponent Theme is on. */
+export function botTheme(id: string): BoardTheme { let h = 0; for (const c of id) h = (h * 31 + c.charCodeAt(0)) >>> 0; return THEME_POOL[h % THEME_POOL.length]; }
+const ENGINE_STEPS = [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800, 1900, 2000, 2100, 2200, 2300, 2400, 2500, 2600, 2700, 2800, 2900, 3000];
+
 export default function ChessBotGame({ rank, prefs, onPrefs, onReview, initialBot, onBack }: { rank: string; prefs: Prefs; onPrefs: (p: Prefs) => void; onReview: (r: ReviewRequest) => void; initialBot?: string; onBack: () => void }) {
-  const [bot, setBot] = useState<ChessBot | null>(initialBot ? chessBot(initialBot) : null);
+  const [bot, setBot] = useState<ChessBot | null>(initialBot && initialBot !== 'engine' ? chessBot(initialBot) : CHESS_BOTS[0]);
+  const [engineOn, setEngineOn] = useState(initialBot === 'engine');
+  const [elo, setElo] = useState(1500);
   const [color, setColor] = useState<'white' | 'black' | 'random'>('white');
   const [started, setStarted] = useState(false);
+  const [sf, setSf] = useState<boolean | null>(null);
   const progress = loadProgress();
+  useEffect(() => { let live = true; void hasStockfish().then((v) => { if (live) setSf(v); }); return () => { live = false; }; }, []);
+  const active: ChessBot | null = engineOn ? engineBot(elo) : bot;
+  const previewGame = useMemo(() => new Game(), []);
 
-  if (!started || !bot) {
+  if (!started || !active) {
+    const open = botsOpen(rank);
+    const theme = prefs.showcaseTheme && active ? botTheme(active.id) : undefined;
+    const bubble = active ? (engineOn ? `I'll play at about ${elo}${elo >= 3000 ? ' (max)' : ''}. Ready?` : botSays(active.voice, 'start', () => 0)) : '';
+    const kings: Array<{ id: 'white' | 'random' | 'black'; label: string }> = [{ id: 'white', label: 'Play as white' }, { id: 'random', label: 'Random colour' }, { id: 'black', label: 'Play as black' }];
     return (
-      <div data-testid="chess-setup" className="grid gap-5 lg:grid-cols-[1fr_300px]">
+      <div data-testid="chess-setup" className="grid gap-5 lg:grid-cols-[minmax(0,620px)_minmax(320px,400px)] items-start">
         <div>
-          <h2 className="mg-h2 mb-1">Choose who to play</h2>
-          <p className="text-sm mg-mute mb-3">Practice games never change your rating. Win with no help to earn three crowns.</p>
-          <BotPicker bots={CHESS_BOTS} rank={rank} crowns={progress.crowns} picked={bot?.id ?? null} onPick={setBot} />
+          {active && <PlayerBar name={active.name} emoji={active.emoji} color={active.color + '33'} rating={String(active.rating)} />}
+          <ChessBoardView game={previewGame} version={0} orientation={color === 'black' ? 1 : 0} myColor={null} canMove={false} onUserMove={() => {}} viewPly={null} prefs={prefs} theme={theme} noPremove />
+          <PlayerBar name="You" self emoji="🙂" />
         </div>
-        <div className="mg-card p-4 h-fit space-y-3">
-          {bot ? (
-            <>
-              <div className="flex items-center gap-3"><div className="text-3xl">{bot.emoji}</div><div><div className="font-semibold">{bot.name} <span className="mg-chip">{bot.rating}</span></div><div className="text-xs mg-mute">{bot.plays}</div></div></div>
-              <div><div className="text-xs mg-mute mb-1">You play</div>
-                <div className="mg-seg" role="group">{(['white', 'black', 'random'] as const).map((c) => <button key={c} aria-pressed={color === c} onClick={() => setColor(c)} data-testid={`color-${c}`}>{c[0].toUpperCase() + c.slice(1)}</button>)}</div></div>
-              <Toggle on={prefs.botChat} onChange={(v) => onPrefs({ ...prefs, botChat: v })} label="Show what the bot says" testid="opt-botchat" />
-              <button className="mg-btn mg-btn-primary w-full" onClick={() => setStarted(true)} data-testid="start-bot-game">Play {bot.name}</button>
-            </>
-          ) : <p className="text-sm mg-mute">Pick a bot on the left to begin.</p>}
-          <button className="mg-btn mg-btn-ghost w-full" onClick={onBack}>Back</button>
+        <div className="rounded-xl overflow-hidden" style={{ background: '#262522', color: '#fff', border: '1px solid #3a3835' }} data-testid="bot-panel">
+          <div className="px-4 py-3 font-bold text-lg flex items-center gap-2" style={{ background: '#21201d', borderBottom: '1px solid #3a3835' }}>🤖 Play Bots</div>
+          {active && (
+            <div className="px-4 pt-4 flex items-start gap-3">
+              <div className="w-20 h-20 rounded-xl flex items-center justify-center text-5xl shrink-0" style={{ background: active.color + '55' }} data-testid="bot-avatar">{active.emoji}</div>
+              <div className="relative rounded-xl px-3 py-2 text-sm flex-1" style={{ background: '#3d3b37' }} data-testid="bot-bubble">
+                <div className="font-semibold mb-0.5">{active.name} <span style={{ color: '#a8a6a2', fontWeight: 400 }}>({active.rating})</span></div>
+                <div style={{ color: '#e8e6e3' }}>{engineOn ? bubble : `Hi, I'm ${active.name}! ${bubble}`}</div>
+              </div>
+            </div>
+          )}
+          <div className="px-4 pt-3 pb-1 mg-scroll overflow-y-auto" style={{ maxHeight: 330 }}>
+            <BotGrid bots={CHESS_BOTS} open={open} crowns={progress.crowns} pickedId={engineOn ? null : bot?.id ?? null} onPick={(b) => { setBot(b); setEngineOn(false); }} />
+            <div className="mt-3 mb-1 flex items-center justify-between text-xs font-semibold" style={{ color: '#c3c1bd' }}><span>Engine</span><span>{elo >= 3000 ? 'Max' : elo}</span></div>
+            <button className="w-full text-left rounded-lg p-3" onClick={() => setEngineOn(true)} data-testid="bot-engine" aria-pressed={engineOn} style={{ background: engineOn ? '#3d5a32' : '#33312e', border: `1px solid ${engineOn ? '#81b64c' : '#44423e'}` }}>
+              <div className="flex items-center gap-3"><span className="text-2xl">⚙️</span><span className="text-sm font-semibold flex-1">Engine · choose any level</span>{sf === false && <span className="text-xs" style={{ color: '#a8a6a2' }}>built-in</span>}</div>
+              <input type="range" min={0} max={ENGINE_STEPS.length - 1} step={1} value={Math.max(0, ENGINE_STEPS.indexOf(elo))} className="w-full mt-2" data-testid="engine-slider" aria-label="Engine rating"
+                onChange={(e) => { setElo(ENGINE_STEPS[parseInt(e.target.value, 10)]); setEngineOn(true); }} style={{ accentColor: '#81b64c' }} />
+              <div className="flex justify-between text-xs" style={{ color: '#a8a6a2' }}><span>100</span><span>1500</span><span>3000</span></div>
+            </button>
+          </div>
+          <div className="px-4 pb-4 pt-2">
+            <details className="mb-3" data-testid="bot-options">
+              <summary className="cursor-pointer text-sm font-semibold py-1">Options</summary>
+              <div className="pt-1 text-sm"><Toggle on={prefs.botChat} onChange={(v) => onPrefs({ ...prefs, botChat: v })} label="Show what the bot says" testid="opt-botchat" /></div>
+            </details>
+            <div className="grid grid-cols-3 gap-2 mb-3" role="group">
+              {kings.map((k) => (
+                <button key={k.id} aria-pressed={color === k.id} onClick={() => setColor(k.id)} data-testid={`color-${k.id}`} title={k.label} aria-label={k.label}
+                  className="h-14 rounded-lg flex items-center justify-center" style={{ background: color === k.id ? '#4b4a47' : '#33312e', border: `2px solid ${color === k.id ? '#81b64c' : '#44423e'}` }}>
+                  {k.id === 'random' ? <span className="relative w-9 h-9 flex"><span className="w-1/2 overflow-hidden"><PieceSvg set={prefs.pieceSet} type={6} white id="rk1" /></span><span className="w-1/2 overflow-hidden relative"><span className="absolute right-0 w-[200%]"><PieceSvg set={prefs.pieceSet} type={6} white={false} id="rk2" /></span></span></span>
+                    : <span className="w-9 h-9"><PieceSvg set={prefs.pieceSet} type={6} white={k.id === 'white'} id={'k' + k.id} /></span>}
+                </button>
+              ))}
+            </div>
+            <button className="w-full rounded-lg font-extrabold text-lg py-3" style={{ background: '#81b64c', color: '#fff', boxShadow: '0 4px 0 #537133' }} onClick={() => setStarted(true)} data-testid="start-bot-game">Play</button>
+            <p className="text-xs mt-2" style={{ color: '#a8a6a2' }}>Practice games never change your rating. Win with no help to earn three crowns.</p>
+            <button className="mg-btn mg-btn-ghost w-full mt-2" onClick={onBack}>Back</button>
+          </div>
         </div>
       </div>
     );
   }
-  return <Playing key={bot.id + color + String(started)} bot={bot} colorChoice={color} prefs={prefs} onPrefs={onPrefs} onReview={onReview} onNewBot={() => setStarted(false)} onBack={onBack} />;
+  return <Playing key={active.id + (engineOn ? elo : '') + color + String(started)} bot={active} colorChoice={color} prefs={prefs} onPrefs={onPrefs} onReview={onReview} onNewBot={() => setStarted(false)} onBack={onBack} />;
+}
+
+function BotGrid({ bots, open, crowns, pickedId, onPick }: { bots: ChessBot[]; open: number; crowns: Record<string, number>; pickedId: string | null; onPick: (b: ChessBot) => void }) {
+  const names: Record<string, string> = { beginner: 'New to Chess', intermediate: 'Intermediate', advanced: 'Advanced', master: 'Master' };
+  return (
+    <div>
+      {TIERS.map((t) => {
+        const list = botsByTier(bots, t);
+        return (
+          <div key={t} className="mb-3" data-testid={`tier-sec-${t}`}>
+            <div className="text-xs font-semibold mb-1.5 flex justify-between" style={{ color: '#c3c1bd' }}><span>{names[t]}</span><span>{list.length} bots</span></div>
+            <div className="grid grid-cols-4 gap-2">
+              {list.map((b, i) => {
+                const unlocked = i < open;
+                return (
+                  <button key={b.id} disabled={!unlocked} onClick={() => onPick(b)} data-testid={`bot-${b.id}`} data-locked={!unlocked} title={`${b.name} (${b.rating})${unlocked ? '' : ' - locked'}`}
+                    className="rounded-lg p-1 flex flex-col items-center disabled:opacity-50" style={{ background: pickedId === b.id ? '#4b4a47' : 'transparent', outline: pickedId === b.id ? '2px solid #81b64c' : 'none' }}>
+                    <span className="w-12 h-12 rounded-lg flex items-center justify-center text-2xl relative" style={{ background: b.color + '55' }}>{b.emoji}{!unlocked && <span className="absolute inset-0 rounded-lg flex items-center justify-center text-base" style={{ background: 'rgba(20,20,20,.55)' }}>🔒</span>}</span>
+                    <span className="text-[11px] mt-0.5 truncate max-w-full">{b.name}</span>
+                    <span className="text-[10px]" style={{ color: unlocked ? '#f2b84b' : '#77756f' }}>{unlocked ? crownText(crowns[b.id] ?? 0) : b.rating}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 function Playing({ bot, colorChoice, prefs, onPrefs, onReview, onNewBot, onBack }: { bot: ChessBot; colorChoice: 'white' | 'black' | 'random'; prefs: Prefs; onPrefs: (p: Prefs) => void; onReview: (r: ReviewRequest) => void; onNewBot: () => void; onBack: () => void }) {
@@ -68,7 +141,9 @@ function Playing({ bot, colorChoice, prefs, onPrefs, onReview, onNewBot, onBack 
   const chatId = useRef(0);
   const savedRef = useRef(false);
   const botTurnRef = useRef(false);
-  const { fx, trigger } = useBoardFx({ allowSlam: true, sound: prefs.sound });
+  const { fx, trigger } = useBoardFx({ allowSlam: true, sound: prefs.sound, soundTheme: prefs.soundTheme });
+  const [celebrate, setCelebrate] = useState<{ id: number; kind: Celebration } | null>(null);
+  const [fallSq, setFallSq] = useState<number | null>(null);
 
   const say = useCallback((ev: ChatEvent) => {
     const text = botSays(bot.voice, ev);
@@ -86,9 +161,10 @@ function Playing({ bot, colorChoice, prefs, onPrefs, onReview, onNewBot, onBack 
     const crowns = crownsFor(res, hints, takebacks);
     const entry: HistoryEntry = { id: `b${Date.now()}`, game: 'chess', mode: 'bot', opp: bot.name, oppId: bot.id, oppRating: bot.rating, color: mine, result: res, reason: END_TEXT[game.reason] ?? game.reason, moves: game.uciList(), at: Date.now(), crowns, hints, takebacks };
     addHistory(entry);
-    if (res === 'win') update((p) => { p.crowns[bot.id] = bestCrowns(p.crowns[bot.id], crowns); });
+    if (res === 'win' && bot.id !== 'engine') update((p) => { p.crowns[bot.id] = bestCrowns(p.crowns[bot.id], crowns); });
     say(res === 'win' ? 'lose' : res === 'loss' ? 'win' : 'draw');
-    playSfx(res === 'win' ? 'win' : res === 'loss' ? 'lose' : 'end', prefs.sound);
+    playSfx(res === 'win' ? 'win' : res === 'loss' ? 'lose' : 'end', prefs.sound, prefs.soundTheme);
+    if (res === 'win') setCelebrate({ id: Date.now(), kind: prefs.celebration }); else if (res === 'loss' && game.reason === 'checkmate') setFallSq(kingSquare(game.pos, mine));
     setDone({ crowns, result: res, text: `${res === 'win' ? 'You won' : res === 'loss' ? 'You lost' : 'Draw'} by ${END_TEXT[game.reason] ?? game.reason}` });
   }, [game, mine, hints, takebacks, bot, say, prefs.sound]);
 
@@ -97,14 +173,14 @@ function Playing({ bot, colorChoice, prefs, onPrefs, onReview, onNewBot, onBack 
     setVer((v) => v + 1);
     setView(null);
     const gaveCheck = game.pos.inCheck();
-    playSfx(game.over && game.reason === 'checkmate' ? 'end' : gaveCheck ? 'check' : captured ? 'capture' : 'move', prefs.sound);
+    playSfx(game.over && game.reason === 'checkmate' ? 'end' : gaveCheck ? 'check' : captured ? 'capture' : 'move', prefs.sound, prefs.soundTheme);
     if (!game.over) {
       if (byBot && captured && Math.random() < 0.6) say('capture');
       else if (!byBot && captured && Math.random() < 0.5) say('lostPiece');
       else if (byBot && gaveCheck && Math.random() < 0.7) say('check');
     }
     finishCheck();
-  }, [game, prefs.sound, say, finishCheck]);
+  }, [game, prefs.sound, prefs.soundTheme, say, finishCheck]);
 
   // the bot's turn. (Callbacks come through refs so a re-render never cancels a move that is being thought out.)
   const afterMoveRef = useRef(afterMove); afterMoveRef.current = afterMove;
@@ -117,7 +193,8 @@ function Playing({ bot, colorChoice, prefs, onPrefs, onReview, onNewBot, onBack 
     const started = Date.now();
     void (async () => {
       let uci = '', score = 0;
-      try { const r = await engine.chessBot(bot.id, game.startFen, game.uciList()); uci = r.uci; score = r.score; } catch { /* below */ }
+      if (bot.id === 'engine') { try { uci = (await stockfishMove(game.pos.toFen(), bot.rating)) ?? ''; } catch { uci = ''; } if (uci && !game.pos.parseUci(uci)) uci = ''; }
+      if (!uci) { try { const r = await engine.chessBot(bot.id, game.startFen, game.uciList(), bot.rating); uci = r.uci; score = r.score; } catch { /* below */ } }
       const minWait = 450 + (bot.voice === 'sleepy' ? 900 : bot.voice === 'robot' ? 0 : Math.random() * 500);
       const wait = Math.max(0, minWait - (Date.now() - started));
       await new Promise((r) => setTimeout(r, wait));
@@ -205,14 +282,15 @@ function Playing({ bot, colorChoice, prefs, onPrefs, onReview, onNewBot, onBack 
     <div className="grid gap-4 lg:grid-cols-[minmax(0,640px)_1fr]" data-testid="chess-game">
       <div className="flex gap-2">
         {evalOn && (
-          <div className="w-4 rounded overflow-hidden shrink-0 border" style={{ borderColor: 'var(--mg-line)', background: '#23262c' }} data-testid="eval-bar" title={scoreText(evalScore)}>
-            <div style={{ height: `${(1 - barFraction(evalScore)) * 100}%`, background: '#23262c' }} /><div style={{ height: `${barFraction(evalScore) * 100}%`, background: '#f2efe6' }} />
+          <div className="w-6 rounded overflow-hidden shrink-0 border relative" style={{ borderColor: 'var(--mg-line)', background: '#23262c' }} data-testid="eval-bar" title={scoreText(evalScore)}>
+            <div style={{ height: `${(1 - barFraction(evalScore)) * 100}%`, background: '#403d39' }} /><div style={{ height: `${barFraction(evalScore) * 100}%`, background: '#f2efe6' }} />
+            <span className="absolute left-0 right-0 text-center font-bold" data-testid="eval-num" style={{ fontSize: 10, [evalScore >= 0 === (flipped === 0) ? 'bottom' : 'top']: 2, color: evalScore >= 0 ? '#262522' : '#f2efe6' }}>{scoreText(evalScore).replace('+', '')}</span>
           </div>
         )}
         <div className="flex-1 min-w-0">
           <PlayerBar name={bot.name} emoji={bot.emoji} color={bot.color + '33'} rating={String(bot.rating)} sub={thinking ? 'Thinking...' : captured(mine === 0 ? 1 : 0)} />
           <ChessBoardView game={game} version={ver} orientation={flipped} myColor={mine} canMove={!thinking && game.turn === mine && !done} onUserMove={onUserMove} viewPly={view} prefs={prefs}
-            hint={hint} fx={fx}>
+            hint={hint} fx={fx} theme={prefs.showcaseTheme ? botTheme(bot.id) : undefined} celebrate={celebrate} fallSq={fallSq}>
             {done && (
               <div className="absolute inset-0 z-30 flex items-center justify-center p-3" style={{ background: 'rgba(10,12,16,.62)' }} data-testid="end-card">
                 <div className="mg-card p-5 text-center w-full max-w-xs">
@@ -227,7 +305,7 @@ function Playing({ bot, colorChoice, prefs, onPrefs, onReview, onNewBot, onBack 
               </div>
             )}
           </ChessBoardView>
-          <PlayerBar name="You" emoji="🙂" sub={captured(mine)} />
+          <PlayerBar name="You" self emoji="🙂" sub={captured(mine)} />
         </div>
       </div>
 

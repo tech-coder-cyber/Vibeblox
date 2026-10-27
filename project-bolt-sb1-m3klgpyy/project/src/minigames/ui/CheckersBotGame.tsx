@@ -60,7 +60,7 @@ function Playing({ bot, colorChoice, prefs, onPrefs, onReview, onNewBot, onBack 
   const [confirm, setConfirm] = useState<null | 'resign' | 'new'>(null);
   const [done, setDone] = useState<null | { crowns: number; result: 'win' | 'draw' | 'loss'; text: string }>(null);
   const chatId = useRef(0), savedRef = useRef(false), botTurnRef = useRef(false), aliveRef = useRef(true);
-  const { fx, trigger } = useBoardFx({ allowSlam: false, sound: prefs.sound });
+  const { fx, trigger } = useBoardFx({ allowSlam: false, sound: prefs.sound, soundTheme: prefs.soundTheme });
 
   const say = useCallback((ev: ChatEvent) => {
     const text = botSays(bot.voice, ev);
@@ -79,13 +79,13 @@ function Playing({ bot, colorChoice, prefs, onPrefs, onReview, onNewBot, onBack 
     addHistory(entry);
     if (res === 'win') update((p) => { p.crowns[bot.id] = bestCrowns(p.crowns[bot.id], crowns); });
     say(res === 'win' ? 'lose' : res === 'loss' ? 'win' : 'draw');
-    playSfx(res === 'win' ? 'win' : res === 'loss' ? 'lose' : 'end', prefs.sound);
+    playSfx(res === 'win' ? 'win' : res === 'loss' ? 'lose' : 'end', prefs.sound, prefs.soundTheme);
     setDone({ crowns, result: res, text: END_TEXT[game.reason] ?? game.reason });
   }, [game, mine, hints, takebacks, bot, say, prefs.sound]);
 
   const afterMove = useCallback((byBot: boolean, captured: boolean) => {
     setHint(null); setVer((v) => v + 1); setView(null);
-    playSfx(captured ? 'capture' : 'move', prefs.sound);
+    playSfx(captured ? 'capture' : 'move', prefs.sound, prefs.soundTheme);
     if (!game.over) { if (byBot && captured && Math.random() < 0.5) say('capture'); else if (!byBot && captured && Math.random() < 0.4) say('lostPiece'); }
     finishCheck();
   }, [game, prefs.sound, say, finishCheck]);
@@ -167,7 +167,7 @@ function Playing({ bot, colorChoice, prefs, onPrefs, onReview, onNewBot, onBack 
             </div>
           )}
         </CheckersBoardView>
-        <PlayerBar name="You" emoji="🙂" sub={`${count(mine)} pieces`} />
+        <PlayerBar name="You" self emoji="🙂" sub={`${count(mine)} pieces`} />
       </div>
       <div className="space-y-3 min-w-0">
         <div className="mg-card p-3">

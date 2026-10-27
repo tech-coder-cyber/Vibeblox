@@ -89,11 +89,11 @@ export async function getChat(game: string, afterId = 0): Promise<Result<{ value
 }
 
 // ---- boards ----
-export type RatingRow = { username: string; rank: string; rating: number; games: number; wins: number; losses: number; draws: number };
+export type RatingRow = { staff?: string | null; special?: string | null; og?: boolean; owner?: boolean; username: string; rank: string; rating: number; games: number; wins: number; losses: number; draws: number };
 export async function leaderboard(game: GameKind | 'puzzle', limit = 50): Promise<Result<{ value: RatingRow[] }>> {
   return norm(await rpc('mg_leaderboard', { p_game: game, p_limit: limit }), (d) => (Array.isArray(d) ? d : []));
 }
-export type ScoreRow = { username: string; rank: string; score: number };
+export type ScoreRow = { staff?: string | null; special?: string | null; og?: boolean; owner?: boolean; username: string; rank: string; score: number };
 export async function scoreBoard(game: '2048' | 'tictactoe', limit = 50): Promise<Result<{ value: ScoreRow[] }>> {
   return norm(await rpc('mg_score_board', { p_game: game, p_limit: limit }), (d) => (Array.isArray(d) ? d : []));
 }
@@ -115,3 +115,16 @@ export async function adminFairplay(status: 'open' | 'cleared' | 'confirmed' = '
   return norm(await rpc('mg_list_fairplay', { p_status: status }), (d) => (Array.isArray(d) ? d.map((r: any) => ({ id: r.id, gameId: r.game_id, game: r.game, target: r.target_name, reporter: r.reporter_name, level: r.level, score: r.score, signals: r.signals ?? [], status: r.status, note: r.note, at: r.created_at, previous: Number(r.previous_reviews) })) : []));
 }
 export const adminResolveFairplay = async (id: number, action: 'clear' | 'confirm', days = 7, note = '') => norm(await rpc('mg_resolve_fairplay', { p_id: id, p_action: action, p_days: days, p_note: note }), () => true);
+
+/** Rank badges of players (rank, staff, special rank, OG). Empty until the Indev 37.1 SQL is run. */
+export type PlayerBadge = { userId: string; rank: string; staff: string | null; special: string | null; og: boolean; owner: boolean };
+export async function playerBadges(ids: string[]): Promise<Record<string, PlayerBadge>> {
+  const out: Record<string, PlayerBadge> = {};
+  const list = ids.filter(Boolean);
+  if (!list.length) return out;
+  try {
+    const r = await rpc('mg_player_badges', { p_ids: list });
+    if (r.ok && Array.isArray(r.data)) for (const x of r.data) out[x.user_id] = { userId: x.user_id, rank: x.rank ?? 'none', staff: x.staff ?? null, special: x.special ?? null, og: !!x.og, owner: !!x.owner };
+  } catch { /* not set up yet */ }
+  return out;
+}

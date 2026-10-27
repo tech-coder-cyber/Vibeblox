@@ -53,7 +53,15 @@ export const CHESS_BOTS: ChessBot[] = [
   { id: 'nova', name: 'Nova', rating: 2600, tier: 'master', emoji: '🌟', color: '#ff6fb5', voice: 'robot', bio: 'A machine that never forgets a tactic.', plays: 'Machine-like accuracy.', style: NORMAL_STYLE, book: ['ruy', 'qgd', 'sicilian'], resignBelow: -500, drawLove: 0.1 },
   { id: 'titan', name: 'Titan', rating: 2700, tier: 'master', emoji: '🗿', color: '#7a7f87', voice: 'robot', bio: 'The strongest bot here. Plays at full strength.', plays: 'Full strength.', style: NORMAL_STYLE, tweak: { depth: 9, timeMs: 3000 }, book: ['ruy', 'qgd', 'sicilian', 'nimzo'], resignBelow: -400, drawLove: 0.05 },
 ];
-export const chessBot = (id: string) => CHESS_BOTS.find((b) => b.id === id) ?? CHESS_BOTS[0];
+export const chessBot = (id: string, elo?: number) => id === 'engine' ? engineBot(elo ?? 1500) : CHESS_BOTS.find((b) => b.id === id) ?? CHESS_BOTS[0];
+export const ENGINE_MIN = 100, ENGINE_MAX = 3000;
+/** The "Engine" opponent: any rating from 100 to 3000. Below ~1350 (or without Stockfish) the built-in search plays it. */
+export function engineBot(elo: number): ChessBot {
+  const r = Math.max(ENGINE_MIN, Math.min(ENGINE_MAX, Math.round(elo)));
+  return { id: 'engine', name: 'Engine', rating: r, tier: r < 800 ? 'beginner' : r < 1500 ? 'intermediate' : r < 2200 ? 'advanced' : 'master', emoji: '⚙️', color: '#7bd88f', voice: 'robot',
+    bio: 'Pick any strength from 100 to 3000.', plays: 'Plays at the rating you choose.', style: NORMAL_STYLE, book: [], resignBelow: r >= 1500 ? -900 : 0, drawLove: 0.3,
+    tweak: r >= 2300 ? { depth: 9, timeMs: 2500 } : undefined };
+}
 
 // ---------- strength from rating ----------
 const ANCHORS: Array<[number, Skill]> = [

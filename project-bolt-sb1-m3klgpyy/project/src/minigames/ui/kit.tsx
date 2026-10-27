@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { BotInfo, Tier } from '../botCore';
 import { TIERS, TIER_NAMES, botUnlocked, botsByTier, botIndexInTier, botsOpen } from '../botCore';
 import { crownText } from '../ratings';
+import { RankBadges, useSelfBadge, type BadgeInfo } from './Badge';
 
 export function Seg<T extends string>({ value, options, onChange, testid }: { value: T; options: Array<{ id: T; label: string }>; onChange: (v: T) => void; testid?: string }) {
   return (
@@ -42,12 +43,14 @@ export function Crowns({ n, size = 14 }: { n: number; size?: number }) {
   return <span aria-label={`${n} of 3 crowns`} data-testid="crowns" title={`${n} of 3 crowns`} style={{ fontSize: size, letterSpacing: 1, color: n ? '#f2b84b' : '#59627a' }}>{crownText(n)}</span>;
 }
 
-export function PlayerBar({ name, sub, rating, clock, active, low, emoji, color, right }: { name: string; sub?: string; rating?: string; clock?: string; active?: boolean; low?: boolean; emoji?: string; color?: string; right?: ReactNode }) {
+export function PlayerBar({ name, sub, rating, clock, active, low, emoji, color, right, badge, self }: { badge?: BadgeInfo | null; self?: boolean; name: string; sub?: string; rating?: string; clock?: string; active?: boolean; low?: boolean; emoji?: string; color?: string; right?: ReactNode }) {
+  const mine = useSelfBadge();
+  const bg = badge ?? (self ? mine : null);
   return (
     <div className="flex items-center gap-3 py-1.5" data-testid="player-bar">
       <div className="w-9 h-9 rounded-lg flex items-center justify-center text-lg shrink-0" style={{ background: color ?? 'var(--mg-panel2)' }}>{emoji ?? name.slice(0, 1).toUpperCase()}</div>
       <div className="min-w-0 flex-1">
-        <div className="text-sm font-semibold truncate">{name} {rating && <span className="mg-mute font-normal">({rating})</span>}</div>
+        <div className="text-sm font-semibold truncate">{name} {rating && <span className="mg-mute font-normal">({rating})</span>} <RankBadges badge={bg} /></div>
         {sub && <div className="text-xs mg-mute truncate">{sub}</div>}
       </div>
       {right}

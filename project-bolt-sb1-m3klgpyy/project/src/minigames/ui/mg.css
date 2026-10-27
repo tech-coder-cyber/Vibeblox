@@ -47,3 +47,10 @@
 @keyframes mg-crack { from { opacity: 0; } 30% { opacity: 1; } to { opacity: .9; } }
 .mg-shake { animation: mg-shake .45s .55s both; }
 @media (prefers-reduced-motion: reduce) { .mg-shake { animation: none; } .mg-fx-piece { animation-duration: .01s !important; } }
+
+/* Indev 37.1: game-end animations, falling king, move trail */
+@keyframes mg-confetti { 0% { transform: translateY(0) rotate(0); opacity: 1; } 85% { opacity: 1; } 100% { transform: translateY(125vh) rotate(var(--rot)); opacity: 0; } }
+@keyframes mg-burst { 0% { transform: scale(.3); opacity: 1; box-shadow: 0 0 0 0 currentColor; } 60% { opacity: 1; } 100% { transform: scale(14); opacity: 0; } }
+@keyframes mg-topple { 0% { transform: rotate(0); } 70% { transform: rotate(78deg) translate(6%, 4%); } 100% { transform: rotate(90deg) translate(10%, 8%); opacity: .8; } }
+@keyframes mg-trail { 0% { opacity: .8; } 100% { opacity: 0; } }
+@keyframes mg-pop { 0% { transform: scale(.85); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
