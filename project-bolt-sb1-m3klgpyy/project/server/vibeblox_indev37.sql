@@ -1,4 +1,4 @@
--- VibeBlox Indev 37 (cumulative): Indev 36 (several ranks, command blocks...) + edit/delete/report messages + MINIGAMES.
+-- VibeBlox Indev 37.1 (cumulative): Indev 36 (several ranks, command blocks...) + edit/delete/report messages + MINIGAMES + rank badges in the games.
 -- Run this once in the Supabase SQL editor. Safe to run again. If you already ran vibeblox_all.sql up to Indev 32 this still works.
 -- VibeBlox Indev 36: players can own several paid ranks and switch between them in the Shop.
 -- Run this once in the Supabase SQL editor. Safe to run again.
@@ -90,7 +90,6 @@ begin
 end $$;
 grant execute on function public.report_dm(bigint, text) to authenticated;
 
-drop function if exists public.list_message_reports();
 create or replace function public.list_message_reports() returns table (id bigint, reporter text, reported text, body text, reason text, at timestamptz)
 language plpgsql security definer set search_path = public as $$
 begin
@@ -140,7 +139,6 @@ drop policy if exists "ratings are public" on public.mg_ratings;
 create policy "ratings are public" on public.mg_ratings for select to authenticated using (true);
 
 -- Same maths as src/minigames/ratings.ts: the first 5 games give a performance estimate, then Elo with FIDE K factors.
-drop function if exists public.mg_next_rating(int, int, bigint, numeric, int, numeric);
 create or replace function public.mg_next_rating(r int, n int, sum_opp bigint, pts numeric, opp int, score numeric)
 returns table (nr int, nn int, nsum bigint, npts numeric)
 language plpgsql immutable as $$
@@ -216,7 +214,6 @@ end $$;
 grant execute on function public.mg_save_extra(text, jsonb) to authenticated;
 
 -- ---------- leaderboards ----------
-drop function if exists public.mg_leaderboard(text, int);
 create or replace function public.mg_leaderboard(p_game text, p_limit int default 50)
 returns table (username text, rank text, rating int, games int, wins int, losses int, draws int)
 language sql stable security definer set search_path = public as $$
@@ -229,7 +226,6 @@ language sql stable security definer set search_path = public as $$
 $$;
 grant execute on function public.mg_leaderboard(text, int) to anon, authenticated;
 
-drop function if exists public.mg_score_board(text, int);
 create or replace function public.mg_score_board(p_game text, p_limit int default 50)
 returns table (username text, rank text, score int)
 language sql stable security definer set search_path = public as $$
@@ -622,7 +618,6 @@ begin
 end $$;
 grant execute on function public.mg_report_fairplay(uuid, text, int, jsonb) to authenticated;
 
-drop function if exists public.mg_list_fairplay(text);
 create or replace function public.mg_list_fairplay(p_status text default 'open')
 returns table (id bigint, game_id uuid, game text, target_name text, reporter_name text, level text, score int, signals jsonb, status text, note text, created_at timestamptz, previous_reviews bigint)
 language plpgsql stable security definer set search_path = public as $$
@@ -687,3 +682,64 @@ language sql security definer set search_path = public as $$
   delete from public.mg_fairplay where status <> 'open' and created_at < now() - interval '90 days';
 $$;
 grant execute on function public.mg_prune() to authenticated;
+
+-- ======================================================================================================
+-- Indev 37.1: rank badges in the games.
+-- Leaderboards and game screens can now show each player's badges (OWNER, HELPER, MOD, OG, YOUTUBE, Vanguard, Elite, Champion).
+-- Safe to run again. Until it is run, the games still work, just without other players' badges.
+-- ======================================================================================================
+
+-- Leaderboards now also return the extra badge columns.
+drop function if exists public.mg_leaderboard(text, int);
+create or replace function public.mg_leaderboard(p_game text, p_limit int default 50)
+returns table (username text, rank text, rating int, games int, wins int, losses int, draws int, staff text, special text, og boolean, owner boolean)
+language sql stable security definer set search_path = public as $$
+  select p.username,
+         case when coalesce(p.undercover, false) then 'none' else p.rank end,
+         r.rating, r.games, r.wins, r.losses, r.draws,
+         p.staff,
+         case when coalesce(p.undercover, false) then null else p.special end,
+         case when coalesce(p.undercover, false) then false else coalesce(p.og, false) end,
+         lower(p.username) = 'master'
+    from public.mg_ratings r join public.profiles p on p.id = r.user_id
+   where r.game = p_game and r.games >= (case when p_game = 'puzzle' then 3 else 5 end)
+     and (p.mg_banned_until is null or p.mg_banned_until < now())
+   order by r.rating desc, r.games desc
+   limit least(greatest(p_limit, 1), 200);
+$$;
+grant execute on function public.mg_leaderboard(text, int) to anon, authenticated;
+
+drop function if exists public.mg_score_board(text, int);
+create or replace function public.mg_score_board(p_game text, p_limit int default 50)
+returns table (username text, rank text, score int, staff text, special text, og boolean, owner boolean)
+language sql stable security definer set search_path = public as $$
+  select p.username,
+         case when coalesce(p.undercover, false) then 'none' else p.rank end,
+         s.score,
+         p.staff,
+         case when coalesce(p.undercover, false) then null else p.special end,
+         case when coalesce(p.undercover, false) then false else coalesce(p.og, false) end,
+         lower(p.username) = 'master'
+    from public.mg_scores s join public.profiles p on p.id = s.user_id
+   where s.game = p_game and s.score > 0
+   order by s.score desc, s.updated_at
+   limit least(greatest(p_limit, 1), 200);
+$$;
+grant execute on function public.mg_score_board(text, int) to anon, authenticated;
+
+-- The badges of a few players (the two players of a game). /undercover hides the rank, OG and special badges, as everywhere else.
+drop function if exists public.mg_player_badges(uuid[]);
+create or replace function public.mg_player_badges(p_ids uuid[])
+returns table (user_id uuid, rank text, staff text, special text, og boolean, owner boolean)
+language sql stable security definer set search_path = public as $$
+  select p.id,
+         case when coalesce(p.undercover, false) then 'none' else p.rank end,
+         p.staff,
+         case when coalesce(p.undercover, false) then null else p.special end,
+         case when coalesce(p.undercover, false) then false else coalesce(p.og, false) end,
+         lower(p.username) = 'master'
+    from public.profiles p
+   where p.id = any (p_ids)
+   limit 10;
+$$;
+grant execute on function public.mg_player_badges(uuid[]) to anon, authenticated;
