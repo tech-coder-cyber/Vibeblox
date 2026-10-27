@@ -40,6 +40,8 @@ import { loadLibrary, validateSchematic, nameKey, type Schematic } from './schem
 import SchematicsPage, { SchematicUpload } from './SchematicsPage';
 import PrivateServers from './PrivateServersPanel';
 import VideoOptions from './VideoOptions';
+import SidebarSettings from './SidebarSettings';
+import { arrangeSidebar, useSidebarPrefs } from './sidebarPrefs';
 import { MusicPlayer, SOUNDTRACKS, subscribeNowPlaying, getNowPlaying, type SoundtrackStyle, type AnySoundtrack } from './music';
 import { playlist, isFileStyle } from './playlist';
 import { NowPlayingToast, LookingAtLabel, AttackIndicator, QolSettings, BlockSoundSettings, BackgroundSettings, PlaylistNote, saveScreenshot } from './QolBits';
@@ -483,6 +485,9 @@ function Sidebar({ username, view, onNavClick, socialBadge = 0, compact = false 
   const [seen, setSeen] = useState(readNewsSeen);
   useEffect(() => { if (view === 'news') { try { localStorage.setItem(NEWS_SEEN_KEY, String(GAME_VERSION)); } catch { /* private window */ } setSeen(GAME_VERSION); } }, [view]);
   const newsUnread = seen < GAME_VERSION;
+  const sb = useSidebarPrefs();
+  const items = arrangeSidebar(navItems, sb);
+  const bsz = sb.size === 'small' ? 'w-10 h-10' : sb.size === 'large' ? 'w-14 h-14' : 'w-12 h-12';
   if (compact) {
     // Phones: a row of tabs along the bottom of the screen
     const tab = (key: string, active: boolean, onClick: () => void, Icon: typeof Home, label: string, badge?: ReactNode) => (
@@ -493,7 +498,7 @@ function Sidebar({ username, view, onNavClick, socialBadge = 0, compact = false 
     );
     return (
       <nav className="w-full h-[60px] shrink-0 bg-[#0d131b] border-t border-[#243044] flex items-center justify-around gap-1 px-1 overflow-x-auto vb-scroll" data-testid="mobile-nav" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
-        {navItems.filter((it) => it.view).map((item) => tab(item.view!, item.view === view, () => onNavClick(item.view!), item.icon, t('nav.' + item.view),
+        {items.filter((it) => it.view).map((item) => tab(item.view!, item.view === view, () => onNavClick(item.view!), item.icon, t('nav.' + item.view),
           item.view === 'social' && socialBadge > 0 ? <span data-testid="social-badge" className="absolute top-0 right-1 min-w-[16px] h-[16px] px-1 rounded-full bg-[#ff5252] text-white text-[9px] font-bold flex items-center justify-center">{socialBadge > 9 ? '9+' : socialBadge}</span> : undefined))}
         {tab('news', view === 'news', () => onNavClick('news'), Newspaper, t('nav.news'), newsUnread && view !== 'news' ? <span data-testid="news-dot" className="absolute top-1 right-2 w-2 h-2 rounded-full bg-[#ff5252]" /> : undefined)}
         <span data-testid="game-version" className="sr-only">Indev {GAME_VERSION}</span>
@@ -504,7 +509,7 @@ function Sidebar({ username, view, onNavClick, socialBadge = 0, compact = false 
     <nav className="w-20 shrink-0 bg-[#0d131b] border-r border-[#243044] flex flex-col items-center py-6 gap-2">
       <div className="mb-6"><img src="images/logo.png" alt="VibeBlox" className="w-11 h-11 rounded-xl" /></div>
       <div className="flex flex-col gap-1.5 flex-1">
-        {navItems.map((item) => {
+        {items.map((item) => {
           const Icon = item.icon;
           const isActive = item.view ? item.view === view : false;
           return (
@@ -514,13 +519,13 @@ function Sidebar({ username, view, onNavClick, socialBadge = 0, compact = false 
               disabled={locked(item.view)}
               title={locked(item.view) ? 'Sign in to use this' : undefined}
               onClick={() => { if (item.href === 'discord') window.open(DISCORD_INVITE_URL, '_blank', 'noopener,noreferrer'); else if (item.view) onNavClick(item.view); }}
-              className={`relative w-12 h-12 rounded-xl flex flex-col items-center justify-center text-[8px] transition-all duration-200 ease-out ${locked(item.view) ? 'opacity-30 cursor-not-allowed' : 'hover:scale-110 active:scale-95'} ${
+              className={`relative ${bsz} rounded-xl flex flex-col items-center justify-center text-[8px] transition-all duration-200 ease-out ${locked(item.view) ? 'opacity-30 cursor-not-allowed' : 'hover:scale-110 active:scale-95'} ${
                 isActive
                   ? 'bg-[#00e676]/15 text-[#00e676]'
                   : 'text-[#5a6b80] hover:text-white hover:bg-[#1a2230]'
               }`}
             >
-              <Icon className="w-5 h-5 mb-0.5 transition-transform duration-200" />{item.view ? t('nav.' + item.view) : item.label}
+              <Icon className="w-5 h-5 mb-0.5 transition-transform duration-200" />{sb.labels && (item.view ? t('nav.' + item.view) : item.label)}
               {item.view === 'social' && socialBadge > 0 && (
                 <span data-testid="social-badge" className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-[#ff5252] text-white text-[10px] font-bold flex items-center justify-center">{socialBadge > 9 ? '9+' : socialBadge}</span>
               )}
@@ -528,7 +533,7 @@ function Sidebar({ username, view, onNavClick, socialBadge = 0, compact = false 
           );
         })}
       </div>
-      {CAN_LINK_OUT && (
+      {CAN_LINK_OUT && sb.discord && (
         <a
           href={DISCORD_INVITE_URL}
           target="_blank"
@@ -541,15 +546,17 @@ function Sidebar({ username, view, onNavClick, socialBadge = 0, compact = false 
           DISCORD
         </a>
       )}
+      {sb.news && (
       <button
         data-testid="nav-news"
         onClick={() => onNavClick('news')}
-        className={`relative mt-2 w-12 h-12 rounded-xl flex flex-col items-center justify-center text-[8px] transition-all duration-200 ease-out hover:scale-110 active:scale-95 ${view === 'news' ? 'bg-[#00e676]/15 text-[#00e676]' : 'text-[#5a6b80] hover:text-white hover:bg-[#1a2230]'}`}
+        className={`relative mt-2 ${bsz} rounded-xl flex flex-col items-center justify-center text-[8px] transition-all duration-200 ease-out hover:scale-110 active:scale-95 ${view === 'news' ? 'bg-[#00e676]/15 text-[#00e676]' : 'text-[#5a6b80] hover:text-white hover:bg-[#1a2230]'}`}
       >
-        <Newspaper className="w-5 h-5 mb-0.5" />{t('nav.news')}
+        <Newspaper className="w-5 h-5 mb-0.5" />{sb.labels && t('nav.news')}
         {newsUnread && view !== 'news' && <span data-testid="news-dot" className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-[#ff5252]" />}
       </button>
-      <div data-testid="game-version" className="text-[9px] text-[#5a6b80] mt-1">Indev {GAME_VERSION}</div>
+      )}
+      <div data-testid="game-version" className={`text-[9px] text-[#5a6b80] mt-1 ${sb.version ? '' : 'sr-only'}`}>Indev {GAME_VERSION}</div>
     </nav>
   );
 }
@@ -1529,10 +1536,10 @@ function SettingsView({
   compact?: boolean;
 }) {
   useLanguage();
-  const [tab, setTab] = useState<'video' | 'shaders' | 'crosshair' | 'audio' | 'controls' | 'hud' | 'language' | 'account' | 'about'>('video');
+  const [tab, setTab] = useState<'video' | 'shaders' | 'crosshair' | 'audio' | 'controls' | 'hud' | 'sidebar' | 'language' | 'account' | 'about'>('video');
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [showCredits, setShowCredits] = useState(false);
-  const builtInTracks: Array<{ value: AnySoundtrack; label: string }> = SOUNDTRACKS;
+  const builtInTracks: Array<{ value: AnySoundtrack; label: string }> = SOUNDTRACKS.filter((t) => t.value !== 'arcade');
   const nowPlaying = useSyncExternalStore(subscribeNowPlaying, getNowPlaying, getNowPlaying);
   const graphicsTiers: { value: GraphicsQuality; label: string; blurb: string }[] = [
     { value: 'low', label: t('gfx.low'), blurb: t('gfx.lowDesc') },
@@ -1565,7 +1572,7 @@ function SettingsView({
 
       <div className="flex flex-col sm:flex-row gap-3 sm:gap-5" data-testid="settings-layout">
       <SideNav testid="settings-sidenav" active={tab} onSelect={setTab} tabs={[
-        { id: 'video', label: 'Video' }, { id: 'shaders', label: 'Shaders' }, { id: 'crosshair', label: 'Crosshair' }, { id: 'audio', label: 'Audio' }, { id: 'controls', label: t('settings.controls') }, { id: 'hud', label: 'HUD' },
+        { id: 'video', label: 'Video' }, { id: 'shaders', label: 'Shaders' }, { id: 'crosshair', label: 'Crosshair' }, { id: 'audio', label: 'Audio' }, { id: 'controls', label: t('settings.controls') }, { id: 'hud', label: 'HUD' }, { id: 'sidebar', label: 'Sidebar' },
         { id: 'language', label: t('settings.language') }, { id: 'account', label: 'Account' }, { id: 'about', label: 'About' },
       ]} />
       <div className="flex-1 min-w-0 max-w-2xl vb-stack">
@@ -1685,6 +1692,7 @@ function SettingsView({
       <VideoOptions />
       <BackgroundSettings />
       </>}
+      {tab === 'sidebar' && <SidebarSettings views={navItems.filter((n) => n.view).map((n) => n.view as string)} />}
       {tab === 'language' && <LanguagePicker />}
       {tab === 'controls' && <ControlsPanel />}
       {tab === 'account' && <AccountTab />}
@@ -1764,15 +1772,6 @@ function SettingsView({
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4" data-testid="soundtracks">
           {builtInTracks.map((t) => {
             const active = builtInTrack === t.value;
-            if (t.value === 'arcade') {
-              return (
-                <button key={t.value} disabled data-testid="soundtrack-arcade" title="Arcade music is coming soon"
-                  className="py-2 rounded-xl border border-[#243044] bg-[#0a0e14] text-[#5a6b80] text-sm font-medium cursor-not-allowed flex flex-col items-center leading-tight">
-                  {t.label}
-                  <span className="text-[10px] font-bold tracking-wider text-[#ffd23a]">COMING SOON</span>
-                </button>
-              );
-            }
             return (
               <button
                 key={t.value}
@@ -9817,7 +9816,7 @@ export default function App() {
           onNavClick={handleNavClick}
           gamesView={view === 'games' ? (
             <Suspense fallback={<div className="p-8 text-[#5a6b80]">Loading games…</div>}>
-              <MinigamesView account={account && !isGuestName(account.username) ? { userId: account.userId, username: account.username } : null} rank={myPerk} intent={gameIntent} onIntentDone={() => setGameIntent(null)} />
+              <MinigamesView account={account && !isGuestName(account.username) ? { userId: account.userId, username: account.username } : null} rank={myPerk} badge={{ owner: isOwnerAccount, rank: myUndercover ? null : myRank, staff: myStaff, special: myUndercover ? null : mySpecial, og: myUndercover ? false : myOg }} intent={gameIntent} onIntentDone={() => setGameIntent(null)} />
             </Suspense>
           ) : null}
           socialView={(

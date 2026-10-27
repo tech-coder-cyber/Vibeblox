@@ -2,11 +2,27 @@
 // a small update to the current one is a point release (Indev 26.1, 26.2...), a big one is the next number.
 //
 // The News page in the sidebar shows this list, and a dot appears on it until the newest one has been read.
-export const GAME_VERSION = 37;
+export const GAME_VERSION = 37.1;
 
 export type NewsEntry = { version: number; date: string; title: string; changes: string[] };
 
 export const NEWS: NewsEntry[] = [
+  {
+    version: 37.1,
+    date: 'October 27, 2026',
+    title: 'Chess upgrade: a real engine, new pieces and more',
+    changes: [
+      'Play Bots has a new look: pick a bot from the grid (crowns shown under each one), read what it says, choose white, black or random and press Play. A new Engine bot has a slider from 100 up to 3000 (Max). It uses Stockfish for strong levels and our own engine for the weakest ones.',
+      'Premoves: queue a move while it is your opponent\'s turn. Right-click or press Escape to cancel. You can turn them off in Chess settings. Move pieces by dragging, clicking, or both (the default).',
+      'Arrows and squares work like chess.com: right-click to mark a square red, hold Shift for green, Ctrl for yellow or Alt for blue. Press, drag and let go to draw an arrow (yellow; lime with Shift, red with Ctrl, blue with Alt). The evaluation bar now shows the number.',
+      'Better pieces, bigger on the board, plus new styles: Classic, Neo, 3D Cartoon, Flat, Outline, Glass, Pixel, Letters and VibeBlox. New VibeBlox board and piece set with a blocky look. Plus Sand and Ice boards.',
+      'Chess settings: piece animation speeds (Slow, Medium, Fast, Natural, Arcade, Dynamic), Board Effects (showcase the opponent\'s theme, game result animations, win celebration with preview) and sound themes you can test.',
+      'Analysis: paste a PGN or a FEN, set up any position on a board editor, and play moves with the engine watching. New move marks: Brilliant, Great and Book (with the opening\'s name). Over 360 named openings and gambits, from the Alien Gambit to the Bongcloud.',
+      'Puzzles: after a mistake or a solve you can Try again. A second try never changes your puzzle rating.',
+      'Game reviews are limited per day: 3 for everyone, 10 with Vanguard, no limit with Elite and Champion. Chess and Checkers now have their own pages with their own settings. Analysis and board style moved into chess.',
+      'Rank badges show next to names in the games, in the color of the rank (OWNER, HELPER, MOD, OG, YOUTUBE, Vanguard, Elite, Champion). A new Sidebar tab in Settings lets you hide, reorder and resize the sidebar buttons. The arcade soundtrack option is gone.',
+    ],
+  },
   {
     version: 37,
     date: 'October 26, 2026',
