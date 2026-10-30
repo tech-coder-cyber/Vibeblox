@@ -90,6 +90,7 @@ begin
 end $$;
 grant execute on function public.report_dm(bigint, text) to authenticated;
 
+drop function if exists public.list_message_reports();
 create or replace function public.list_message_reports() returns table (id bigint, reporter text, reported text, body text, reason text, at timestamptz)
 language plpgsql security definer set search_path = public as $$
 begin
@@ -139,6 +140,7 @@ drop policy if exists "ratings are public" on public.mg_ratings;
 create policy "ratings are public" on public.mg_ratings for select to authenticated using (true);
 
 -- Same maths as src/minigames/ratings.ts: the first 5 games give a performance estimate, then Elo with FIDE K factors.
+drop function if exists public.mg_next_rating(int, int, bigint, numeric, int, numeric);
 create or replace function public.mg_next_rating(r int, n int, sum_opp bigint, pts numeric, opp int, score numeric)
 returns table (nr int, nn int, nsum bigint, npts numeric)
 language plpgsql immutable as $$
@@ -214,6 +216,7 @@ end $$;
 grant execute on function public.mg_save_extra(text, jsonb) to authenticated;
 
 -- ---------- leaderboards ----------
+drop function if exists public.mg_leaderboard(text, int);
 create or replace function public.mg_leaderboard(p_game text, p_limit int default 50)
 returns table (username text, rank text, rating int, games int, wins int, losses int, draws int)
 language sql stable security definer set search_path = public as $$
@@ -226,6 +229,7 @@ language sql stable security definer set search_path = public as $$
 $$;
 grant execute on function public.mg_leaderboard(text, int) to anon, authenticated;
 
+drop function if exists public.mg_score_board(text, int);
 create or replace function public.mg_score_board(p_game text, p_limit int default 50)
 returns table (username text, rank text, score int)
 language sql stable security definer set search_path = public as $$
@@ -618,6 +622,7 @@ begin
 end $$;
 grant execute on function public.mg_report_fairplay(uuid, text, int, jsonb) to authenticated;
 
+drop function if exists public.mg_list_fairplay(text);
 create or replace function public.mg_list_fairplay(p_status text default 'open')
 returns table (id bigint, game_id uuid, game text, target_name text, reporter_name text, level text, score int, signals jsonb, status text, note text, created_at timestamptz, previous_reviews bigint)
 language plpgsql stable security definer set search_path = public as $$
