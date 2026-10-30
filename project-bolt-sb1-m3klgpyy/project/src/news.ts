@@ -2,11 +2,23 @@
 // a small update to the current one is a point release (Indev 26.1, 26.2...), a big one is the next number.
 //
 // The News page in the sidebar shows this list, and a dot appears on it until the newest one has been read.
-export const GAME_VERSION = 37.2;
+export const GAME_VERSION = 37.3;
 
 export type NewsEntry = { version: number; date: string; title: string; changes: string[] };
 
 export const NEWS: NewsEntry[] = [
+  {
+    version: 37.3,
+    date: 'October 30, 2026',
+    title: 'Chess premove chains, Neo pieces by default and a Minecraft sword',
+    changes: [
+      'Chess premoves: queue as many as you like. Each one plays 0.1 seconds after it becomes your turn, and the piece now moves to its new square on the board as soon as you premove it.',
+      'You can premove onto your own piece. If your opponent takes on that square, your premove becomes a recapture (for example 1. e4 d5 2. exd5 and your queen premoved to d5 takes back).',
+      'Right-click or press Escape to cancel all your premoves. A normal left click no longer cancels them. If a queued move is no longer legal, the rest of the queue is dropped.',
+      'Neo is now the default chess piece style. New Lichess piece set: high-contrast black and white pieces.',
+      'Swords are held and swing exactly like in Minecraft: raised at the bottom right with the blade tilted, a diagonal swing across the screen, and the same raised pose when you block.',
+    ],
+  },
   {
     version: 37.2,
     date: 'October 28, 2026',
