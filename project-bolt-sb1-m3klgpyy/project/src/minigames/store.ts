@@ -2,7 +2,7 @@
 import { newRating, newPuzzleRating, type RatingState, type PuzzleRating } from './ratings';
 
 export type BoardTheme = 'green' | 'brown' | 'blue' | 'slate' | 'rose' | 'night' | 'grass' | 'candy' | 'sand' | 'ice' | 'vibeblox';
-export type PieceSet = 'classic' | 'neo' | 'cartoon' | 'flat' | 'outline' | 'glass' | 'blocks' | 'letters' | 'vibeblox';
+export type PieceSet = 'classic' | 'neo' | 'cartoon' | 'flat' | 'outline' | 'glass' | 'blocks' | 'letters' | 'vibeblox' | 'lichess';
 export const BOARD_THEMES: Record<BoardTheme, { name: string; light: string; dark: string; accent: string; texture?: 'vibeblox' }> = {
   green: { name: 'Green', light: '#eeeed2', dark: '#769656', accent: '#f6f669' },
   brown: { name: 'Walnut', light: '#f0d9b5', dark: '#b58863', accent: '#f7ec59' },
@@ -16,7 +16,7 @@ export const BOARD_THEMES: Record<BoardTheme, { name: string; light: string; dar
   ice: { name: 'Ice', light: '#e8f1f8', dark: '#7da3c6', accent: '#8fe3ff' },
   vibeblox: { name: 'VibeBlox', light: '#d9b87c', dark: '#5fa34a', accent: '#ffe066', texture: 'vibeblox' },
 };
-export const PIECE_SETS: Record<PieceSet, string> = { classic: 'Classic', neo: 'Neo', cartoon: '3D Cartoon', flat: 'Flat', outline: 'Outline', glass: 'Glass', blocks: 'Pixel', letters: 'Letters', vibeblox: 'VibeBlox' };
+export const PIECE_SETS: Record<PieceSet, string> = { classic: 'Classic', neo: 'Neo', cartoon: '3D Cartoon', flat: 'Flat', outline: 'Outline', glass: 'Glass', blocks: 'Pixel', letters: 'Letters', vibeblox: 'VibeBlox', lichess: 'Lichess' };
 
 export type AnimSpeed = 'slow' | 'medium' | 'fast' | 'natural' | 'arcade' | 'dynamic';
 export const ANIM_SPEEDS: Record<AnimSpeed, { name: string; ms: number; ease: string; trail?: boolean }> = {
@@ -41,7 +41,7 @@ export type Prefs = {
   celebration: Celebration;
 };
 export const DEFAULT_PREFS: Prefs = {
-  boardTheme: 'green', pieceSet: 'classic', coords: true, sound: true, botChat: true, legalDots: true, autoQueen: true, highlightLast: true, engine: 'stockfish', animate: true, showEval: false,
+  boardTheme: 'green', pieceSet: 'neo', coords: true, sound: true, botChat: true, legalDots: true, autoQueen: true, highlightLast: true, engine: 'stockfish', animate: true, showEval: false,
   premoves: true, moveInput: 'both', animSpeed: 'medium', soundTheme: 'default', showcaseTheme: true, specialThemes: true, resultAnims: true, celebration: 'confetti',
 };
 
@@ -79,6 +79,8 @@ export function loadPrefs(): Prefs {
   const out = { ...DEFAULT_PREFS };
   if (p.boardTheme && p.boardTheme in BOARD_THEMES) out.boardTheme = p.boardTheme;
   if (p.pieceSet && p.pieceSet in PIECE_SETS) out.pieceSet = p.pieceSet;
+  // Neo is the default look now: move people who still have the old default (Classic, saved before v3) over to it
+  if (((p as { v?: number }).v ?? 0) < 3 && p.pieceSet === 'classic') out.pieceSet = 'neo';
   for (const k of ['coords', 'sound', 'botChat', 'legalDots', 'autoQueen', 'highlightLast', 'animate', 'showEval', 'premoves', 'showcaseTheme', 'specialThemes', 'resultAnims'] as const) if (typeof p[k] === 'boolean') out[k] = p[k] as boolean;
   if (p.engine === 'builtin' || p.engine === 'stockfish') out.engine = p.engine;
   if (p.moveInput === 'both' || p.moveInput === 'click' || p.moveInput === 'drag') out.moveInput = p.moveInput;
@@ -89,7 +91,7 @@ export function loadPrefs(): Prefs {
   if (!(p as { v?: number }).v && p.engine === 'builtin') out.engine = 'stockfish';
   return out;
 }
-export function savePrefs(p: Prefs) { write(PREF_KEY, { ...p, v: 2 }); }
+export function savePrefs(p: Prefs) { write(PREF_KEY, { ...p, v: 3 }); }
 
 export function loadProgress(): Progress {
   const p = read<Partial<Progress>>(PROG_KEY) ?? {};
