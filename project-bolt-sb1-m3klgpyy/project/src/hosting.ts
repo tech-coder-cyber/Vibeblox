@@ -934,7 +934,7 @@ export class HostRoom {
     return {
       seed: this.opts.seed, worldType: this.opts.worldType, mode: this.opts.mode, changes, time: this.currentTime(), weather: this.weather,
       settings: { ...this.settings }, ranks: this.ranks, roles: this.getRoles(), bans: this.bans.slice(), privacy: this.privacy,
-      maxPlayers: this.opts.maxPlayers, owner: this.owner, experimental: !!this.opts.experimental, name: (this.opts.worldName ?? `${this.opts.hostName}'s world`).slice(0, 40), sid: this.opts.sid,
+      maxPlayers: this.opts.maxPlayers, owner: this.owner, experimental: !!this.opts.experimental, name: filterProfanity(this.opts.worldName ?? `${this.opts.hostName}'s world`).slice(0, 40), sid: this.opts.sid,
     };
   }
 

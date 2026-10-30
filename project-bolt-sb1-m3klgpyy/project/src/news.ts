@@ -2,11 +2,28 @@
 // a small update to the current one is a point release (Indev 26.1, 26.2...), a big one is the next number.
 //
 // The News page in the sidebar shows this list, and a dot appears on it until the newest one has been read.
-export const GAME_VERSION = 37.1;
+export const GAME_VERSION = 37.2;
 
 export type NewsEntry = { version: number; date: string; title: string; changes: string[] };
 
 export const NEWS: NewsEntry[] = [
+  {
+    version: 37.2,
+    date: 'October 28, 2026',
+    title: 'Safer names, creative middle-click, tidier inventory and bigger worlds',
+    changes: [
+      'World names and descriptions can no longer contain slurs or bad words. If you try, you see a message and the planet is not created. Older planets with a bad name show it with stars.',
+      'Bigger worlds: 24 players for everyone, 30 with Vanguard, 35 with Elite and 40 with Champion.',
+      'Creative mode: middle-click a block to get it. If it is already in your hotbar, that slot is selected.',
+      'Inventory: hover over an item and press Q to drop one (Ctrl + Q drops the whole stack).',
+      'Quick Craft is much more compact, so the inventory window is no longer wide and empty.',
+      'Swords, tools and bows are held at an angle, not flat.',
+      'Blocks like pressure plates, buttons, levers, redstone dust, snow layers, beds and trapdoors are now aimed at by their real shape, and the outline matches it. You can reach, edit and remove the block under or behind them.',
+      'New block textures for grass, dirt, stone, logs, leaves, planks and sand (the same every time, with more detail).',
+      'Games: if a screen has a problem you now get a Try again / Reload message instead of a white page, and a game that was updated while your tab was open reloads by itself.',
+      'The Chat filter note in the Indev 32 news no longer lists any bad words.',
+    ],
+  },
   {
     version: 37.1,
     date: 'October 27, 2026',
@@ -150,7 +167,7 @@ export const NEWS: NewsEntry[] = [
     date: 'October 19, 2026',
     title: 'Chat filter, admin access levels, YouTube perks, friends\' ranks',
     changes: [
-      'Chat filter: bad words are hidden with stars, and only that word (the rest of your message stays). It also catches tricks like f.u.c.k, sh1t and f u c k. Mild, crude language (damn, hell, crap, ass, piss, suck, bastard, wtf...) is still allowed. It covers chat, whispers and private messages.',
+      'Chat filter: bad words are hidden with stars, and only that word (the rest of your message stays). It also catches tricks with symbols, dots and spaces between the letters. It covers chat, whispers and private messages.',
       'Admin panel: you can now choose Full or Limited access for every admin. Limited admins tick exactly what they can do (announcements, bans, anti-cheat reports, ranks), and only see those tabs. Only the owner picks who is an admin.',
       'Admin panel: Staff, YOUTUBE and OG are now all in the Ranks tab, and anyone with the ranks permission can give them.',
       'YOUTUBE rank has Champion perks (15 planets, biggest script budget, your own skin and cape) and /undercover to hide your tags. /undercover is for YOUTUBE only, not for other ranks or staff.',

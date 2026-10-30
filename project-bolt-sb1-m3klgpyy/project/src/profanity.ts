@@ -1,6 +1,6 @@
 // @ts-nocheck
 // The chat filter. It hides bad words, and ONLY the bad word: "you are a f***ing noob" keeps the rest of the sentence.
-// Mild, crude language (damn, hell, crap, ass, piss, suck, bastard, wtf...) is allowed on purpose.
+// Light swearing is allowed on purpose.
 //
 // This file is plain JavaScript (no type syntax) so that server/server.js can carry an identical copy:
 // `node server/make-pack.mjs` pastes it into the server between the PROFANITY markers. Edit it HERE only.
@@ -14,10 +14,10 @@
 /* PROFANITY_BEGIN */
 const PROFANITY_STRONG = [
   'fuck', 'shit', 'bitch', 'cunt', 'twat', 'whore', 'slut', 'pussy', 'pussi', 'bollock', 'dildo', 'blowjob', 'handjob', 'jerkoff', 'asshole', 'arsehole',
-  'dickhead', 'cocksuck', 'retard', 'nigg', 'faggot', 'nazi', 'porn', 'molest', 'rapist', 'pedophile', 'paedophile', 'cumshot', 'orgasm',
+  'dickhead', 'cocksuck', 'retard', 'nigg', 'niqq', 'nigr', 'faggot', 'beaner', 'wetback', 'raghead', 'towelhead', 'sandnigg', 'chinaman', 'zipperhead', 'nazi', 'porn', 'molest', 'rapist', 'pedophile', 'paedophile', 'cumshot', 'orgasm',
 ];
 const PROFANITY_EXACT = [
-  'cock', 'dick', 'cum', 'tit', 'anal', 'wank', 'wanker', 'wanking', 'fag', 'tranny', 'kike', 'spic', 'chink', 'gook', 'coon', 'paki', 'rape', 'pedo', 'kys',
+  'cock', 'dick', 'cum', 'tit', 'anal', 'wank', 'wanker', 'wanking', 'fag', 'tranny', 'kike', 'spic', 'chink', 'gook', 'coon', 'paki', 'nibba', 'nibber', 'dyke', 'jigaboo', 'darkie', 'rape', 'pedo', 'kys',
   'fck', 'fuk', 'fuq', 'fvck', 'fcuk', 'phuck', 'phuk', 'sht', 'shyt', 'btch', 'biatch', 'bytch', 'cnt', 'dik', 'pusy', 'jizz', 'ahole',
 ];
 const PROFANITY_SAFE = [

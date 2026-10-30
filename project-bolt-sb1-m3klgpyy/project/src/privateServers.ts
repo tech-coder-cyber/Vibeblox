@@ -1,4 +1,5 @@
 // Private servers: a saved list of server addresses, and the pack of files people unpack to host their own.
+import { filterProfanity } from './profanity';
 import { makeZip, type ZipEntry } from './zip';
 
 export type PrivateServer = { name: string; address: string };
@@ -12,7 +13,7 @@ export function cleanServers(v: unknown): PrivateServer[] {
   const seen = new Set<string>();
   for (const e of v) {
     if (!e || typeof e !== 'object') continue;
-    const name = String((e as PrivateServer).name ?? '').replace(/[\u0000-\u001f]/g, '').trim().slice(0, 32);
+    const name = filterProfanity(String((e as PrivateServer).name ?? '').replace(/[\u0000-\u001f]/g, '').trim().slice(0, 32));
     const address = String((e as PrivateServer).address ?? '').trim().slice(0, 120);
     if (!name || !address || /\s/.test(address) || seen.has(address.toLowerCase())) continue;
     seen.add(address.toLowerCase());

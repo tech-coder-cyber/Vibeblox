@@ -11,121 +11,87 @@ import { RANK_TAGS, type RankId } from './ranks';
 //  Procedural textures (canvas-generated — no external assets)
 // ===================================================================
 
-function makeGrassTexture(): THREE.Texture {
+// Block textures are real 16x16 pixel art drawn at 4px per art pixel: the same picture every time (no random speckle), a few
+// tones that blend softly, and a handful of details (pebbles, grain, cracks, tufts) so a flat wall of one block still looks good.
+type PixelPaint = (px: (x: number, y: number, c: string) => void, n: (x: number, y: number, k?: number) => number) => void;
+function pixelTexture(seed: number, paint: PixelPaint): THREE.Texture {
   const c = document.createElement('canvas');
   c.width = 64; c.height = 64;
   const ctx = c.getContext('2d')!;
-  ctx.fillStyle = '#4a8c3a';
-  ctx.fillRect(0, 0, 64, 64);
-  for (let i = 0; i < 400; i++) {
-    const x = Math.random() * 64, y = Math.random() * 64, s = Math.random();
-    ctx.fillStyle = s < 0.33 ? '#3d7530' : s < 0.66 ? '#5ba04a' : '#6bb858';
-    ctx.fillRect(x, y, 2, 3);
-  }
-  for (let i = 0; i < 60; i++) {
-    ctx.fillStyle = '#2d5a22';
-    ctx.fillRect(Math.random() * 64, Math.random() * 64, 2, 2);
-  }
+  const px = (x: number, y: number, col: string) => { ctx.fillStyle = col; ctx.fillRect(((x % 16) + 16) % 16 * 4, ((y % 16) + 16) % 16 * 4, 4, 4); };
+  // n(): a steady 0..1 value for each art pixel; k = 2 gives soft blobs two pixels wide
+  const n = (x: number, y: number, k = 1) => {
+    const X = ((x % 16) + 16) % 16, Y = ((y % 16) + 16) % 16;
+    if (k === 1) return hash2(X, Y, seed);
+    const gx = Math.floor(X / k), gy = Math.floor(Y / k);
+    return 0.6 * hash2(gx, gy, seed + 7) + 0.4 * hash2(X, Y, seed);
+  };
+  paint(px, n);
   const tex = new THREE.CanvasTexture(c);
   tex.magFilter = THREE.NearestFilter;
   tex.minFilter = THREE.NearestMipmapLinearFilter;
   return tex;
+}
+const pick = (pal: string[], v: number) => pal[Math.max(0, Math.min(pal.length - 1, Math.floor(v * pal.length)))];
+
+function makeGrassTexture(): THREE.Texture {
+  const pal = ['#3a7a2e', '#448634', '#4f9440', '#5ca64a', '#6bb858'];
+  return pixelTexture(11, (px, n) => {
+    for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+      px(x, y, pick(pal, n(x, y, 2)));
+      if (n(x + 3, y + 5) > 0.93) px(x, y, '#2d6422'); // a dark tuft
+      else if (n(x + 9, y + 1) > 0.95) px(x, y, '#7fcb66'); // a bright blade tip
+    }
+  });
 }
 
 function makeDirtTexture(): THREE.Texture {
-  const c = document.createElement('canvas');
-  c.width = 64; c.height = 64;
-  const ctx = c.getContext('2d')!;
-  ctx.fillStyle = '#6b4f2e';
-  ctx.fillRect(0, 0, 64, 64);
-  for (let i = 0; i < 300; i++) {
-    const x = Math.random() * 64, y = Math.random() * 64, s = Math.random();
-    ctx.fillStyle = s < 0.33 ? '#5a4126' : s < 0.66 ? '#7d5f3a' : '#8c6f45';
-    ctx.fillRect(x, y, 2, 2);
-  }
-  for (let i = 0; i < 30; i++) {
-    ctx.fillStyle = '#4a3820';
-    ctx.beginPath();
-    ctx.arc(Math.random() * 64, Math.random() * 64, 1.5 + Math.random(), 0, Math.PI * 2);
-    ctx.fill();
-  }
-  const tex = new THREE.CanvasTexture(c);
-  tex.magFilter = THREE.NearestFilter;
-  tex.minFilter = THREE.NearestMipmapLinearFilter;
-  return tex;
+  const pal = ['#5a4025', '#684c2d', '#765737', '#84643f'];
+  return pixelTexture(23, (px, n) => {
+    for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+      px(x, y, pick(pal, n(x, y, 2)));
+      if (n(x + 5, y + 2) > 0.92) px(x, y, '#4a3520');
+    }
+    // a few little stones
+    for (const [x, y] of [[3, 4], [11, 2], [7, 10], [13, 12], [1, 13]]) { px(x, y, '#8d8576'); px(x + 1, y, '#a39b8a'); px(x, y + 1, '#6f685c'); }
+  });
 }
 
 function makeWoodTexture(): THREE.Texture {
-  const c = document.createElement('canvas');
-  c.width = 64; c.height = 64;
-  const ctx = c.getContext('2d')!;
-  // Base wood brown
-  ctx.fillStyle = '#6b4a2a';
-  ctx.fillRect(0, 0, 64, 64);
-  // Vertical grain stripes
-  for (let i = 0; i < 12; i++) {
-    const x = (i * 5) + Math.random() * 3;
-    const shade = Math.random();
-    ctx.fillStyle = shade < 0.5 ? '#5a3d22' : '#7d5a35';
-    ctx.fillRect(x, 0, 2, 64);
-  }
-  // Bark texture noise
-  for (let i = 0; i < 80; i++) {
-    const s = Math.random();
-    ctx.fillStyle = s < 0.33 ? '#4a2d15' : s < 0.66 ? '#7a5a3a' : '#8b6a45';
-    ctx.fillRect(Math.random() * 64, Math.random() * 64, 2, 4);
-  }
-  const tex = new THREE.CanvasTexture(c);
-  tex.magFilter = THREE.NearestFilter;
-  tex.minFilter = THREE.NearestMipmapLinearFilter;
-  return tex;
+  // bark: tall ridges of three browns with dark gaps between them
+  const pal = ['#4f3720', '#5d4226', '#6b4a2a', '#7a5733'];
+  return pixelTexture(31, (px, n) => {
+    for (let x = 0; x < 16; x++) {
+      const col = hash2(x, 0, 31);
+      for (let y = 0; y < 16; y++) {
+        const ridge = x % 4 === 0 ? 0 : x % 4 === 3 ? 0.25 : 0.45 + 0.4 * col;
+        px(x, y, pick(pal, Math.min(0.99, ridge + (n(x, y) - 0.5) * 0.35)));
+      }
+    }
+    for (let i = 0; i < 6; i++) { const x = Math.floor(hash2(i, 5, 31) * 16), y = Math.floor(hash2(i, 9, 31) * 14); px(x, y, '#3f2a16'); px(x, y + 1, '#3f2a16'); }
+  });
 }
 
 function makeLeafTexture(): THREE.Texture {
-  const c = document.createElement('canvas');
-  c.width = 64; c.height = 64;
-  const ctx = c.getContext('2d')!;
-  // Base dark green
-  ctx.fillStyle = '#2d6a2d';
-  ctx.fillRect(0, 0, 64, 64);
-  // Leaf clusters
-  for (let i = 0; i < 350; i++) {
-    const x = Math.random() * 64, y = Math.random() * 64, s = Math.random();
-    ctx.fillStyle = s < 0.25 ? '#1a4a1a' : s < 0.5 ? '#3a7a3a' : s < 0.75 ? '#4a8a4a' : '#5a9a5a';
-    ctx.fillRect(x, y, 3, 3);
-  }
-  // Highlights
-  for (let i = 0; i < 50; i++) {
-    ctx.fillStyle = '#6abb6a';
-    ctx.fillRect(Math.random() * 64, Math.random() * 64, 2, 2);
-  }
-  const tex = new THREE.CanvasTexture(c);
-  tex.magFilter = THREE.NearestFilter;
-  tex.minFilter = THREE.NearestMipmapLinearFilter;
-  return tex;
+  const pal = ['#1f5a24', '#27682b', '#2f7a32', '#3a8c3a', '#4a9d46'];
+  return pixelTexture(41, (px, n) => {
+    for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+      px(x, y, pick(pal, n(x, y, 2) * 0.85 + (hash2(x, y, 3) > 0.9 ? 0.2 : 0)));
+      if (n(x + 7, y + 4) > 0.94) px(x, y, '#6cbc5c'); // sunlit leaf
+      else if (n(x + 2, y + 11) > 0.9) px(x, y, '#143f18');
+    }
+  });
 }
 
 function makeStoneTexture(): THREE.Texture {
-  const c = document.createElement('canvas');
-  c.width = 64; c.height = 64;
-  const ctx = c.getContext('2d')!;
-  ctx.fillStyle = '#7a7a7a';
-  ctx.fillRect(0, 0, 64, 64);
-  for (let i = 0; i < 200; i++) {
-    const s = Math.random();
-    ctx.fillStyle = s < 0.33 ? '#6a6a6a' : s < 0.66 ? '#888888' : '#9a9a9a';
-    ctx.fillRect(Math.random() * 64, Math.random() * 64, 3, 3);
-  }
-  for (let i = 0; i < 20; i++) {
-    ctx.fillStyle = '#555555';
-    ctx.beginPath();
-    ctx.arc(Math.random() * 64, Math.random() * 64, 2 + Math.random() * 2, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  const tex = new THREE.CanvasTexture(c);
-  tex.magFilter = THREE.NearestFilter;
-  tex.minFilter = THREE.NearestMipmapLinearFilter;
-  return tex;
+  const pal = ['#6c6c6c', '#767676', '#808080', '#8a8a8a', '#949494'];
+  return pixelTexture(53, (px, n) => {
+    for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) px(x, y, pick(pal, n(x, y, 2)));
+    // short dark cracks and pits
+    const cracks: Array<[number, number]> = [[2, 3], [3, 3], [4, 4], [10, 9], [11, 9], [11, 10], [6, 13], [7, 13], [14, 2]];
+    for (const [x, y] of cracks) px(x, y, '#585858');
+    for (const [x, y] of [[8, 5], [1, 10], [13, 14], [5, 8]]) px(x, y, '#9e9e9e');
+  });
 }
 
 // ===================================================================
@@ -696,26 +662,31 @@ function drawStickCanvas(): HTMLCanvasElement {
 }
 
 function drawPlanksCanvas(): HTMLCanvasElement {
+  // four boards, each its own shade, with grain lines, a dark seam under each board and a couple of nail heads
   const c = makeCanvas(16, 16);
   const ctx = c.getContext('2d')!;
-  ctx.fillStyle = '#b5884f';
-  ctx.fillRect(0, 0, 16, 16);
-  ctx.fillStyle = '#8f6a3a';
-  for (let y = 3; y < 16; y += 4) ctx.fillRect(0, y, 16, 1);
-  ctx.fillRect(5, 0, 1, 3); ctx.fillRect(11, 4, 1, 3); ctx.fillRect(3, 8, 1, 3); ctx.fillRect(9, 12, 1, 3);
-  ctx.fillStyle = '#c79a5e';
-  ctx.fillRect(1, 1, 2, 1); ctx.fillRect(8, 5, 3, 1); ctx.fillRect(12, 9, 2, 1); ctx.fillRect(4, 13, 3, 1);
+  const tones = ['#b8894e', '#ad7f45', '#bf9156', '#b38449'];
+  for (let b = 0; b < 4; b++) {
+    const y0 = b * 4;
+    ctx.fillStyle = tones[b]; ctx.fillRect(0, y0, 16, 4);
+    ctx.fillStyle = 'rgba(255,235,190,0.22)'; ctx.fillRect(0, y0, 16, 1); // the lit top edge of the board
+    ctx.fillStyle = '#8a6334'; ctx.fillRect(0, y0 + 3, 16, 1); // the seam
+    ctx.fillStyle = 'rgba(110,72,34,0.35)';
+    for (let i = 0; i < 3; i++) { const gx = Math.floor(hash2(i, b, 61) * 12); ctx.fillRect(gx, y0 + 1 + (i % 2), 3 + (i % 3), 1); } // grain
+    const jx = 3 + ((b * 5) % 11); ctx.fillStyle = '#8a6334'; ctx.fillRect(jx, y0, 1, 3); // a joint between two boards
+    ctx.fillStyle = '#6e4d26'; ctx.fillRect((jx + 2) % 16, y0 + 1, 1, 1); // a nail
+  }
   return c;
 }
 
 function drawSandCanvas(): HTMLCanvasElement {
   const c = makeCanvas(16, 16);
   const ctx = c.getContext('2d')!;
-  ctx.fillStyle = '#dbcf9a';
-  ctx.fillRect(0, 0, 16, 16);
-  for (let i = 0; i < 40; i++) {
-    ctx.fillStyle = Math.random() < 0.5 ? '#cfc08a' : '#e6dcae';
-    ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+  const pal = ['#d2c48c', '#dacd96', '#e1d6a2', '#e8dfae'];
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+    const v = 0.55 * hash2(x, y, 71) + 0.45 * hash2(x >> 1, y >> 1, 72);
+    ctx.fillStyle = pal[Math.min(3, Math.floor(v * 4))]; ctx.fillRect(x, y, 1, 1);
+    if (hash2(x, y, 73) > 0.96) { ctx.fillStyle = '#bfae74'; ctx.fillRect(x, y, 1, 1); }
   }
   return c;
 }
@@ -2998,9 +2969,12 @@ function faceCanvases(): Record<string, HTMLCanvasElement> {
   const grassSide = makeCanvas(64, 64);
   const gctx = grassSide.getContext('2d')!;
   gctx.drawImage(dirt, 0, 0);
-  gctx.fillStyle = '#4a8c3a';
-  gctx.fillRect(0, 0, 64, 10);
-  for (let x = 0; x < 64; x += 4) gctx.fillRect(x, 10, 4, Math.floor(Math.random() * 6));
+  const gpal = ['#3a7a2e', '#448634', '#4f9440', '#5ca64a'];
+  for (let ax = 0; ax < 16; ax++) {
+    const depth = 3 + Math.floor(hash2(ax, 1, 81) * 3); // the green hangs down 3-5 art pixels, uneven like Minecraft
+    for (let ay = 0; ay < depth; ay++) { gctx.fillStyle = gpal[Math.min(3, Math.floor((0.55 * hash2(ax, ay, 82) + 0.45 * hash2(ax >> 1, ay, 83)) * 4))]; gctx.fillRect(ax * 4, ay * 4, 4, 4); }
+    gctx.fillStyle = '#2f6226'; if (hash2(ax, 2, 84) > 0.6) gctx.fillRect(ax * 4, depth * 4 - 4, 4, 4); // darker tip on some blades
+  }
   faceCanvasCache = {
     grass, dirt, grassSide,
     stone: img(makeStoneTexture()),
@@ -4210,6 +4184,11 @@ export const COOK_SECONDS = 8;
  */
 /** Blocks drawn as boxes rather than whole cubes. */
 export function hasShape(b: number): boolean { return isStepBlock(b) || b === BLOCK_GLASS_PANE || isDoor(b) || isBed(b) || b === BLOCK_CACTUS || isTorch(b) || isLadder(b) || isHead(b) || isEgg(b) || (b >= BLOCK_TRAPDOOR && b <= BLOCK_CAMPFIRE) || isTrapdoorLow(b) || (b >= BLOCK_ENCHANTING_TABLE && b <= BLOCK_ITEM_FRAME + 5) || (b >= BLOCK_REDSTONE_WIRE && b <= BLOCK_REPEATER + 31) || isComparator(b) || isPistonHead(b) || (isPiston(b) && pistonExtended(b)) || b === BLOCK_BREWING_STAND || b === BLOCK_SNOW_LAYER || b === BLOCK_DIRT_PATH || (b >= WOOD_BLOCKS_FIRST && b < WOOD_BLOCKS_END); }
+/** Low or small blocks you aim at by their real shape (a pressure plate, a button, a carpet of snow...): the part of the cell they leave empty can be aimed through, so the block under or behind them can still be reached. */
+export function pickByShape(b: number): boolean {
+  return b !== BLOCK_AIR && (isStepBlock(b) || isPlate(b) || isButton(b) || isLever(b) || isWire(b) || isRepeater(b) || isComparator(b) || b === BLOCK_SNOW_LAYER || b === BLOCK_DIRT_PATH
+    || isBed(b) || isTrapdoor(b) || isTrapdoorLow(b) || b === BLOCK_CAMPFIRE || b === BLOCK_ENCHANTING_TABLE);
+}
 /** A box inside the cell (0..1): x0, y0, z0, x1, y1, z1, and optionally its own texture. */
 export type ShapeBox = [number, number, number, number, number, number, number?];
 
@@ -10642,6 +10621,37 @@ export function createVoxelGame(
     syncHeld();
   }
 
+  /** The item that middle-click gives for a block (the block itself, not what breaking it would drop). */
+  function pickItemFor(b: number): number | null {
+    if (b === BLOCK_AIR || isFluid(b) || b === BLOCK_NETHER_PORTAL) return null;
+    if (b === BLOCK_SNOWY_GRASS) return BLOCK_GRASS;
+    if (b === BLOCK_GRASS || b === BLOCK_FARMLAND || b === BLOCK_COAL_ORE || b === BLOCK_DIAMOND_ORE || b === BLOCK_EMERALD_ORE || b === BLOCK_QUARTZ_ORE || b === BLOCK_SNOW_LAYER || b === BLOCK_SNOW || b === BLOCK_DIRT_PATH) return b;
+    const d = dropFor(b);
+    if (d !== null && d !== undefined && (ITEM_INFO[d] !== undefined || CUSTOM_BLOCKS.has(d) || CUSTOM_ITEMS.has(d))) return d;
+    return ITEM_INFO[b] !== undefined || CUSTOM_BLOCKS.has(b) ? b : null;
+  }
+  /** Creative: middle-click a block to get it. It goes to your hand if you already carry it in the hotbar, otherwise into the hand slot or the first free hotbar slot. */
+  function pickBlockInSight() {
+    if (mode !== 'creative' || dead) return;
+    const hit = raycastBlock();
+    if (!hit) return;
+    const id = pickItemFor(world.getWorldBlock(hit.x, hit.y, hit.z));
+    if (id === null) return;
+    for (let i = 0; i < 9; i++) if (slots[i]?.id === id) { setSelectedSlot(i); selectedSlotCallback?.(i); return; }
+    let target = -1;
+    for (let i = 9; i < slots.length; i++) if (slots[i]?.id === id) { target = i; break; } // it is in the backpack: bring that stack up
+    const stack: ItemStack = target >= 0 ? slots[target]! : { id, count: maxStack(id) };
+    let dest = !slots[selectedSlot] ? selectedSlot : -1;
+    if (dest < 0) for (let i = 0; i < 9; i++) if (!slots[i]) { dest = i; break; }
+    if (dest < 0) dest = selectedSlot;
+    const old = slots[dest] ?? null;
+    slots[dest] = stack;
+    if (target >= 0) slots[target] = old;
+    notifyInventory();
+    setSelectedSlot(dest); selectedSlotCallback?.(dest);
+    syncHeld();
+  }
+
   function syncHeld() {
     const id = slots[selectedSlot]?.id ?? null;
     if (id !== heldItem) {
@@ -10668,17 +10678,17 @@ export function createVoxelGame(
   // bows held upright.
   const heldBase = new THREE.Vector3();
   // First-person pose for swords and tools, and for blocking with a sword (right-click and hold)
-  const TOOL_FP = { scale: 1.0, x: 0.76, y: -0.14, z: -0.95, rx: -0.05, ry: -0.3, rz: 0.34 };
+  const TOOL_FP = { scale: 1.0, x: 0.74, y: -0.14, z: -0.95, rx: -0.5, ry: -0.8, rz: 0.62 };
   const BLOCK_FP = { x: 0.22, y: -0.28, z: -0.85, rx: 0.1, ry: -0.9, rz: 1.2 };
   // A spear is held out ahead of you, the point away from the camera (thrusts drive it forward; charging draws it back)
-  const SPEAR_FP = { scale: 1.25, x: 0.45, y: -0.34, z: -0.95, rx: -0.85, ry: -0.2, rz: 0.55 };
+  const SPEAR_FP = { scale: 1.25, x: 0.47, y: -0.34, z: -0.95, rx: -0.85, ry: -0.65, rz: 0.55 };
   let spearChLerp = 0;
   // Swords are held like in Minecraft: the handle at the bottom right, the blade across the lower-right
   // quadrant of the screen, tilted diagonally up and forward into the world so you read it as a 3D blade
   // (not a flat sticker) — the extra yaw (ry) reveals the flat of the blade and the pitch (rx) tips the tip
   // away from the camera, into the depth of the scene. Blocking raises it across the body.
   // Plain holding pose: low in the bottom-right corner, the blade pointing up and only leaning a little (relaxed, not raised).
-  const SWORD_FP = { scale: 1.05, x: 0.78, y: -0.15, z: -0.95, rx: -0.05, ry: -0.3, rz: 0.36 };
+  const SWORD_FP = { scale: 1.05, x: 0.76, y: -0.16, z: -0.95, rx: -0.5, ry: -0.85, rz: 0.62 };
   // The raised pose across the screen (blade lying diagonally toward the middle) is for BLOCKING only (hold right-click).
   const SWORD_BLOCK_FP = { x: 0.42, y: -0.58, z: -0.8, rx: -0.35, ry: -0.55, rz: 1.65 };
   let swordBlocking = false;
@@ -10796,8 +10806,8 @@ export function createVoxelGame(
       m.rotation.set(0.1, Math.PI / 4, 0);
     } else if (heldItem === ITEM_BOW) {
       m.scale.setScalar(1.12);
-      heldBase.set(0.74, -0.16, -0.9);
-      m.rotation.set(0.05, -0.35, 0.42);
+      heldBase.set(0.72, -0.16, -0.9);
+      m.rotation.set(-0.3, -0.75, 0.55);
     } else if (TOOLS[heldItem]?.kind === 'sword') {
       m.scale.setScalar(SWORD_FP.scale);
       heldBase.set(SWORD_FP.x, SWORD_FP.y, SWORD_FP.z);
@@ -18708,6 +18718,36 @@ export function createVoxelGame(
   const faceZ = new THREE.Vector3(0, 0, 1);
   let outlineTarget: { x: number; y: number; z: number; name: string } | null = null;
   let miningFraction = 0; // how far the block you are breaking has got (0 to 1), for the cracks and for tests
+  // The outline follows the real shape of what you aim at (a pressure plate is a thin plate, not a whole cube)
+  const cubeOutlineGeo = outlineBox.geometry;
+  let shapedOutlineGeo: THREE.BufferGeometry | null = null;
+  let outlineShapeKey = '';
+  function setOutlineShape(x: number, y: number, z: number) {
+    const b = world.getWorldBlock(x, y, z);
+    let boxes: ShapeBox[] | null = null;
+    if (pickByShape(b)) boxes = shapeBoxes(b, (dx, dy, dz) => world.getWorldBlock(x + dx, y + dy, z + dz));
+    if (!boxes || !boxes.length) {
+      if (outlineBox.geometry !== cubeOutlineGeo) { outlineBox.geometry = cubeOutlineGeo; shapedOutlineGeo?.dispose(); shapedOutlineGeo = null; outlineShapeKey = ''; }
+      return;
+    }
+    const key = boxes.map((bx) => bx.slice(0, 6).join(',')).join('|');
+    if (key === outlineShapeKey && outlineBox.geometry === shapedOutlineGeo) return;
+    const pos: number[] = [];
+    const E = 0.003;
+    for (const [x0, y0, z0, x1, y1, z1] of boxes) {
+      const a = [x0 - 0.5 - E, y0 - 0.5 - E, z0 - 0.5 - E], c = [x1 - 0.5 + E, y1 - 0.5 + E, z1 - 0.5 + E];
+      const p = (i: number, j: number, k: number) => [i ? c[0] : a[0], j ? c[1] : a[1], k ? c[2] : a[2]];
+      const edges: Array<[number[], number[]]> = [];
+      for (const j of [0, 1]) for (const k of [0, 1]) edges.push([p(0, j, k), p(1, j, k)]);
+      for (const i of [0, 1]) for (const k of [0, 1]) edges.push([p(i, 0, k), p(i, 1, k)]);
+      for (const i of [0, 1]) for (const j of [0, 1]) edges.push([p(i, j, 0), p(i, j, 1)]);
+      for (const [s, e] of edges) pos.push(...s, ...e);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    if (outlineBox.geometry === shapedOutlineGeo) shapedOutlineGeo?.dispose();
+    shapedOutlineGeo = g; outlineBox.geometry = g; outlineShapeKey = key;
+  }
   function updateTargetOutline() {
     const show = outlineOn && engaged() && !chatOpen && mode !== 'spectator' && !sleeping;
     const hit = show ? raycastBlock() : null;
@@ -18717,8 +18757,9 @@ export function createVoxelGame(
     }
     outlineBox.position.set(hit.x + 0.5, hit.y + 0.5, hit.z + 0.5);
     outlineBox.visible = true;
+    setOutlineShape(hit.x, hit.y, hit.z);
     faceNormal.set(hit.placeX - hit.x, hit.placeY - hit.y, hit.placeZ - hit.z);
-    if (faceNormal.lengthSq() > 0.5 && faceNormal.lengthSq() < 1.5) {
+    if (outlineBox.geometry === cubeOutlineGeo && faceNormal.lengthSq() > 0.5 && faceNormal.lengthSq() < 1.5) {
       faceGlow.position.set(hit.x + 0.5 + faceNormal.x * 0.504, hit.y + 0.5 + faceNormal.y * 0.504, hit.z + 0.5 + faceNormal.z * 0.504);
       faceGlow.quaternion.setFromUnitVectors(faceZ, faceNormal);
       (faceGlow.material as THREE.MeshBasicMaterial).opacity = isMining ? 0.24 : 0.12;
@@ -19245,7 +19286,7 @@ export function createVoxelGame(
       z += rayDir.z * RAY_STEP;
       const bx = Math.floor(x), by = Math.floor(y), bz = Math.floor(z);
       const rb = world.getWorldBlock(bx, by, bz);
-      if (isStepBlock(rb)) {
+      if (pickByShape(rb)) { // stairs, slabs, plates, buttons, carpets...: only the part of the cell the block really fills can be hit
         const nrm = stepHit(rb, bx, by, bz, x, y, z);
         if (nrm) {
           lastHitFrac.x = x - bx; lastHitFrac.y = y - by; lastHitFrac.z = z - bz;
@@ -19555,6 +19596,9 @@ export function createVoxelGame(
       }
       isMining = true;
       digSoundTimer = 0; // the scratchy dig sound starts right away
+    } else if (e.button === 1) {
+      e.preventDefault();
+      pickBlockInSight(); // creative: middle-click gives you the block
     } else if (e.button === 2) {
       e.preventDefault();
       if (mode !== 'spectator' && !crouchNow) { // a mod block that wants right-clicks (waystones, furniture...)

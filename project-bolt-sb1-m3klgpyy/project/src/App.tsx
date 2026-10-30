@@ -1,4 +1,5 @@
 import { setBgInterval, clearBgInterval } from './bgTimer';
+import { SafeView, lazyRetry } from './SafeView';
 import { lazy, Suspense, useState, useEffect, useRef, useMemo, useCallback, useSyncExternalStore, createContext, useContext, type FormEvent, type ChangeEvent, type MouseEvent as ReactMouseEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
 import { ADVANCEMENT_TABS, rewardText, advancementsFor, checkItems, checkEvent, loadAdvancements, saveAdvancements, clearAdvancements, type Advancement, type AdvancementTab } from './advancements';
 import { SKINS, CAPES, CUSTOM_SKIN_ID, CUSTOM_CAPE_ID, isCustomSkinData, type PlayerLook } from '@/cosmetics';
@@ -13,7 +14,7 @@ import {
 } from '@/progression';
 import { ModBuilder } from '@/ModBuilder';
 import { parseModCode } from '@/modBuilderLogic';
-import { filterProfanity } from '@/profanity';
+import { filterProfanity, hasProfanity } from '@/profanity';
 import { completeChat, applyCompletion } from './autocomplete';
 import { readRank, aiLeftToday, AI_DAILY_LIMIT, countAiQuestion, worldLimit, WORLD_LIMITS, RANK_NAMES, effectiveRank, playerCap, scriptBudgetMs, canUploadSkin, SCRIPT_BUDGET_MS, creatorTier, CREATOR_PLAYS, CREATOR_NAMES, PLAYER_CAP, adsAllowedFor, badgeTags, perkRank, canGoUndercover, canCustomTheme, isStaffId, isSpecialId, type SpecialId, type StaffId, type RankId, type CreatorTier } from '@/ranks';
 import { GAME_VERSION, NEWS } from '@/news';
@@ -286,7 +287,7 @@ import {
   X,
 } from 'lucide-react';
 
-const MinigamesView = lazy(() => import('./minigames/ui/MinigamesView'));
+const MinigamesView = lazyRetry(() => import('./minigames/ui/MinigamesView'));
 type View = 'home' | 'shop' | 'settings' | 'create-world' | 'servers' | 'planets' | 'social' | 'news' | 'leaderboard' | 'games';
 type GameMode = 'menu' | 'playing';
 
@@ -1112,9 +1113,11 @@ function CreateWorldView({ onSave, onBack, used, limit, initialMode = 'survival'
   const previewName = worldName.trim() || 'Untitled World';
 
   const [creating, setCreating] = useState(false);
+  const [nameError, setNameError] = useState('');
   const full = used >= limit;
   function handleSave() {
-    if (full || creating) return; // one click makes one planet
+    if (full || creating) return;
+    if (hasProfanity(worldName) || hasProfanity(description)) { setNameError('That name or description has a word that is not allowed. Please change it.'); return; } // one click makes one planet
     setCreating(true);
     (document.activeElement as HTMLElement | null)?.blur?.(); // the button must not keep focus (Space would press it again while you play)
     onSave({
@@ -1171,17 +1174,18 @@ function CreateWorldView({ onSave, onBack, used, limit, initialMode = 'survival'
             <input
               type="text"
               value={worldName}
-              onChange={(e) => setWorldName(e.target.value)}
+              onChange={(e) => { setWorldName(e.target.value); setNameError(''); }}
               placeholder="Enter world name..."
               maxLength={32}
               className="w-full bg-[#0a0e14] border border-[#243044] rounded-xl px-4 py-3.5 text-white text-sm placeholder-[#364860] focus:border-[#00e676] focus:outline-none focus:ring-1 focus:ring-[#00e676] transition-colors"
               autoFocus
             />
             <p className="text-[#364860] text-[10px] mt-2">{worldName.length}/32 characters</p>
+            {(nameError || hasProfanity(worldName)) && <p className="text-[#ff6b6b] text-xs mt-1" data-testid="world-name-error">{nameError || 'That name has a word that is not allowed. Please change it.'}</p>}
             <label className="block text-[#8ea0b8] text-xs mt-4">Description (optional)</label>
             <textarea
               value={description}
-              onChange={(e) => setDescription(e.target.value.slice(0, 200))}
+              onChange={(e) => { setDescription(e.target.value.slice(0, 200)); setNameError(''); }}
               placeholder="What is this world about? Players see it on the Servers page when your world is open."
               rows={2}
               data-testid="world-description"
@@ -4077,8 +4081,27 @@ function InventoryOverlay({
     commit(c, arr);
     commitInv(inv);
   };
+  /** Hover over a slot and press Q (or your drop key): one item drops; with Ctrl the whole stack. */
+  const dropKeyRef = useRef<(whole: boolean) => void>(() => {});
+  dropKeyRef.current = (whole: boolean) => {
+    const sk = hoverSlotRef.current;
+    if (!sk || cursorRef.current || sk.startsWith('creative:') || sk.startsWith('book:') || sk === 'anvil:out') return;
+    const [c, si] = sk.split(':') as [Container, string];
+    const i = Number(si);
+    if (!Number.isInteger(i)) return;
+    if (c === 'armor' || c === 'station') return;
+    const arr = (c === 'inv' ? invRef.current : arrOf(c)).slice();
+    const st = arr[i] ?? null;
+    if (!st) return;
+    const n = whole ? st.count : 1;
+    arr[i] = st.count > n ? { ...st, count: st.count - n } : null;
+    if (c === 'inv') commitInv(arr); else commit(c, arr);
+    onDropItems([{ ...st, count: n }]);
+  };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      const t0 = e.target as HTMLElement | null;
+      if (e.code === (getKeybinds().drop || 'KeyQ') && !(t0 && (t0.tagName === 'INPUT' || t0.tagName === 'TEXTAREA' || t0.isContentEditable))) { e.preventDefault(); dropKeyRef.current(e.ctrlKey); return; }
       const m = e.code.match(/^Digit([1-9])$/);
       if (!m) return;
       const t = e.target as HTMLElement | null;
@@ -4252,7 +4275,7 @@ function InventoryOverlay({
             </div>
           </>
         )}
-        <div className={!chestKey && !furnaceKey && !atCraftingTable && !station ? 'flex-1 min-w-0 self-stretch flex items-center justify-end pl-14' : 'flex-1 min-w-0'}>
+        <div className={!chestKey && !furnaceKey && !atCraftingTable && !station ? 'flex-1 min-w-[190px] max-w-[300px] self-stretch flex items-center justify-end pl-4' : 'flex-1 min-w-0'}>
         {station?.kind === 'enchanting' ? (
           <div className="flex items-start gap-5 mb-5" data-testid="enchanting">
             <div className="flex flex-col items-center gap-1.5">
@@ -4345,12 +4368,12 @@ function InventoryOverlay({
         ) : chestKey ? (
           <div className="grid grid-cols-9 gap-0.5 mb-5 w-fit">{slotRow('chest', chest, 0, chest.length)}</div>
         ) : craftMode === 'quick' ? (
-          <div className="flex flex-col gap-1.5 mb-5 max-h-64 overflow-y-auto vb-scroll pr-1">
+          <div className="flex flex-col gap-1.5 w-full max-h-[190px] overflow-y-auto vb-scroll pr-1" data-testid="quick-craft">
             {RECIPES.filter((r) => {
               const tableOk = !r.needsTable || atCraftingTable;
               return tableOk && ingredientsOf(r).every((x) => countInSlots(inv, x.id) >= x.count);
             }).length === 0 && (
-              <p className="text-[#5a6b80] text-xs py-2">
+              <p className="text-[#5a6b80] text-xs py-2 text-left" data-testid="quick-empty">
                 Nothing craftable with what you're carrying yet{atCraftingTable ? '' : ' — some recipes also need a crafting table'}.
               </p>
             )}
@@ -4365,7 +4388,7 @@ function InventoryOverlay({
                   onClick={() => onQuickCraft(r.id)}
                   className="flex items-center justify-between px-3 py-2 rounded-xl border transition-all duration-200 bg-[#00e676]/10 border-[#00e676]/30 hover:bg-[#00e676]/20 hover:scale-[1.01] active:scale-[0.98]"
                 >
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 flex-wrap">
                     {ing.map((x) => (
                       <span key={x.id} className="flex items-center gap-0.5 text-xs">
                         <span className="text-white">{x.count}</span>
@@ -6439,7 +6462,7 @@ export default function App() {
   const [fov, setFov] = useState(savedSettings.fov ?? 75);
   // Your worlds list survives closing the tab
   const [savedWorlds, setSavedWorlds] = useState<WorldConfig[]>(() => {
-    try { return JSON.parse(localStorage.getItem('vb-worlds') ?? '[]') as WorldConfig[]; } catch { return []; }
+    try { return (JSON.parse(localStorage.getItem('vb-worlds') ?? '[]') as WorldConfig[]).map((w) => ({ ...w, name: typeof w.name === 'string' ? filterProfanity(w.name) : w.name, description: typeof w.description === 'string' ? filterProfanity(w.description) : w.description })); } catch { return []; }
   });
   const activeWorldIdRef = useRef<string | null>(null);
   const [activeWorldMode, setActiveWorldMode] = useState<GameWorldMode>('survival');
@@ -7891,7 +7914,7 @@ export default function App() {
       ...anticheatOptions(cfg.name),
       onCount: (n: number) => { setHostingInfo((x) => (x ? { ...x, players: n } : x)); publishHosting(); },
       onBans: (bans: string[]) => setSavedWorlds((prev) => prev.map((w) => (w.id === worldId ? { ...w, bans } : w))),
-      roles: cfg.roles ?? {}, worldName: cfg.name,
+      roles: cfg.roles ?? {}, worldName: filterProfanity(cfg.name),
       onRoles: (roles: Record<string, 'admin' | 'coowner'>) => setSavedWorlds((prev) => prev.map((w) => (w.id === worldId ? { ...w, roles } : w))),
       onAnticheat: (a: AcSettings) => setAcSettings(a),
     });
@@ -8033,7 +8056,7 @@ export default function App() {
       sid,
       seed: st.seed, worldType, mode, changes: Array.isArray(st.changes) ? st.changes : [], time: Number(st.time) || 0, weather: st.weather ?? 'clear',
       settings: { ...DEFAULT_SERVER, ...(st.settings ?? {}) }, ranks: st.ranks, experimental: !!st.experimental, privacy: st.privacy ?? 'public',
-      hostName: me.username, caretaker: true, owner: st.owner, roles: st.roles ?? {}, worldName: st.name, maxPlayers: Math.max(2, Math.min(40, Number(st.maxPlayers) || 18)), bans: Array.isArray(st.bans) ? st.bans : [],
+      hostName: me.username, caretaker: true, owner: st.owner, roles: st.roles ?? {}, worldName: st.name, maxPlayers: Math.max(2, Math.min(40, Number(st.maxPlayers) || 24)), bans: Array.isArray(st.bans) ? st.bans : [],
       services: roomServices(me),
       ...anticheatOptions(st.name),
       onCount: (n: number) => { setHostingInfo((x) => (x ? { ...x, players: n } : x)); publishHosting(); },
@@ -8043,7 +8066,7 @@ export default function App() {
     const old = mpRef.current; mpRef.current = null; old?.disconnect();
     for (const k of Object.keys(onlineNamesRef.current)) if (Number(k) !== myNetIdRef.current) h.removeRemotePlayer(Number(k));
     setHandedOver(true);
-    hostingRef.current = { sid, id: roomId, room, peer, worldId: '', privacy: (st.privacy ?? 'public') as WorldPrivacy, name: st.name, mode, worldType, max: Number(st.maxPlayers) || 18, timer: 0, tags: [] };
+    hostingRef.current = { sid, id: roomId, room, peer, worldId: '', privacy: (st.privacy ?? 'public') as WorldPrivacy, name: st.name, mode, worldType, max: Number(st.maxPlayers) || 24, timer: 0, tags: [] };
     joinedAddressRef.current = 'p2p:' + roomId;
     connectWith((mpMod as { MultiplayerClient: new () => MpClient }).MultiplayerClient, undefined, { hostSocket: hMod.loopback(room) });
     setHostingInfo({ privacy: (st.privacy ?? 'public') as WorldPrivacy, players: 1 });
@@ -9815,9 +9838,9 @@ export default function App() {
           onCreatePreset={handleCreatePreset}
           onNavClick={handleNavClick}
           gamesView={view === 'games' ? (
-            <Suspense fallback={<div className="p-8 text-[#5a6b80]">Loading games…</div>}>
+            <SafeView label="Games"><Suspense fallback={<div className="p-8 text-[#5a6b80]">Loading games…</div>}>
               <MinigamesView account={account && !isGuestName(account.username) ? { userId: account.userId, username: account.username } : null} rank={myPerk} badge={{ owner: isOwnerAccount, rank: myUndercover ? null : myRank, staff: myStaff, special: myUndercover ? null : mySpecial, og: myUndercover ? false : myOg }} intent={gameIntent} onIntentDone={() => setGameIntent(null)} />
-            </Suspense>
+            </Suspense></SafeView>
           ) : null}
           socialView={(
             <SocialView
