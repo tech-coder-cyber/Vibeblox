@@ -66,8 +66,10 @@ export type BoardProps = {
   /** drag-only input: pressing a piece shows its moves; a click on nothing clears them */ onPick?: (sq: number | null) => void;
   onMove?: (from: number, to: number) => void;
   /** click, drag or both (default) */ inputMode?: MoveInput;
-  /** a queued move, shown on the board */ premove?: { from: number; to: number } | null;
+  /** the queued moves, shown on the board */ premove?: Array<{ from: number; to: number }> | null;
   /** a right-click or Escape cancels a queued move */ onCancelPremove?: () => void;
+  /** a premove was just queued: its piece slides to the new square (k changes for each one) */ previewMove?: { from: number; to: number; k: number } | null;
+  /** the real move with this key ("from-to") was already shown by a premove, so it is not slid a second time */ noSlideKey?: string;
   /** a game-end animation: the id changes for each new one */ celebrate?: { id: number; kind: Celebration } | null;
   /** the king that falls over when the game is lost */ fallSq?: number | null;
   animSpeed?: AnimSpeed;
@@ -120,7 +122,7 @@ export default function Board(p: BoardProps) {
   const lastKey = p.lastMove ? p.lastMove.join('-') : '';
   const lastRef = useRef('');
   useLayoutEffect(() => {
-    if (!p.animate || !p.lastMove || lastKey === lastRef.current) { lastRef.current = lastKey; return; }
+    if (!p.animate || !p.lastMove || lastKey === lastRef.current || lastKey === p.noSlideKey) { lastRef.current = lastKey; return; }
     lastRef.current = lastKey;
     const a = colRow(p.lastMove[0]), b = colRow(p.lastMove[1]);
     setSlide({ sq: p.lastMove[1], dx: a.col - b.col, dy: a.row - b.row, go: false });
@@ -131,6 +133,21 @@ export default function Board(p: BoardProps) {
     return () => { cancelAnimationFrame(id1); clearTimeout(id2); clearTimeout(id3); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastKey, p.animate, colRow, p.lastMove, speed.ms]);
+
+  // slide a piece that was just premoved (the board shows where it will be)
+  const previewKey = p.previewMove ? `${p.previewMove.from}-${p.previewMove.to}-${p.previewMove.k}` : '';
+  const previewRef = useRef('');
+  useLayoutEffect(() => {
+    if (!previewKey || previewKey === previewRef.current) { previewRef.current = previewKey; return; }
+    previewRef.current = previewKey;
+    if (!p.animate || !p.previewMove) return;
+    const a = colRow(p.previewMove.from), b = colRow(p.previewMove.to);
+    setSlide({ sq: p.previewMove.to, dx: a.col - b.col, dy: a.row - b.row, go: false });
+    const id1 = requestAnimationFrame(() => requestAnimationFrame(() => setSlide((s) => (s ? { ...s, go: true } : s))));
+    const id2 = window.setTimeout(() => setSlide(null), speed.ms + 40);
+    return () => { cancelAnimationFrame(id1); clearTimeout(id2); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previewKey, p.animate, colRow, speed.ms]);
 
   const fxStyles = useMemo(() => {
     const m = new Map<number, CSSProperties>();
@@ -221,7 +238,7 @@ export default function Board(p: BoardProps) {
             <div key={i} data-sq={sq} role="gridcell" className="absolute" style={{ left: `${col * 12.5}%`, top: `${row * 12.5}%`, width: '12.5%', height: '12.5%', background: textured ? undefined : dark ? th.dark : th.light }}>
               {hl && <div className="absolute inset-0" style={{ background: th.accent, opacity: p.selected === sq ? 0.7 : 0.45 }} />}
               {sc && <div className="absolute inset-0" style={{ background: sc, opacity: 0.55 }} />}
-              {p.premove && (p.premove.from === sq || p.premove.to === sq) && <div className="absolute inset-0" style={{ background: '#e0903a', opacity: 0.62 }} data-testid="premove-sq" />}
+              {p.premove?.some((m) => m.from === sq || m.to === sq) && <div className="absolute inset-0" style={{ background: '#e0903a', opacity: 0.62 }} data-testid="premove-sq" />}
               {p.checkSq === sq && <div className="absolute inset-0" style={{ background: 'radial-gradient(circle, rgba(235,60,50,.95) 0%, rgba(235,60,50,.55) 45%, rgba(235,60,50,0) 75%)' }} />}
               {p.hint && (p.hint.from === sq || p.hint.to === sq) && <div className="absolute inset-0" style={{ boxShadow: 'inset 0 0 0 4px #4ec9a0', background: 'rgba(78,201,160,.25)' }} />}
               {marks.circles[sq] && <div className="absolute inset-0" style={{ background: marks.circles[sq], opacity: 0.8 }} data-testid="mark-circle" />}
