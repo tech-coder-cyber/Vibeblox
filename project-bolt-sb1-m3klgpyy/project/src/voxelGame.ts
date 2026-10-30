@@ -10688,7 +10688,40 @@ export function createVoxelGame(
   // (not a flat sticker) — the extra yaw (ry) reveals the flat of the blade and the pitch (rx) tips the tip
   // away from the camera, into the depth of the scene. Blocking raises it across the body.
   // Plain holding pose: low in the bottom-right corner, the blade pointing up and only leaning a little (relaxed, not raised).
-  const SWORD_FP = { scale: 1.05, x: 0.76, y: -0.16, z: -0.95, rx: -0.5, ry: -0.85, rz: 0.62 };
+  // Indev 37.3: the sword is now held exactly like Minecraft's own first-person sword (position, tilt, size and the swing are
+  // worked out below from the same numbers the real game uses), so these three values are only where it starts before the first frame.
+  const SWORD_FP = { scale: 0.68, x: 0.595, y: -0.42, z: -0.685, rx: -0.436, ry: -Math.PI / 2, rz: 0 };
+  const MC_DEG = Math.PI / 180;
+  const _mcAxisX = new THREE.Vector3(1, 0, 0), _mcAxisZ = new THREE.Vector3(0, 0, 1);
+  const _mcM = new THREE.Matrix4(), _mcOp = new THREE.Matrix4(), _mcS = new THREE.Vector3();
+  const _mcP0 = new THREE.Vector3(), _mcP1 = new THREE.Vector3(), _mcQ0 = new THREE.Quaternion(), _mcQ1 = new THREE.Quaternion();
+  /**
+   * Minecraft's first-person sword: the hand's place on screen, the swing turn by turn, the raised block pose, and the
+   * sword model's own tilt (Y -135, Z 25, 4 up and 2 forward, 1.7 times bigger). swing: 0..1 through a swing;
+   * drop: 0..1, how far the sword is still lowered while you pull it out. Writes the sword's position and turn into p and q.
+   */
+  function mcSwordPose(swing: number, blocking: boolean, drop: number, p: THREE.Vector3, q: THREE.Quaternion) {
+    const m = _mcM.identity(), op = _mcOp;
+    const sw = blocking ? 0 : swing, sq = Math.sqrt(sw);
+    m.multiply(op.makeTranslation(-0.4 * Math.sin(sq * Math.PI), 0.2 * Math.sin(sq * Math.PI * 2), -0.2 * Math.sin(sw * Math.PI)));
+    m.multiply(op.makeTranslation(0.56, -0.52 - 0.6 * drop, -0.72));
+    m.multiply(op.makeRotationY(45 * MC_DEG));
+    m.multiply(op.makeRotationY(Math.sin(sw * sw * Math.PI) * -20 * MC_DEG));
+    m.multiply(op.makeRotationZ(Math.sin(sq * Math.PI) * -20 * MC_DEG));
+    m.multiply(op.makeRotationX(Math.sin(sq * Math.PI) * -80 * MC_DEG));
+    m.multiply(op.makeScale(0.4, 0.4, 0.4));
+    if (blocking) {
+      m.multiply(op.makeTranslation(-0.5, 0.2, 0));
+      m.multiply(op.makeRotationY(30 * MC_DEG));
+      m.multiply(op.makeRotationX(-80 * MC_DEG));
+      m.multiply(op.makeRotationY(60 * MC_DEG));
+    }
+    m.multiply(op.makeTranslation(0, 4 / 16, 2 / 16));
+    m.multiply(op.makeRotationY(-135 * MC_DEG));
+    m.multiply(op.makeRotationZ(25 * MC_DEG));
+    m.multiply(op.makeScale(1.7, 1.7, 1.7));
+    m.decompose(p, q, _mcS);
+  }
   // The raised pose across the screen (blade lying diagonally toward the middle) is for BLOCKING only (hold right-click).
   const SWORD_BLOCK_FP = { x: 0.42, y: -0.58, z: -0.8, rx: -0.35, ry: -0.55, rz: 1.65 };
   let swordBlocking = false;
@@ -20521,11 +20554,17 @@ export function createVoxelGame(
         const swordSwingP = punchPhase > 0
           ? Math.min(1, (1 - punchPhase / PUNCH_DURATION) * (PUNCH_DURATION / SWORD_SWING_DURATION))
           : 0;
-        const swordSw = swingSnapCurve(swordSwingP);
-        const b = blockLerp, B = (a: number, c: number) => a + (c - a) * b;
-        const free = 1 - b * 0.6; // when blocking, the pose holds still (unchanged)
-        heldMesh.position.set(B(SWORD_FP.x, SWORD_BLOCK_FP.x) - 0.2 * swordSw + hbx * free + idleX * free + 0.06 * eq, B(SWORD_FP.y, SWORD_BLOCK_FP.y) - 0.24 * swordSw + hby * free + idleY + spY - 0.6 * eq, B(SWORD_FP.z, SWORD_BLOCK_FP.z) - 0.12 * swordSw + 0.03 * sprintLerp);
-        heldMesh.rotation.set(B(SWORD_FP.rx, SWORD_BLOCK_FP.rx) - 0.6 * swordSw - spR * free + 0.9 * eq, B(SWORD_FP.ry, SWORD_BLOCK_FP.ry) + 0.3 * swordSw, B(SWORD_FP.rz, SWORD_BLOCK_FP.rz) + 1.0 * swordSw + idleR * free);
+        // Minecraft's own hold: idle, the swing, and (blended in through blockLerp) the raised block pose
+        const b = blockLerp, free = 1 - b * 0.6; // when blocking, the pose holds still
+        mcSwordPose(swordSwingP, false, eq, _mcP0, _mcQ0);
+        if (b > 0.001) {
+          mcSwordPose(0, true, eq, _mcP1, _mcQ1);
+          _mcP0.lerp(_mcP1, b); _mcQ0.slerp(_mcQ1, b);
+        }
+        heldMesh.position.set(_mcP0.x + hbx * free + idleX * free, _mcP0.y + hby * free + idleY + spY, _mcP0.z + 0.03 * sprintLerp);
+        heldMesh.quaternion.copy(_mcQ0);
+        if (spR) heldMesh.quaternion.premultiply(_mcQ1.setFromAxisAngle(_mcAxisX, -spR * free)); // sprinting tips the blade forward
+        if (idleR) heldMesh.quaternion.multiply(_mcQ1.setFromAxisAngle(_mcAxisZ, idleR * free)); // a slow breathing sway
       } else if (heldItem !== null && isSpear(heldItem)) {
         // The spear: a jab drives it straight forward; holding right-click draws it back toward the shoulder
         const ch = spearCharging ? Math.min(1, spearCharge / SPEAR_CHARGE_TIME) : 0;
