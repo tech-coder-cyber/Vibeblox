@@ -1025,6 +1025,56 @@ function mobTex(base: string, specks: string[], density = 0.3, draw?: (ctx: Canv
  * Every model faces -Z (the same way the camera looks), so rotation.y = yaw
  * points it where it's walking. Limbs hang from pivot groups so they swing.
  */
+// ---------------- Halloween event ----------------
+let hwMemo = { at: 0, on: false };
+/**
+ * The Halloween event runs from October 24 to November 2 (by the date on your device).
+ * To force it on or off, set localStorage "vb-halloween" to "on" or "off".
+ */
+export function halloweenActive(now: number = Date.now()): boolean {
+  if (now - hwMemo.at < 30_000 && hwMemo.at) return hwMemo.on;
+  let on: boolean;
+  try {
+    const o = typeof localStorage !== 'undefined' ? localStorage.getItem('vb-halloween') : null;
+    if (o === 'on') on = true; else if (o === 'off') on = false; else { const d = new Date(now), m = d.getMonth(), day = d.getDate(); on = (m === 9 && day >= 24) || (m === 10 && day <= 2); }
+  } catch { const d = new Date(now), m = d.getMonth(), day = d.getDate(); on = (m === 9 && day >= 24) || (m === 10 && day <= 2); }
+  hwMemo = { at: now, on };
+  return on;
+}
+/** During the event, monsters sometimes drop Halloween candy (a little more with Looting). */
+export function halloweenCandy(kind: string, looting = 0, rand: () => number = Math.random): number {
+  if (!halloweenActive()) return 0;
+  if (!['zombie', 'skeleton', 'spider', 'creeper', 'cinderbone', 'magma_cube', 'blaze'].includes(kind)) return 0;
+  if (rand() > 0.6 + 0.1 * looting) return 0;
+  return 1 + Math.floor(rand() * (2 + looting));
+}
+/** A carved pumpkin, drawn in pieces: ribbed sides, a stem on top, and a glowing jack-o'-lantern face. */
+function drawPumpkinCanvas(part: 'side' | 'top' | 'face'): HTMLCanvasElement {
+  const c = makeCanvas(16, 16), ctx = c.getContext('2d')!;
+  ctx.fillStyle = '#e8801a'; ctx.fillRect(0, 0, 16, 16);
+  ctx.fillStyle = '#c96410'; for (const x of [0, 5, 10, 15]) ctx.fillRect(x, 0, 1, 16);
+  ctx.fillStyle = '#f2a040'; for (const x of [2, 7, 12]) ctx.fillRect(x, 1, 1, 14);
+  if (part === 'top') { ctx.fillStyle = '#4f7a24'; ctx.fillRect(6, 6, 4, 4); ctx.fillStyle = '#386018'; ctx.fillRect(7, 7, 2, 2); }
+  if (part === 'face') {
+    ctx.fillStyle = '#2a1204'; ctx.fillRect(2, 3, 5, 5); ctx.fillRect(9, 3, 5, 5); ctx.fillRect(3, 9, 10, 4); // the carved holes
+    ctx.fillStyle = '#ffd84a'; ctx.fillRect(3, 4, 3, 3); ctx.fillRect(10, 4, 3, 3); ctx.fillRect(4, 10, 8, 2); // the glow inside
+    ctx.fillStyle = '#e8801a'; ctx.fillRect(6, 9, 1, 1); ctx.fillRect(9, 9, 1, 1); ctx.fillRect(7, 12, 2, 1); // teeth
+  }
+  return c;
+}
+/** Halloween candy: a wrapped sweet with twisted ends. */
+function drawCandyCanvas(): HTMLCanvasElement {
+  const c = makeCanvas(16, 16), ctx = c.getContext('2d')!;
+  ctx.fillStyle = '#f26ca7'; ctx.fillRect(5, 5, 6, 6); // the wrapper
+  ctx.fillStyle = '#ff9ac8'; ctx.fillRect(5, 5, 6, 2);
+  ctx.fillStyle = '#c23a7e'; ctx.fillRect(5, 10, 6, 1);
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(7, 6, 1, 4); ctx.fillRect(9, 6, 1, 4); // stripes
+  ctx.fillStyle = '#f26ca7'; ctx.fillRect(2, 6, 3, 4); ctx.fillRect(11, 6, 3, 4); // twisted ends
+  ctx.fillStyle = '#c23a7e'; ctx.fillRect(1, 5, 1, 1); ctx.fillRect(1, 10, 1, 1); ctx.fillRect(14, 5, 1, 1); ctx.fillRect(14, 10, 1, 1);
+  ctx.fillRect(2, 7, 1, 2); ctx.fillRect(13, 7, 1, 2);
+  return c;
+}
+
 function buildMobModel(kind: MobKind | 'player', variant = 0): MobModel {
   const P = 1 / 16;
   const root = new THREE.Group();
@@ -1110,6 +1160,13 @@ function buildMobModel(kind: MobKind | 'player', variant = 0): MobModel {
     const top = kind === 'player' ? mobTex('#3b2213', ['#2e1a0e']) : undefined;
     const hm = headMats(side, face, top);
     head = box(root, [8, 8, 8], [0, 24, 0], [0, 4, 0], hm);
+    if ((kind === 'zombie' || kind === 'skeleton') && halloweenActive() && Math.random() < 0.55) {
+      // Halloween: some zombies and skeletons wear a glowing jack-o'-lantern on their head
+      const side = mat(drawPumpkinCanvas('side')), topM = mat(drawPumpkinCanvas('top')), faceM = mat(drawPumpkinCanvas('face'));
+      const pumpkin = new THREE.Mesh(new THREE.BoxGeometry(9.4 * P, 9.4 * P, 9.4 * P), [side, side, topM, side, side, faceM]);
+      pumpkin.position.set(0, 4 * P, 0); pumpkin.castShadow = true;
+      head.add(pumpkin);
+    }
     if (kind === 'player') {
       // A cape hangs from the shoulders on the back (+z); hidden until one is equipped
       const capeM = mat(capeCanvas('crimson'));
@@ -3262,6 +3319,7 @@ function itemCanvasBase(id: number): HTMLCanvasElement | null {
     case ITEM_SHEARS: return drawShearsIcon();
     case ITEM_FISHING_ROD: return drawRodCanvas();
     case ITEM_RAW_COD: case ITEM_RAW_SALMON: case ITEM_PUFFERFISH: case ITEM_CLOWNFISH: case ITEM_COOKED_COD: case ITEM_COOKED_SALMON: return drawFishCanvas(id);
+    case ITEM_CANDY: return drawCandyCanvas();
     case ITEM_XP_BOTTLE: return drawXpBottleIcon();
     case BLOCK_TALL_GRASS: return drawTallGrassCanvas();
     case ITEM_BUCKET: return drawBucketCanvas(null);
@@ -4018,6 +4076,7 @@ export const isMineralBlock = (b: number) => b >= BLOCK_DIAMOND_BLOCK && b <= BL
 /** New items of round 10 */
 export const ITEM_GLASS_BOTTLE = 1480, ITEM_BLAZE_POWDER = 1481, ITEM_NAME_TAG = 1482;
 // Fishing
+export const ITEM_CANDY = 1490; // Halloween candy
 export const ITEM_FISHING_ROD = 1483, ITEM_RAW_COD = 1484, ITEM_RAW_SALMON = 1485, ITEM_PUFFERFISH = 1486, ITEM_CLOWNFISH = 1487, ITEM_COOKED_COD = 1488, ITEM_COOKED_SALMON = 1489;
 export const isPiston = (b: number) => b >= BLOCK_PISTON && b <= BLOCK_STICKY_PISTON + 11;
 export const isStickyPiston = (b: number) => b >= BLOCK_STICKY_PISTON && b <= BLOCK_STICKY_PISTON + 11;
@@ -5056,6 +5115,7 @@ export const ITEM_INFO: Record<number, { name: string; color: string; hidden?: b
   [ITEM_RAW_SALMON]: { name: 'Raw Salmon', color: '#d8604a' },
   [ITEM_PUFFERFISH]: { name: 'Pufferfish', color: '#e8c84a', lore: ['Poisonous! Eating it makes you sick.'] },
   [ITEM_CLOWNFISH]: { name: 'Clownfish', color: '#ff8a1a' },
+  [ITEM_CANDY]: { name: 'Halloween Candy', color: '#f26ca7', lore: ['Dropped by monsters and fished up during the Halloween event.', 'Eat it, or trade it to the Cleric for emeralds.'] },
   [ITEM_COOKED_COD]: { name: 'Cooked Cod', color: '#a8743c' },
   [ITEM_COOKED_SALMON]: { name: 'Cooked Salmon', color: '#c06a3c' },
 };
@@ -5432,6 +5492,7 @@ export const FOOD_VALUES: Record<number, number> = {
   [ITEM_MUTTON]: 2,
   [ITEM_COOKED_MUTTON]: 6,
   [ITEM_RAW_COD]: 2, [ITEM_RAW_SALMON]: 2, [ITEM_PUFFERFISH]: 1, [ITEM_CLOWNFISH]: 1, [ITEM_COOKED_COD]: 5, [ITEM_COOKED_SALMON]: 6,
+  [ITEM_CANDY]: 3,
 };
 
 export type Recipe = {
@@ -6100,6 +6161,8 @@ export const PROFESSIONS: Array<{ name: string; trades: Trade[] }> = [
   ] },
   { name: 'Cleric', trades: [
     { give: [[ITEM_ROTTEN_FLESH, 32]], get: [ITEM_EMERALD, 1] },
+    { give: [[ITEM_CANDY, 8]], get: [ITEM_EMERALD, 1] },
+    { give: [[ITEM_CANDY, 30]], get: [ITEM_GOLDEN_APPLE, 1] },
     { give: [[ITEM_EMERALD, 1]], get: [BLOCK_GLOWSTONE, 4] },
     { give: [[ITEM_EMERALD, 4]], get: [ITEM_ENDER_PEARL, 1] },
     { give: [[ITEM_EMERALD, 2]], get: [ITEM_GHAST_TEAR, 1] },
@@ -9318,6 +9381,48 @@ export function createVoxelGame(
   let currentDayAmt = 1;
   const DAY_TOP = new THREE.Color(0x3a78d6), DAY_HORIZON = new THREE.Color(0x87ceeb);
   const NIGHT_TOP = new THREE.Color(0x02040c), NIGHT_HORIZON = new THREE.Color(0x0b1026);
+  // ---- Halloween event: a purple night sky, an orange moon, bats, and a one-time announcement ----
+  const HW_HORIZON = new THREE.Color(0x4a1f5e), HW_TOP = new THREE.Color(0x14052a), HW_MOON = new THREE.Color(0xffa24a), MOON_NORMAL = new THREE.Color(0xffffff);
+  const batMat = new THREE.MeshBasicMaterial({ color: 0x14101c });
+  const batBodyGeo = new THREE.BoxGeometry(0.16, 0.12, 0.22), batWingGeo = new THREE.BoxGeometry(0.42, 0.02, 0.2);
+  type Bat = { g: THREE.Group; wl: THREE.Group; wr: THREE.Group; ang: number; rad: number; h: number; spd: number; ph: number };
+  const bats: Bat[] = [];
+  let hwAnnounceAt = 0;
+  function makeBat(): Bat {
+    const g = new THREE.Group();
+    g.add(new THREE.Mesh(batBodyGeo, batMat));
+    const wl = new THREE.Group(), wr = new THREE.Group();
+    const l = new THREE.Mesh(batWingGeo, batMat); l.position.x = -0.21; wl.add(l); wl.position.x = -0.07;
+    const r = new THREE.Mesh(batWingGeo, batMat); r.position.x = 0.21; wr.add(r); wr.position.x = 0.07;
+    g.add(wl, wr);
+    g.frustumCulled = false;
+    scene.add(g);
+    return { g, wl, wr, ang: Math.random() * 6.28, rad: 7 + Math.random() * 14, h: 3 + Math.random() * 7, spd: (0.25 + Math.random() * 0.4) * (Math.random() < 0.5 ? -1 : 1), ph: Math.random() * 6.28 };
+  }
+  /** Sky tint, moon colour, bats and the "Halloween event" message; dayAmt is 1 in full daylight and 0 at night. */
+  function updateHalloween(dt: number, dayAmt: number) {
+    const hw = halloweenActive();
+    const night = 1 - dayAmt;
+    if (hw) { skyHorizon.lerp(HW_HORIZON, 0.55 * night); skyTop.lerp(HW_TOP, 0.7 * night); }
+    moonMat.color.copy(hw ? HW_MOON : MOON_NORMAL);
+    const showBats = hw && night > 0.55 && weatherAmt < 0.6 && dimension === 'overworld';
+    if (showBats && !bats.length) for (let i = 0; i < 10; i++) bats.push(makeBat());
+    const t = performance.now() / 1000;
+    for (const b of bats) {
+      b.g.visible = showBats;
+      if (!showBats) continue;
+      b.ang += b.spd * dt;
+      b.g.position.set(camera.position.x + Math.cos(b.ang) * b.rad, camera.position.y + b.h + Math.sin(t * 1.7 + b.ph) * 0.8, camera.position.z + Math.sin(b.ang) * b.rad);
+      b.g.rotation.y = -b.ang + (b.spd > 0 ? 0 : Math.PI);
+      const flap = Math.sin(t * 16 + b.ph) * 0.75;
+      b.wl.rotation.z = flap; b.wr.rotation.z = -flap;
+    }
+    if (hw && hwAnnounceAt === 0) hwAnnounceAt = performance.now() + 5000;
+    if (hwAnnounceAt > 0 && hwAnnounceAt < Infinity && performance.now() > hwAnnounceAt) {
+      hwAnnounceAt = Infinity;
+      showHint('Halloween event! Pumpkin-headed monsters drop candy, bats fly at night, and fishing finds candy too. Trade it with a Cleric.');
+    }
+  }
   const SUNSET = new THREE.Color(0xffa65c);
   const skyTop = new THREE.Color(), skyHorizon = new THREE.Color(), skyTmp = new THREE.Color();
   const moonDir = new THREE.Vector3();
@@ -9363,7 +9468,7 @@ export function createVoxelGame(
     else if (rules.alwaysDay) timeOfDay = 0.25; // Always Day: the sun stays up
     else timeOfDay += dt / DAY_LENGTH;
     if (timeOfDay >= 1) { timeOfDay -= 1; dayCount++; }
-    if (dimension !== 'overworld') { applyDimensionLook(); return; }
+    if (dimension !== 'overworld') { for (const b of bats) b.g.visible = false; applyDimensionLook(); return; }
     const a = timeOfDay * Math.PI * 2;
     const h = Math.sin(a); // sun height: 1 at noon, -1 at midnight
     sunDir.set(Math.cos(a), h, 0.3).normalize();
@@ -9382,6 +9487,7 @@ export function createVoxelGame(
       skyTop.lerp(stormGrey, weatherAmt * (weather === 'thunder' ? 0.9 : 0.75));
     }
     if (flashAmt > 0) { skyHorizon.lerp(FLASH_COLOR, flashAmt * 0.75); skyTop.lerp(FLASH_COLOR, flashAmt * 0.6); } // lightning
+    updateHalloween(dt, dayAmt);
     paintSky();
     fogColor.copy(skyHorizon);
     if (scene.fog) (scene.fog as THREE.Fog).color.copy(skyHorizon);
@@ -10167,7 +10273,7 @@ export function createVoxelGame(
   let eatingItem: number | null = null, eatTimer = 0, eatHold = false, eatLerp = 0;
   let attackSince = 99; // seconds since your last attack (the attack cooldown, see attackScale)
   const PUNCH_DURATION = 0.28;
-  const SWORD_SWING_DURATION = 0.18; // swords get a snappier strike than fists/tools, see poseSwordSwing below
+  const SWORD_SWING_DURATION = PUNCH_DURATION; // the sword swing now takes the whole swing window (0.28 s, like Minecraft's 0.3 s) instead of a rushed 0.18 s
 
   function makeSolidTex(top: string, bottom: string): THREE.CanvasTexture {
     const c = document.createElement('canvas');
@@ -10722,6 +10828,18 @@ export function createVoxelGame(
     m.multiply(op.makeScale(1.7, 1.7, 1.7));
     m.decompose(p, q, _mcS);
   }
+  /** Everything the Minecraft hold needs from the hand bob, set once per frame. */
+  const _hv = { hbx: 0, hby: 0, idleX: 0, idleY: 0, spY: 0, spR: 0, idleR: 0, sprint: 0 };
+  /** Put a held sword, tool or bow in your hand the way Minecraft does, with the hand bob, sprint tilt and breathing on top. */
+  function placeMcHold(mesh: THREE.Object3D, swing: number, blockB: number, drop: number, dx = 0, dy = 0, dz = 0) {
+    const free = 1 - blockB * 0.6; // when blocking, the pose holds still
+    mcSwordPose(swing, false, drop, _mcP0, _mcQ0);
+    if (blockB > 0.001) { mcSwordPose(0, true, drop, _mcP1, _mcQ1); _mcP0.lerp(_mcP1, blockB); _mcQ0.slerp(_mcQ1, blockB); }
+    mesh.position.set(_mcP0.x + (_hv.hbx + _hv.idleX) * free + dx, _mcP0.y + _hv.hby * free + _hv.idleY + _hv.spY + dy, _mcP0.z + 0.03 * _hv.sprint + dz);
+    mesh.quaternion.copy(_mcQ0);
+    if (_hv.spR) mesh.quaternion.premultiply(_mcQ1.setFromAxisAngle(_mcAxisX, -_hv.spR * free)); // sprinting tips it forward
+    if (_hv.idleR) mesh.quaternion.multiply(_mcQ1.setFromAxisAngle(_mcAxisZ, _hv.idleR * free)); // a slow breathing sway
+  }
   // The raised pose across the screen (blade lying diagonally toward the middle) is for BLOCKING only (hold right-click).
   const SWORD_BLOCK_FP = { x: 0.42, y: -0.58, z: -0.8, rx: -0.35, ry: -0.55, rz: 1.65 };
   let swordBlocking = false;
@@ -10838,9 +10956,9 @@ export function createVoxelGame(
       heldBase.set(0.52, -0.46, -0.82);
       m.rotation.set(0.1, Math.PI / 4, 0);
     } else if (heldItem === ITEM_BOW) {
-      m.scale.setScalar(1.12);
-      heldBase.set(0.72, -0.16, -0.9);
-      m.rotation.set(-0.3, -0.75, 0.55);
+      m.scale.setScalar(SWORD_FP.scale);
+      heldBase.set(SWORD_FP.x, SWORD_FP.y, SWORD_FP.z);
+      m.rotation.set(SWORD_FP.rx, SWORD_FP.ry, SWORD_FP.rz);
     } else if (TOOLS[heldItem]?.kind === 'sword') {
       m.scale.setScalar(SWORD_FP.scale);
       heldBase.set(SWORD_FP.x, SWORD_FP.y, SWORD_FP.z);
@@ -10850,10 +10968,10 @@ export function createVoxelGame(
       heldBase.set(SPEAR_FP.x, SPEAR_FP.y, SPEAR_FP.z);
       m.rotation.set(SPEAR_FP.rx, SPEAR_FP.ry, SPEAR_FP.rz);
     } else if (TOOLS[heldItem]) {
-      // Tools: big and almost facing you, handle at the bottom, blade toward the top right
-      m.scale.setScalar(TOOL_FP.scale);
-      heldBase.set(TOOL_FP.x, TOOL_FP.y, TOOL_FP.z);
-      m.rotation.set(TOOL_FP.rx, TOOL_FP.ry, TOOL_FP.rz);
+      // Tools (pickaxe, axe, shovel, hoe, mace...): held exactly like the sword, the way Minecraft holds them
+      m.scale.setScalar(SWORD_FP.scale);
+      heldBase.set(SWORD_FP.x, SWORD_FP.y, SWORD_FP.z);
+      m.rotation.set(SWORD_FP.rx, SWORD_FP.ry, SWORD_FP.rz);
     } else {
       m.scale.setScalar(0.8);
       heldBase.set(0.48, -0.32, -0.85);
@@ -13516,6 +13634,8 @@ export function createVoxelGame(
         const xp = m.baby ? (growsUp(m.kind) ? 0 : 12) : base; // baby zombies are worth more
         spawnXpOrbs(xp, m.pos.clone().add(new THREE.Vector3(0, 0.5, 0)));
       }
+      const candy = m.baby ? 0 : halloweenCandy(m.kind, looting);
+      if (candy > 0) spawnDroppedItem(ITEM_CANDY, candy, m.pos.clone().add(new THREE.Vector3(0, 0.5, 0)), new THREE.Vector3((Math.random() - 0.5) * 2, 3, (Math.random() - 0.5) * 2), 0.4);
       for (const [id, base] of mobDrops(m.kind, { baby: m.baby, burning: m.fire > 0, wool: m.kind === 'sheep' && !m.sheared ? m.variant : null, looting })) {
         const count = base + (looting && !isRareDrop(id) ? Math.floor(Math.random() * (looting + 1)) : 0);
         spawnDroppedItem(id, count, m.pos.clone().add(new THREE.Vector3(0, 0.5, 0)),
@@ -17473,9 +17593,13 @@ export function createVoxelGame(
   function rollFishing(luck: number): ItemStack {
     const r = Math.random();
     const treasure = 0.05 + 0.01 * luck, junk = Math.max(0.02, 0.10 - 0.02 * luck);
+    // Halloween: a good share of the catches are candy, and now and then something spooky
+    if (halloweenActive() && Math.random() < 0.18) return { id: ITEM_CANDY, count: 1 + Math.floor(Math.random() * 3) };
     if (r < treasure) {
-      const kind = pickWeighted<'tag' | 'book' | 'bow' | 'rod'>([['tag', 30], ['book', 30], ['bow', 20], ['rod', 20]]);
+      const kind = pickWeighted<'tag' | 'book' | 'bow' | 'rod' | 'gems' | 'apple'>([['tag', 22], ['book', 26], ['bow', 16], ['rod', 16], ['gems', 14], ['apple', 6]]);
       if (kind === 'tag') return { id: ITEM_NAME_TAG, count: 1 };
+      if (kind === 'gems') return pickWeighted<ItemStack>([[{ id: ITEM_EMERALD, count: 1 + Math.floor(Math.random() * 3) }, 55], [{ id: ITEM_GOLD_INGOT, count: 1 + Math.floor(Math.random() * 3) }, 35], [{ id: ITEM_DIAMOND, count: 1 }, 10]]);
+      if (kind === 'apple') return { id: ITEM_GOLDEN_APPLE, count: 1 };
       if (kind === 'book') { const d = ENCHANTMENTS[Math.floor(Math.random() * ENCHANTMENTS.length)]; return { id: ITEM_ENCHANTED_BOOK, count: 1, ench: { [d.key]: 1 + Math.floor(Math.random() * d.max) } }; }
       const id = kind === 'bow' ? ITEM_BOW : ITEM_FISHING_ROD;
       return { id, count: 1, damage: Math.floor(Math.random() * maxDurability(id) * 0.5), ench: randomTreasureEnchants(id) };
@@ -18007,7 +18131,7 @@ export function createVoxelGame(
       c.mesh = null;
       c.fluidMesh = null;
     }
-    loadedChunks.clear();
+    loadedChunks.clear(); deferredRebuilds.clear();
   }
 
   function switchDimension(dimId: string, x: number, feetY: number, z: number): boolean {
@@ -18035,6 +18159,7 @@ export function createVoxelGame(
     playerKnock.set(0, 0, 0);
     const ccx = Math.floor(x / CHUNK_SIZE), ccz = Math.floor(z / CHUNK_SIZE);
     for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) loadChunk(ccx + dx, ccz + dz);
+    flushNeighborRebuilds(Infinity);
     currentChunkX = Infinity;
     clouds.visible = cloudsWanted();
     stars.visible = dimension === 'overworld' && video.stars;
@@ -19351,7 +19476,7 @@ export function createVoxelGame(
     const geo = world.buildChunkGeometry(chunk, grassTex, dirtTex, stoneTex);
     if (geo) {
       const mesh = new THREE.Mesh(geo, materials);
-      const shadowsOn = graphicsQuality !== 'low';
+      const shadowsOn = graphicsQuality !== 'low' && chunkIsNear(chunk.cx, chunk.cz);
       mesh.castShadow = shadowsOn;
       mesh.receiveShadow = shadowsOn;
       chunk.mesh = mesh;
@@ -19398,14 +19523,45 @@ export function createVoxelGame(
     rebuildChunkMesh(chunk);
     loadedChunks.add(k);
 
-    // Rebuild already-loaded neighbors so their boundary faces stitch
-    // correctly with this newly generated chunk's data
-    const neighbors = [[cx - 1, cz], [cx + 1, cz], [cx, cz - 1], [cx, cz + 1]];
-    for (const [nx, nz] of neighbors) {
-      const nChunk = world.getChunk(nx, nz);
-      if (nChunk && loadedChunks.has(world.key(nx, nz))) {
-        rebuildChunkMesh(nChunk);
+    // The already-loaded neighbors need a rebuild so their boundary faces stitch with this chunk.
+    // That is queued (each neighbor once, a few per frame) instead of done here, so loading a chunk costs one mesh, not five.
+    queueNeighborRebuilds(cx, cz);
+  }
+
+  // Neighbor rebuilds wait here and are done a few per frame (see flushNeighborRebuilds), so crossing a chunk border
+  // no longer rebuilds dozens of meshes in a single frame.
+  const deferredRebuilds = new Set<string>();
+  function queueNeighborRebuilds(cx: number, cz: number) {
+    for (const [nx, nz] of [[cx - 1, cz], [cx + 1, cz], [cx, cz - 1], [cx, cz + 1]]) {
+      const nk = world.key(nx, nz);
+      if (loadedChunks.has(nk)) deferredRebuilds.add(nk);
+    }
+  }
+  /** Rebuild queued neighbors until the time is used up (always at least one), or all of them when budgetMs is Infinity. */
+  function flushNeighborRebuilds(budgetMs: number) {
+    if (!deferredRebuilds.size) return;
+    const t0 = performance.now();
+    for (const k of deferredRebuilds) {
+      deferredRebuilds.delete(k);
+      if (loadedChunks.has(k)) {
+        const [cx, cz] = k.split(',').map(Number);
+        const c = world.getChunk(cx, cz);
+        if (c) rebuildChunkMesh(c);
       }
+      if (performance.now() - t0 >= budgetMs) break;
+    }
+  }
+  /** Far terrain is cheaper to draw: beyond this many chunks it neither casts nor receives shadows. */
+  const SHADOW_CHUNK_RADIUS = 6;
+  const chunkIsNear = (cx: number, cz: number) => !isFinite(currentChunkX) || (cx - currentChunkX) ** 2 + (cz - currentChunkZ) ** 2 <= SHADOW_CHUNK_RADIUS * SHADOW_CHUNK_RADIUS;
+  function refreshChunkShadows() {
+    if (graphicsQuality === 'low') return;
+    for (const k of loadedChunks) {
+      const [cx, cz] = k.split(',').map(Number);
+      const c = world.getChunk(cx, cz);
+      if (!c?.mesh) continue;
+      const near = chunkIsNear(cx, cz);
+      if (c.mesh.castShadow !== near) { c.mesh.castShadow = near; c.mesh.receiveShadow = near; }
     }
   }
 
@@ -19425,15 +19581,10 @@ export function createVoxelGame(
     }
     loadedChunks.delete(k);
 
-    // Rebuild remaining neighbors so their boundary faces become visible
-    // now that this chunk's data is treated as solid-ungenerated again
-    const neighbors = [[cx - 1, cz], [cx + 1, cz], [cx, cz - 1], [cx, cz + 1]];
-    for (const [nx, nz] of neighbors) {
-      const nChunk = world.getChunk(nx, nz);
-      if (nChunk && loadedChunks.has(world.key(nx, nz))) {
-        rebuildChunkMesh(nChunk);
-      }
-    }
+    // The remaining neighbors need a rebuild so their boundary faces become visible; this is queued, not done now
+    // (a whole row of chunks unloads each time you cross a chunk border, and rebuilding all their neighbors at once made a hitch)
+    deferredRebuilds.delete(k);
+    queueNeighborRebuilds(cx, cz);
   }
 
   // Rebuild one chunk plus any already-loaded orthogonal neighbors — used
@@ -19454,6 +19605,7 @@ export function createVoxelGame(
   // Chunks still waiting to load, nearest first. Draining this a couple per frame (instead of
   // only when you cross into a new chunk) means a teleport fills in the whole view, not just 4 chunks.
   let pendingLoads: Array<[number, number]> = [];
+  const _chunkDir = new THREE.Vector3();
 
   function updateChunks() {
     const px = camera.position.x;
@@ -19474,7 +19626,15 @@ export function createVoxelGame(
           if (!loadedChunks.has(world.key(pcx + dx, pcz + dz))) pendingLoads.push([pcx + dx, pcz + dz]);
         }
       }
-      pendingLoads.sort((a, b) => ((a[0] - pcx) ** 2 + (a[1] - pcz) ** 2) - ((b[0] - pcx) ** 2 + (b[1] - pcz) ** 2));
+      // nearest first, but chunks in front of you before the ones behind you (you see those first)
+      camera.getWorldDirection(_chunkDir);
+      const fl = Math.hypot(_chunkDir.x, _chunkDir.z) || 1, fx = _chunkDir.x / fl, fz = _chunkDir.z / fl;
+      const loadCost = (c: [number, number]) => {
+        const dx = c[0] - pcx, dz = c[1] - pcz, d2 = dx * dx + dz * dz;
+        const behind = d2 > 0 ? Math.max(0, -(dx * fx + dz * fz) / Math.sqrt(d2)) : 0;
+        return d2 * (1 + 0.9 * behind);
+      };
+      pendingLoads.sort((a, b) => loadCost(a) - loadCost(b));
 
       // Unload chunks outside render distance
       const unloadMargin = lowMemory || graphicsQuality === 'low' ? 1 : 2; // fewer chunks kept in memory on weak machines
@@ -19484,6 +19644,7 @@ export function createVoxelGame(
         if (Math.sqrt((cx - pcx) ** 2 + (cz - pcz) ** 2) > rd + unloadMargin) toUnload.push([cx, cz]);
       }
       for (const [cx, cz] of toUnload) unloadChunk(cx, cz);
+      refreshChunkShadows();
     }
 
     // Load a few per frame to avoid stutter
@@ -19498,6 +19659,8 @@ export function createVoxelGame(
       loadChunk(cx, cz);
       loaded++;
     }
+    // then the queued neighbor rebuilds, a few ms per frame (more while nothing else is loading)
+    flushNeighborRebuilds(loaded ? 3 : 6);
   }
 
   // --- Initial spawn ---
@@ -19518,6 +19681,7 @@ export function createVoxelGame(
   for (let dx = -1; dx <= 1; dx++) {
     for (let dz = -1; dz <= 1; dz++) loadChunk(spawnCX + dx, spawnCZ + dz);
   }
+  flushNeighborRebuilds(Infinity);
 
   // Apply the initial graphics-quality tier now that chunk meshes exist
   applyGraphicsQuality(graphicsQuality);
@@ -20542,6 +20706,7 @@ export function createVoxelGame(
     const idleR = perspective === 0 ? Math.sin(idleT * 1.1) * 0.014 : 0;
     // Sprinting lowers the hand and tips the item forward; crouching tucks it in a little
     const spY = -0.05 * sprintLerp - 0.035 * crouchLerp, spR = 0.3 * sprintLerp;
+    _hv.hbx = hbx; _hv.hby = hby; _hv.idleX = idleX; _hv.idleY = idleY; _hv.spY = spY; _hv.spR = spR; _hv.idleR = idleR; _hv.sprint = sprintLerp;
     if (heldMesh && hold === 'item') {
       const sw = punchPhase > 0 ? swingCurve(1 - punchPhase / PUNCH_DURATION) : 0;
       const draw = bowDrawing ? bowCharge() : 0;
@@ -20555,16 +20720,7 @@ export function createVoxelGame(
           ? Math.min(1, (1 - punchPhase / PUNCH_DURATION) * (PUNCH_DURATION / SWORD_SWING_DURATION))
           : 0;
         // Minecraft's own hold: idle, the swing, and (blended in through blockLerp) the raised block pose
-        const b = blockLerp, free = 1 - b * 0.6; // when blocking, the pose holds still
-        mcSwordPose(swordSwingP, false, eq, _mcP0, _mcQ0);
-        if (b > 0.001) {
-          mcSwordPose(0, true, eq, _mcP1, _mcQ1);
-          _mcP0.lerp(_mcP1, b); _mcQ0.slerp(_mcQ1, b);
-        }
-        heldMesh.position.set(_mcP0.x + hbx * free + idleX * free, _mcP0.y + hby * free + idleY + spY, _mcP0.z + 0.03 * sprintLerp);
-        heldMesh.quaternion.copy(_mcQ0);
-        if (spR) heldMesh.quaternion.premultiply(_mcQ1.setFromAxisAngle(_mcAxisX, -spR * free)); // sprinting tips the blade forward
-        if (idleR) heldMesh.quaternion.multiply(_mcQ1.setFromAxisAngle(_mcAxisZ, idleR * free)); // a slow breathing sway
+        placeMcHold(heldMesh, swordSwingP, blockLerp, eq);
       } else if (heldItem !== null && isSpear(heldItem)) {
         // The spear: a jab drives it straight forward; holding right-click draws it back toward the shoulder
         const ch = spearCharging ? Math.min(1, spearCharge / SPEAR_CHARGE_TIME) : 0;
@@ -20573,11 +20729,11 @@ export function createVoxelGame(
         heldMesh.position.set(SPEAR_FP.x + hbx + idleX + 0.06 * eq + 0.05 * c2 - 0.04 * sw, SPEAR_FP.y + hby + idleY + spY - 0.6 * eq + 0.06 * c2 + 0.03 * sw, SPEAR_FP.z + 0.4 * c2 - 0.65 * sw);
         heldMesh.rotation.set(SPEAR_FP.rx + 0.2 * c2 - spR + 0.9 * eq, SPEAR_FP.ry, SPEAR_FP.rz + idleR);
       } else if (heldItem !== null && TOOLS[heldItem]) {
-        // Swing: wind back, then the blade arcs down toward the crosshair and recovers
-        const b = blockLerp, B = (a: number, c: number) => a + (c - a) * b;
-        const free = 1 - b * 0.6; // when blocking, the pose holds still
-        heldMesh.position.set(B(TOOL_FP.x, BLOCK_FP.x) - 0.17 * sw + hbx * free + idleX * free + 0.06 * eq, B(TOOL_FP.y, BLOCK_FP.y) + 0.07 * sw + hby * free + idleY + spY - 0.6 * eq, B(TOOL_FP.z, BLOCK_FP.z) - 0.2 * sw + 0.03 * sprintLerp);
-        heldMesh.rotation.set(B(TOOL_FP.rx, BLOCK_FP.rx) - 0.6 * sw - spR * free + 0.9 * eq, B(TOOL_FP.ry, BLOCK_FP.ry) + 0.28 * sw, B(TOOL_FP.rz, BLOCK_FP.rz) + 0.55 * sw + idleR * free);
+        // Pickaxe, axe, shovel, hoe, mace...: the same Minecraft hold and swing as the sword
+        placeMcHold(heldMesh, punchPhase > 0 ? 1 - punchPhase / PUNCH_DURATION : 0, 0, eq);
+      } else if (heldItem === ITEM_BOW) {
+        // The bow: the Minecraft hold, drawn back a little (toward you and up) as you pull the string
+        placeMcHold(heldMesh, punchPhase > 0 ? 1 - punchPhase / PUNCH_DURATION : 0, 0, eq, -0.015 * draw, 0.012 * draw, 0.05 * draw);
       } else {
         const eatBob = Math.sin(eatTimer * 22) * 0.03 * eatLerp; // the food comes up to your mouth and jiggles as you chew
         heldMesh.position.set(heldBase.x - 0.12 * sw - 0.12 * draw - 0.3 * eatLerp + hbx + idleX + 0.05 * eq, heldBase.y + 0.05 * sw + 0.32 * eatLerp + eatBob + hby + idleY + spY - 0.6 * eq, heldBase.z - 0.25 * sw + 0.12 * draw + 0.28 * eatLerp + 0.03 * sprintLerp);
@@ -20927,7 +21083,7 @@ export function createVoxelGame(
         chunk.mesh = null;
       }
     }
-    loadedChunks.clear();
+    loadedChunks.clear(); deferredRebuilds.clear();
 
     // Dispose dropped items and the held item
     for (let i = droppedItems.length - 1; i >= 0; i--) removeDropped(i);
@@ -20949,6 +21105,8 @@ export function createVoxelGame(
     projectileGeo.dispose();
     retractBobber();
     bobberGeo.dispose(); bobberRed.dispose(); bobberWhite.dispose(); bobberLineMat.dispose();
+    for (const b of bats) scene.remove(b.g);
+    batBodyGeo.dispose(); batWingGeo.dispose(); batMat.dispose();
     pearlGeo.dispose();
     pearlMat.dispose();
     for (const a of arrows) scene.remove(a.mesh);

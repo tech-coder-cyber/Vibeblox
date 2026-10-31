@@ -1,4 +1,4 @@
-// The Games area: chess, checkers, 2048, tic tac toe, puzzles, lessons, analysis, leaderboards, history and settings.
+// The Games area: chess, 2048, minesweeper, connect 4, puzzles, lessons, analysis, leaderboards, history and settings.
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { loadPrefs, savePrefs, loadProgress, reviewsLeft, type HistoryEntry, type Prefs } from '../store';
 import * as api from '../api';
@@ -7,7 +7,8 @@ import ChessBotGame, { type ReviewRequest } from './ChessBotGame';
 import ChessOnline from './ChessOnline';
 import CheckersBotGame, { type CheckersReview } from './CheckersBotGame';
 import CheckersOnline from './CheckersOnline';
-import { Game2048, TicTacToe } from './ArcadeGames';
+import { Game2048 } from './ArcadeGames';
+import { Minesweeper, Connect4 } from './MoreGames';
 import PuzzlesView from './PuzzlesView';
 import LearnView from './LearnView';
 import AnalysisView from './AnalysisView';
@@ -21,7 +22,7 @@ export type MgAccount = { userId: string; username: string } | null;
 
 type Screen =
   | { k: 'home' } | { k: 'chessBot'; bot?: string } | { k: 'ckBot' } | { k: 'lobby'; game: api.GameKind }
-  | { k: 'online'; game: api.GameKind; id: string } | { k: 'puzzles' } | { k: 'learn' } | { k: 'g2048' } | { k: 'ttt' }
+  | { k: 'online'; game: api.GameKind; id: string } | { k: 'puzzles' } | { k: 'learn' } | { k: 'g2048' } | { k: 'mines' } | { k: 'c4' }
   | { k: 'analysis'; req: ReviewRequest } | { k: 'loadAnalysis' } | { k: 'ckReplay'; req: CheckersReview } | { k: 'boards' } | { k: 'history' }
   | { k: 'chessHub' } | { k: 'ckHub' } | { k: 'chessSettings' } | { k: 'ckSettings' };
 
@@ -80,7 +81,8 @@ export default function MinigamesView({ account, rank, badge = null, intent, onI
     case 'puzzles': body = <PuzzlesView prefs={prefs} signedIn={signedIn} onBack={() => go({ k: 'chessHub' })} />; break;
     case 'learn': body = <LearnView prefs={prefs} onBack={() => go({ k: 'chessHub' })} />; break;
     case 'g2048': body = <Game2048 prefs={prefs} signedIn={signedIn} onBack={home} />; break;
-    case 'ttt': body = <TicTacToe prefs={prefs} signedIn={signedIn} onBack={home} />; break;
+    case 'mines': body = <Minesweeper prefs={prefs} onBack={home} />; break;
+    case 'c4': body = <Connect4 prefs={prefs} onBack={home} />; break;
     case 'analysis': body = <AnalysisView req={screen.req} rank={rank} prefs={prefs} onPrefs={setPrefs} onBack={() => go({ k: 'loadAnalysis' })} />; break;
     case 'loadAnalysis': body = <AnalysisSetup prefs={prefs} onLoad={review} left={reviewsLeft(rank)} onBack={() => go({ k: 'chessHub' })} />; break;
     case 'ckReplay': body = <CheckersReplay moves={screen.req.moves} orientation={screen.req.orientation} title={screen.req.title} prefs={prefs} onBack={home} />; break;
@@ -123,11 +125,9 @@ function Home({ onGo, account, signedIn, notice, badge }: { onGo: (s: Screen) =>
         <Card testid="card-chess" title="Chess" tag="Online and offline" blurb="Play real people or one of 32 bots, solve puzzles, learn openings, analyse games, and set up your board.">
           <button className="mg-btn mg-btn-primary" onClick={() => onGo({ k: 'chessHub' })} data-testid="open-chess">Open chess</button>
         </Card>
-        <Card testid="card-checkers" title="Checkers" tag="Online and offline" blurb="American checkers with jumps you must take. 24 bots to play, from careful to wild.">
-          <button className="mg-btn mg-btn-primary" onClick={() => onGo({ k: 'ckHub' })} data-testid="open-checkers">Open checkers</button>
-        </Card>
         <Card testid="card-2048" title="2048" tag="Offline" blurb="Slide the tiles and join matching numbers."><button className="mg-btn mg-btn-primary" onClick={() => onGo({ k: 'g2048' })} data-testid="open-2048">Play 2048</button></Card>
-        <Card testid="card-ttt" title="Tic Tac Toe" tag="Offline" blurb="Play the computer on easy, normal or hard. Hard never loses."><button className="mg-btn mg-btn-primary" onClick={() => onGo({ k: 'ttt' })} data-testid="open-ttt">Play</button></Card>
+        <Card testid="card-mines" title="Minesweeper" tag="Offline" blurb="Find every mine without opening one. Three sizes, flags, and a best time for each."><button className="mg-btn mg-btn-primary" onClick={() => onGo({ k: 'mines' })} data-testid="open-mines">Play Minesweeper</button></Card>
+        <Card testid="card-c4" title="Connect 4" tag="Offline" blurb="Drop discs and get four in a row. Play the computer on easy, normal or hard, or take turns with a friend."><button className="mg-btn mg-btn-primary" onClick={() => onGo({ k: 'c4' })} data-testid="open-c4">Play Connect 4</button></Card>
         <Card testid="card-more" title="Leaderboards and history" tag="Everyone" blurb="See who is on top, and look back at the games you played."><button className="mg-btn" onClick={() => onGo({ k: 'boards' })} data-testid="open-boards">Leaderboards</button><button className="mg-btn" onClick={() => onGo({ k: 'history' })} data-testid="open-history">History</button></Card>
       </div>
     </div>

@@ -12,8 +12,8 @@ import { PieceSvg, Disc } from './pieces';
 import { Crowns, MoveList, Seg, Toggle } from './kit';
 import { hasStockfish } from '../engineClient';
 
-type Board3 = 'chess' | 'checkers' | 'puzzle' | '2048' | 'tictactoe';
-const BOARD_TABS: Array<{ id: Board3; label: string }> = [{ id: 'chess', label: 'Chess' }, { id: 'checkers', label: 'Checkers' }, { id: 'puzzle', label: 'Puzzles' }, { id: '2048', label: '2048' }, { id: 'tictactoe', label: 'Tic Tac Toe' }];
+type Board3 = 'chess' | 'puzzle' | '2048';
+const BOARD_TABS: Array<{ id: Board3; label: string }> = [{ id: 'chess', label: 'Chess' }, { id: 'puzzle', label: 'Puzzles' }, { id: '2048', label: '2048' }];
 
 export function Leaderboards({ signedIn, onBack }: { signedIn: boolean; onBack: () => void }) {
   const [tab, setTab] = useState<Board3>('chess');
@@ -22,7 +22,7 @@ export function Leaderboards({ signedIn, onBack }: { signedIn: boolean; onBack: 
   useEffect(() => {
     let live = true; setRows(null); setErr('');
     void (async () => {
-      if (tab === '2048' || tab === 'tictactoe') {
+      if (tab === '2048') {
         const r = await api.scoreBoard(tab); if (!live) return;
         if (!r.ok) setErr(r.error); else setRows(r.value.map((x) => ({ name: x.username, rank: x.rank, value: x.score, badge: x })));
       } else {
@@ -32,7 +32,7 @@ export function Leaderboards({ signedIn, onBack }: { signedIn: boolean; onBack: 
     })();
     return () => { live = false; };
   }, [tab]);
-  const unit = tab === '2048' ? 'points' : tab === 'tictactoe' ? 'score' : 'rating';
+  const unit = tab === '2048' ? 'points' : 'rating';
   return (
     <div data-testid="boards">
       <div className="flex items-center gap-3 mb-4 flex-wrap"><h2 className="mg-h1 flex-1">Leaderboards</h2><button className="mg-btn mg-btn-ghost" onClick={onBack}>Back to games</button></div>
@@ -40,7 +40,7 @@ export function Leaderboards({ signedIn, onBack }: { signedIn: boolean; onBack: 
       <div className="mg-card overflow-hidden">
         {err && <div className="p-4 text-sm mg-mute" data-testid="lb-error">{err}</div>}
         {!err && rows === null && <div className="p-4 text-sm mg-mute">Loading...</div>}
-        {!err && rows && !rows.length && <div className="p-4 text-sm mg-mute" data-testid="lb-empty">Nobody is on this board yet. {tab === 'chess' || tab === 'checkers' ? 'Finish 5 rated games to appear.' : 'Play a game and be the first!'}</div>}
+        {!err && rows && !rows.length && <div className="p-4 text-sm mg-mute" data-testid="lb-empty">Nobody is on this board yet. {tab === 'chess' ? 'Finish 5 rated games to appear.' : 'Play a game and be the first!'}</div>}
         {rows && rows.map((r, i) => (
           <div key={r.name + i} className="flex items-center gap-3 px-4 py-2.5 border-b last:border-0" style={{ borderColor: 'var(--mg-line)' }} data-testid="lb-row">
             <div className="w-7 text-center font-bold" style={{ color: i < 3 ? 'var(--mg-accent)' : 'var(--mg-mute)' }}>{i + 1}</div>
@@ -67,7 +67,6 @@ export function RatingCard({ signedIn }: { signedIn: boolean }) {
     <div className="mg-card p-4" data-testid="rating-card">
       <div className="mg-h2 mb-1">Your ratings</div>
       {row('Chess', c, p.chessRating.n)}
-      {row('Checkers', k, p.checkersRating.n)}
       <div className="flex items-center justify-between py-1.5"><div><div className="text-sm font-semibold">Puzzles</div><div className="text-xs mg-mute">{ratingLabel(p.puzzle.r)}</div></div><div className="text-xl font-bold">{p.puzzle.r}</div></div>
       {!signedIn && <p className="text-xs mg-mute mt-1">Ratings from real games need a signed-in account. Bot games never change them.</p>}
     </div>
@@ -81,7 +80,7 @@ export function HistoryView({ onAnalyse, onReplay, onBack }: { onAnalyse: (e: Hi
   return (
     <div data-testid="history">
       <div className="flex items-center gap-3 mb-4 flex-wrap"><h2 className="mg-h1 flex-1">Game history</h2>
-        <Seg value={filter} onChange={setFilter} options={[{ id: 'all', label: 'All' }, { id: 'chess', label: 'Chess' }, { id: 'checkers', label: 'Checkers' }]} testid="hist-filter" />
+        <Seg value={filter} onChange={setFilter} options={[{ id: 'all', label: 'All' }, { id: 'chess', label: 'Chess' }]} testid="hist-filter" />
         <button className="mg-btn mg-btn-ghost" onClick={onBack}>Back to games</button></div>
       {!shown.length && <div className="mg-card p-5 text-sm mg-mute" data-testid="hist-empty">No games here yet. Finished games are saved on this device so you can look at them again.</div>}
       <div className="space-y-2">

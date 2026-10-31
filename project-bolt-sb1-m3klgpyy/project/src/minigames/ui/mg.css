@@ -54,3 +54,12 @@
 @keyframes mg-topple { 0% { transform: rotate(0); } 70% { transform: rotate(78deg) translate(6%, 4%); } 100% { transform: rotate(90deg) translate(10%, 8%); opacity: .8; } }
 @keyframes mg-trail { 0% { opacity: .8; } 100% { opacity: 0; } }
 @keyframes mg-pop { 0% { transform: scale(.85); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+
+/* Indev 38: 2048 tiles that slide, merged tiles that pop, Connect 4 discs that drop */
+@keyframes mg-tile-new { 0% { opacity: 0; transform: scale(.4); } 70% { opacity: 0; transform: scale(.4); } 100% { opacity: 1; transform: scale(1); } }
+@keyframes mg-tile-merge { 0% { opacity: 0; transform: scale(.7); } 55% { opacity: 0; transform: scale(.7); } 80% { opacity: 1; transform: scale(1.18); } 100% { opacity: 1; transform: scale(1); } }
+.mg-tile-new { animation: mg-tile-new calc(var(--slide, 120ms) * 2.2) ease-out both; }
+.mg-tile-merge { animation: mg-tile-merge calc(var(--slide, 120ms) * 2.4) ease-out both; }
+@keyframes mg-drop { 0% { transform: translateY(var(--from, -300%)); } 70% { transform: translateY(0); } 85% { transform: translateY(-9%); } 100% { transform: translateY(0); } }
+.mg-drop { animation: mg-drop var(--dur, 380ms) cubic-bezier(.45,.05,.55,.95) both; }
+@media (prefers-reduced-motion: reduce) { .mg-tile { transition: none !important; } .mg-tile-new, .mg-tile-merge, .mg-drop { animation: none !important; } }

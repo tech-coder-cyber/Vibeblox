@@ -2,11 +2,25 @@
 // a small update to the current one is a point release (Indev 26.1, 26.2...), a big one is the next number.
 //
 // The News page in the sidebar shows this list, and a dot appears on it until the newest one has been read.
-export const GAME_VERSION = 37.3;
+export const GAME_VERSION = 38;
 
 export type NewsEntry = { version: number; date: string; title: string; changes: string[] };
 
 export const NEWS: NewsEntry[] = [
+  {
+    version: 38,
+    date: 'October 31, 2026',
+    title: 'Halloween event, Minesweeper, Connect 4 and smoother worlds',
+    changes: [
+      'Halloween event (October 24 to November 2): zombies and skeletons sometimes wear glowing jack-o\'-lanterns, monsters drop Halloween Candy, the night sky turns purple with an orange moon, and bats fly around after dark.',
+      'Halloween Candy: eat it (it fills 3 hunger) or trade it to a Cleric. 8 candy buys an emerald and 30 candy buys a golden apple. You can also fish candy up while the event is on.',
+      'Fishing: treasure from the water can now be emeralds, gold, diamonds or a golden apple, as well as enchanted books, bows, rods and name tags.',
+      'New games: Minesweeper (three sizes, flags, best times) and Connect 4 (easy, normal or hard computer, or 2 players). Checkers and Tic Tac Toe have been removed.',
+      '2048: every tile now slides smoothly to its new square, merged tiles pop and new tiles fade in.',
+      'Swords swing a little slower and smoother. Pickaxes, axes, shovels, hoes, maces and bows are now held like in Minecraft too, with the same tilt and swing as the sword.',
+      'Smoother worlds: chunks in front of you load first, crossing a chunk border no longer rebuilds lots of terrain at once, and far-away terrain no longer draws shadows, so the game runs better on slower computers.',
+    ],
+  },
   {
     version: 37.3,
     date: 'October 30, 2026',
