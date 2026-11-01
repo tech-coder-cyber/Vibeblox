@@ -1,6 +1,7 @@
 // Game analysis: an evaluation bar and graph, a grade for every move, accuracy, and the moments that mattered.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Game, Position } from '../chess/rules';
+import { coachTips } from '../chess/coach';
 import { analyzeGame, classCounts, evalSeries, keyMoments, sideAccuracy, CLASS_LABEL, CLASS_SYMBOL, type MoveClass, type PlyAnalysis } from '../chess/analysis';
 import { barFraction, scoreText } from '../chess/engine';
 import { openingName } from '../chess/openings';
@@ -128,6 +129,19 @@ function ReviewView({ req, rank, prefs, onPrefs, onBack }: { req: ReviewRequest;
           )}
           {note && <div className="text-xs mg-mute mt-2" data-testid="an-note">{note}</div>}
         </div>
+        {an && (() => {
+          const tips = coachTips(game, an, req.orientation);
+          return (
+            <div className="mg-card p-3 text-sm" data-testid="an-tips">
+              <div className="mg-h2 mb-2">Coach's tips</div>
+              <div className="space-y-2">
+                {tips.map((t, i) => (
+                  <div key={i} className="flex gap-2"><span aria-hidden>{t.kind === 'good' ? '✅' : '🎯'}</span><div><div className="font-semibold">{t.area}</div><div className="mg-mute">{t.text}</div></div></div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
         {an && cw && cb && (
           <div className="mg-card p-3 text-sm" data-testid="an-classes">
             <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 gap-y-1">

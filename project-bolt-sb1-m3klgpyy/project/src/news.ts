@@ -2,11 +2,29 @@
 // a small update to the current one is a point release (Indev 26.1, 26.2...), a big one is the next number.
 //
 // The News page in the sidebar shows this list, and a dot appears on it until the newest one has been read.
-export const GAME_VERSION = 38;
+export const GAME_VERSION = 39;
 
 export type NewsEntry = { version: number; date: string; title: string; changes: string[] };
 
 export const NEWS: NewsEntry[] = [
+  {
+    version: 39,
+    date: 'November 1, 2026',
+    title: 'Chess bots overhaul, new lo-fi music and smoother controls',
+    changes: [
+      'Chess bots take their time now: about 2 to 3 seconds a move (longer in tricky positions), so you can premove. With a timer they move in 1 to 2 seconds but play weaker moves.',
+      'New: play a bot with a timer (1 min up to 15 | 10). Your game in progress is saved after every move, so a crash or a closed tab no longer loses it: press Resume next time.',
+      'The bot chat is at the top of the game screen, with Hint, Take back, Offer draw and Resign at the bottom. The engine does not chat. The Throw pieces and Crash out buttons are gone: press T or F.',
+      'Crash out (F): the hand swings down, and the pieces jump up and fall over on their side. Throw (T) now throws a single piece. Left-click to stop either one and put the board back.',
+      'Bots no longer say "nice grab" when they just blundered a piece, and they now react to queen trades, promotions, openings and their own mistakes with new lines. The opening is named from your first move (King\'s Pawn Opening, and so on).',
+      'Bots only accept a draw when the position is about equal or worse for them, and after a "no" you have to wait a few moves before asking again.',
+      'Game review now gives coach\'s tips: developing pieces, castling, pawn structure, mistakes by part of the game and converting an advantage.',
+      'Music: Classical and Ambient are gone. Lo-fi now plays 4 real songs, and Phonk has a new song (Neon Drift).',
+      'EggWars: buying a better sword replaces your old sword in the same slot.',
+      'Press forward twice (W, W) to run, on PC and on a phone. The RUN button on the D-pad is gone because it sat on top of the forward arrow.',
+      'Far fewer small on-screen messages: placing something in the wrong spot now just does nothing, like Minecraft.',
+    ],
+  },
   {
     version: 38,
     date: 'October 31, 2026',

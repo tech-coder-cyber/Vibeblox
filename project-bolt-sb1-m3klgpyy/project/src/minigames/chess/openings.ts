@@ -203,8 +203,14 @@ export function openingName(sanMoves: string[]): string | null {
     while (n < line.length && n < mine.length && strip(line[n]) === mine[n]) n++;
     if (n >= Math.min(4, line.length) && (!best || n > best.n)) best = { name: o.name, n };
   }
-  return namedOpening(sanMoves) ?? best?.name ?? null;
+  return namedOpening(sanMoves) ?? best?.name ?? FIRST_MOVE_NAMES[mine[0] ?? ''] ?? null;
 }
+/** Every first move has a name, so the label shows something from the very first move. */
+const FIRST_MOVE_NAMES: Record<string, string> = {
+  e4: "King's Pawn Opening", d4: "Queen's Pawn Opening", Nf3: 'Reti Opening', c4: 'English Opening', f4: "Bird's Opening", g3: 'Hungarian Opening',
+  b3: 'Nimzo-Larsen Attack', e3: "Van't Kruijs Opening", d3: "Mieses Opening", Nc3: 'Dunst Opening', a3: "Anderssen's Opening", h3: "Clemenz Opening",
+  b4: 'Polish Opening', g4: 'Grob Opening', a4: 'Ware Opening', h4: 'Kadas Opening', Na3: 'Durkin Opening', Nh3: 'Amar Opening',
+};
 /** Is the game still inside a known opening line (so its last move is a book move)? */
 export function inBook(sanMoves: string[]): boolean {
   if (namedInBook(sanMoves)) return true;

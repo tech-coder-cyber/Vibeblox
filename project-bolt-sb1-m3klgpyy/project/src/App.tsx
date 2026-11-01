@@ -6925,6 +6925,7 @@ export default function App() {
   useEffect(() => {
     let saved = 'overworld'; // the default soundtrack (until you pick another one, or stop the music)
     try { const v = localStorage.getItem('vb-soundtrack'); if (v !== null) saved = v; } catch { /* storage blocked */ }
+    if (saved === 'classical' || saved === 'ambient') saved = 'lofi'; // those two soundtracks were removed
     if (!saved || !SOUNDTRACKS.some((t) => t.value === saved && t.value !== 'arcade')) return;
     const go = () => { cleanup(); playBuiltInTrack(saved as AnySoundtrack); };
     const cleanup = () => { removeEventListener('pointerdown', go, true); removeEventListener('keydown', go, true); };

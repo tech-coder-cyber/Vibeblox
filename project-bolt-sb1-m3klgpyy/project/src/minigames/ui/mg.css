@@ -38,14 +38,14 @@
 .mg-seg button[aria-pressed='true'] { background: var(--mg-panel2); color: var(--mg-text); box-shadow: 0 0 0 1px var(--mg-line) inset; }
 
 /* board effects: F (fist) and T (throw) */
-@keyframes mg-fall { 0% { transform: translate(0,0) rotate(0); opacity: 1; } 15% { transform: translate(0,-6%) rotate(var(--r0)); } 100% { transform: translate(var(--dx), 420%) rotate(var(--r1)); opacity: 0; } }
-@keyframes mg-throw { 0% { transform: translate(0,0) rotate(0) scale(1); opacity: 1; } 100% { transform: translate(var(--dx), var(--dy)) rotate(var(--r1)) scale(1.5); opacity: 0; } }
+@keyframes mg-slam-piece { 0% { transform: translate(0,0) rotate(0); animation-timing-function: cubic-bezier(.2,.75,.4,1); } 32% { transform: translate(calc(var(--dx) * .6), calc(var(--up) * -1)) rotate(calc(var(--side) * .35)); animation-timing-function: cubic-bezier(.55,0,.9,.6); } 100% { transform: translate(var(--dx), 22%) rotate(var(--side)); } }
+@keyframes mg-throw { 0% { transform: translate(0,0) rotate(0) scale(1); opacity: 1; } 100% { transform: translate(var(--dx), var(--dy)) rotate(var(--r1)) scale(1.6); opacity: 0; } }
 @keyframes mg-return { 0% { opacity: 0; transform: scale(.6); } 100% { opacity: 1; transform: scale(1); } }
 @keyframes mg-shake { 0%,100% { transform: translate(0,0); } 15% { transform: translate(-7px,5px); } 30% { transform: translate(6px,-6px); } 45% { transform: translate(-5px,-3px); } 60% { transform: translate(4px,4px); } 80% { transform: translate(-2px,1px); } }
-@keyframes mg-fist { 0% { transform: translate(-50%,-190%) scale(1.15); } 38% { transform: translate(-50%,-34%) scale(1); } 46% { transform: translate(-50%,-30%) scale(.96); } 100% { transform: translate(-50%,-30%) scale(.96); } }
+@keyframes mg-fist { 0% { transform: translate(-22%,-215%) rotate(-62deg) scale(1.15); } 38% { transform: translate(-50%,-34%) rotate(5deg) scale(1); } 46% { transform: translate(-50%,-30%) rotate(2deg) scale(.96); } 100% { transform: translate(-50%,-30%) rotate(2deg) scale(.96); } }
 @keyframes mg-fistout { to { opacity: 0; transform: translate(-50%,-70%) scale(1); } }
 @keyframes mg-crack { from { opacity: 0; } 30% { opacity: 1; } to { opacity: .9; } }
-.mg-shake { animation: mg-shake .45s .55s both; }
+.mg-shake { animation: mg-shake .45s .78s both; }
 @media (prefers-reduced-motion: reduce) { .mg-shake { animation: none; } .mg-fx-piece { animation-duration: .01s !important; } }
 
 /* Indev 37.1: game-end animations, falling king, move trail */

@@ -10618,6 +10618,8 @@ export function createVoxelGame(
   let hungerTimer = 0;
   let starveTimer = 0;
   let sprintingNow = false;
+  // press forward twice quickly (a tap, then hold) to run, like Minecraft: no sprint key needed
+  let fwdUpAt = 0, fwdLatch = false;
   let lastSprintYaw = 0, turnAccum = 0, sprintTurnLock = false;
   let sprintFov = 0;
   let inventoryOpen = false;
@@ -11714,7 +11716,7 @@ export function createVoxelGame(
     if (bedSpawn && isBed(bed)) {
       camera.position.set(bedSpawn.x, bedSpawn.y - 0.4 + PLAYER_EYE, bedSpawn.z); // wake up on your bed
     } else {
-      if (bedSpawn && bed !== -1) showHint('Your bed was missing or blocked');
+      if (bedSpawn && bed !== -1) minorHint('Your bed was missing or blocked');
       bedSpawn = null;
       const rs = world.getSurfaceHeight(spawnX, spawnZ);
       camera.position.set(spawnX + 0.5, rs + 1 + PLAYER_EYE + 0.5, spawnZ + 0.5);
@@ -12088,7 +12090,7 @@ export function createVoxelGame(
     return k ? give.map(([id, n]) => [id, Math.min(64, n + Math.max(1, Math.ceil(n * 0.4)) * k)] as [number, number]) : give;
   }
   function openTrade(v: Mob) {
-    if (v.sleeping) { showHint('Shh, this villager is asleep'); return; }
+    if (v.sleeping) { minorHint('Shh, this villager is asleep'); return; }
     v.tradeTime = 30;
     playMobSound('villager', v.pos, false);
     tradeOpen = true;
@@ -12114,6 +12116,8 @@ export function createVoxelGame(
     } else if (t.ench) { // an enchanted book keeps its enchantments
       const book: ItemStack = { id: t.get[0], count: 1, ench: { ...t.ench } };
       if (addStackToSlots(slots, book) > 0) spawnDroppedItem(book.id, 1, playerFeet().add(new THREE.Vector3(0, 1, 0)), new THREE.Vector3(0, 2, 0), 0.5, book);
+    } else if (v.shop && TOOLS[t.get[0]]?.kind === 'sword' && replaceWeakerSword(t.get[0])) {
+      // EggWars: a better sword takes the place of your old one, in the same slot
     } else {
       const left = t.get[1] - addItem(t.get[0], t.get[1]); // addItem returns how many fit; only what didn't fit is dropped (this used to drop everything: you got 2)
       if (left > 0) spawnDroppedItem(t.get[0], left, playerFeet().add(new THREE.Vector3(0, 1, 0)), new THREE.Vector3(0, 2, 0), 0.5);
@@ -12125,6 +12129,19 @@ export function createVoxelGame(
     syncHeld();
     notifyInventory();
     return 'ok';
+  }
+  /** Swap your weakest sword that is worse than `id` for the new one, in the same slot (hotbar slots come first). False when you have no worse sword. */
+  function replaceWeakerSword(id: number): boolean {
+    const newDmg = TOOLS[id].damage;
+    let best = -1;
+    for (let i = 0; i < slots.length; i++) {
+      const st = slots[i];
+      const info = st ? TOOLS[st.id] : undefined;
+      if (info && info.kind === 'sword' && info.damage < newDmg && (best < 0 || info.damage < TOOLS[slots[best]!.id].damage)) best = i;
+    }
+    if (best < 0) return false;
+    slots[best] = { id, count: 1 };
+    return true;
   }
   function endTrade(villagerId: number) { tradeOpen = false; const v = mobs.find((m) => m.id === villagerId); if (v) v.tradeTime = Math.min(v.tradeTime, 1); }
 
@@ -12942,7 +12959,7 @@ export function createVoxelGame(
     if (y > arena.buildMax || y < arena.buildMin) { if (performance.now() - arenaHintTime > 1500) { arenaHintTime = performance.now(); showHint("You can't build that high (or that low) here"); } return false; }
     for (const t of mg.teams) {
       const g = t.goal;
-      if (g && x >= g.x0 - 1 && x < g.x1 + 1 && z >= g.z0 - 1 && z < g.z1 + 1 && y >= ARENA_Y - 4) { showHint("You can't build in a goal"); return false; }
+      if (g && x >= g.x0 - 1 && x < g.x1 + 1 && z >= g.z0 - 1 && z < g.z1 + 1 && y >= ARENA_Y - 4) { minorHint("You can't build in a goal"); return false; }
     }
     return true;
   }
@@ -14153,8 +14170,8 @@ export function createVoxelGame(
     const st = slots[selectedSlot];
     if (!st && !(m.kind === 'wolf' && m.tame)) return false; // (an empty hand can still tell a tame wolf to sit)
     if (m.kind === 'sheep' && heldItem === ITEM_SHEARS) {
-      if (m.baby) { showHint('A baby sheep has no wool yet'); return true; }
-      if (m.sheared) { showHint('This sheep has already been sheared'); return true; }
+      if (m.baby) { minorHint('A baby sheep has no wool yet'); return true; }
+      if (m.sheared) { minorHint('This sheep has already been sheared'); return true; }
       m.sheared = true;
       m.woolTimer = 90 + Math.random() * 60; // wool grows back
       const n = 1 + Math.floor(Math.random() * 3);
@@ -15600,6 +15617,8 @@ export function createVoxelGame(
   // =================================================================
   let hintCallback: ((text: string) => void) | null = null;
   let lastHint = 0;
+  /** Small "you can't put that there" messages are left out on purpose: the placement just does nothing, like Minecraft. */
+  function minorHint(_text: string) { /* silent */ }
   function showHint(text: string) {
     const now = performance.now();
     if (now - lastHint < 1500) return;
@@ -15659,15 +15678,15 @@ export function createVoxelGame(
     const wallOk = fdy === 0 && side >= 0 && isOpaque(world.getWorldBlock(hit.x, hit.y, hit.z));
     let place = -1;
     if (id === ITEM_REDSTONE || id === BLOCK_PRESSURE_PLATE || id === BLOCK_REPEATER || id === BLOCK_COMPARATOR || id === BLOCK_ANVIL) {
-      if (!solidBelow) { showHint(`${ITEM_INFO[id].name} needs a solid block under it`); return true; }
+      if (!solidBelow) { minorHint(`${ITEM_INFO[id].name} needs a solid block under it`); return true; }
       place = id === ITEM_REDSTONE ? BLOCK_REDSTONE_WIRE : id === BLOCK_REPEATER ? makeRepeater(looking, 1, false) : id === BLOCK_COMPARATOR ? makeComparator(looking, false, false) : id === BLOCK_ANVIL ? BLOCK_ANVIL + (alongZ ? 0 : 1) : id;
     } else if (isFlower(id)) {
-      if (below !== BLOCK_GRASS && below !== BLOCK_DIRT && below !== BLOCK_FARMLAND) { showHint('Flowers grow on grass or dirt'); return true; }
+      if (below !== BLOCK_GRASS && below !== BLOCK_DIRT && below !== BLOCK_FARMLAND) { minorHint('Flowers grow on grass or dirt'); return true; }
       place = id;
     } else if (id === BLOCK_SUGAR_CANE) {
       const ground = below === BLOCK_GRASS || below === BLOCK_DIRT || below === BLOCK_SAND || below === BLOCK_RED_SAND;
       const wet = SIDES.some(([dx, dz]) => isWater(world.getWorldBlock(px + dx, py - 1, pz + dz)));
-      if (below !== BLOCK_SUGAR_CANE && !(ground && wet)) { showHint('Sugar cane grows on sand, dirt or grass right next to water'); return true; }
+      if (below !== BLOCK_SUGAR_CANE && !(ground && wet)) { minorHint('Sugar cane grows on sand, dirt or grass right next to water'); return true; }
       place = id;
     } else if (id === BLOCK_ITEM_FRAME) {
       // on any face of a solid block: a wall, the top of a block (a floor) or its underside (a ceiling)
@@ -15675,12 +15694,12 @@ export function createVoxelGame(
       if (fdy === -1 && onSolid) place = BLOCK_ITEM_FRAME + FRAME_FLOOR;
       else if (fdy === 1 && onSolid) place = BLOCK_ITEM_FRAME + FRAME_CEILING;
       else if (wallOk) place = BLOCK_ITEM_FRAME + side;
-      else { showHint('Item frames go on a solid block (a wall, a floor or a ceiling)'); return true; }
+      else { minorHint('Item frames go on a solid block (a wall, a floor or a ceiling)'); return true; }
     } else {
       let attach = -1;
       if (fdy === -1 && solidBelow) attach = 0;
       else if (wallOk) attach = 1 + side;
-      if (attach < 0) { showHint(`${ITEM_INFO[id].name} needs a solid block to stand on or hang from`); return true; }
+      if (attach < 0) { minorHint(`${ITEM_INFO[id].name} needs a solid block to stand on or hang from`); return true; }
       const base = id === BLOCK_LEVER ? BLOCK_LEVER : id === BLOCK_BUTTON ? BLOCK_BUTTON : BLOCK_REDSTONE_TORCH;
       place = base + attach * 2 + (id === ITEM_REDSTONE_TORCH ? 1 : 0);
     }
@@ -15927,15 +15946,15 @@ export function createVoxelGame(
     const solidFull = (b: number) => isSolid(b) && !hasShape(b);
     if (py === hit.y + 1 && px === hit.x && pz === hit.z || isSoftTarget(target)) {
       // on top of a block: it faces you
-      if (!isSolid(world.getWorldBlock(px, py - 1, pz))) { showHint('A sign needs a block to stand on'); return; }
+      if (!isSolid(world.getWorldBlock(px, py - 1, pz))) { minorHint('A sign needs a block to stand on'); return; }
       const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
       const f = Math.abs(fz) >= Math.abs(fx) ? (fz < 0 ? 2 : 0) : (fx < 0 ? 1 : 3); // faces back at you
       id = signBlock(w, false, f);
     } else if (py === hit.y) {
       const side = SIDES.findIndex(([a, c]) => a === px - hit.x && c === pz - hit.z);
-      if (side < 0 || !solidFull(world.getWorldBlock(hit.x, hit.y, hit.z))) { showHint('Signs go on a solid wall or on top of a block'); return; }
+      if (side < 0 || !solidFull(world.getWorldBlock(hit.x, hit.y, hit.z))) { minorHint('Signs go on a solid wall or on top of a block'); return; }
       id = signBlock(w, true, side);
-    } else { showHint('Signs go on a solid wall or on top of a block'); return; }
+    } else { minorHint('Signs go on a solid wall or on top of a block'); return; }
     setBlockAndNotify(px, py, pz, id);
     rebuildAround(px, pz);
     playBlockSound(woodPlanksId(w), new THREE.Vector3(px + 0.5, py + 0.5, pz + 0.5), 'place');
@@ -16089,7 +16108,7 @@ export function createVoxelGame(
     return { key: `${x},${y},${z}`, x, y, z, type: commandType(b), facing: commandFacing(b), cmd: d.cmd, auto: d.auto, conditional: d.conditional, last: d.last, success: d.success };
   }
   function openCommandBlock(x: number, y: number, z: number, _b: number) {
-    if (mode !== 'creative') { showHint('Command blocks can only be set up in creative mode'); return; }
+    if (mode !== 'creative') { minorHint('Command blocks can only be set up in creative mode'); return; }
     const info = commandInfo(x, y, z);
     if (info) cmdOpenCallback?.(info);
   }
@@ -16107,7 +16126,7 @@ export function createVoxelGame(
     return true;
   }
   function placeCommandBlock(hit: { x: number; y: number; z: number; placeX: number; placeY: number; placeZ: number }, target: number, id: number): boolean {
-    if (mode !== 'creative') { showHint('Command blocks can only be placed in creative mode'); return true; }
+    if (mode !== 'creative') { minorHint('Command blocks can only be placed in creative mode'); return true; }
     const [px, py, pz] = target === BLOCK_TALL_GRASS ? [hit.x, hit.y, hit.z] : [hit.placeX, hit.placeY, hit.placeZ];
     if (!isReplaceable(world.getWorldBlock(px, py, pz)) || playerOverlapsBlock(px, py, pz)) return true;
     // It faces the way you look (up or down too, when you look steeply)
@@ -16557,7 +16576,7 @@ export function createVoxelGame(
   function toggleOpenable(x: number, y: number, z: number, b: number, byRedstone = false) {
     const open = isOpenState(b);
     const next = isTrapdoor(b) ? (open ? b - 4 : b + 4) : (open ? b - 2 : b + 2);
-    if (open && !byRedstone && playerOverlapsBlock(x, y, z)) { showHint("Step out of the way to close it"); return; } // closing it on yourself would trap you
+    if (open && !byRedstone && playerOverlapsBlock(x, y, z)) { minorHint("Step out of the way to close it"); return; } // closing it on yourself would trap you
     setBlockAndNotify(x, y, z, next);
     rebuildAround(x, z);
     playBlockSound(ITEM_PLANKS, new THREE.Vector3(x + 0.5, y + 0.5, z + 0.5), 'place');
@@ -16589,7 +16608,7 @@ export function createVoxelGame(
   function addToCampfire(x: number, y: number, z: number) {
     const k = `${dimension}|${x},${y},${z}`;
     const list = campfireFood.get(k) ?? [];
-    if (list.length >= 4) { showHint('The campfire is full'); return; }
+    if (list.length >= 4) { minorHint('The campfire is full'); return; }
     list.push({ id: heldItem!, t: 0 });
     campfireFood.set(k, list);
     consumeHeld(1);
@@ -17105,7 +17124,7 @@ export function createVoxelGame(
         // Like Minecraft: water boils away in the Nether
         spawnParticles(new THREE.Vector3(px + 0.5, py + 0.5, pz + 0.5), ['#e8e8e8', '#cfcfcf'], 14, 1.5, 0.12, 0.8);
         playSfx('splash', new THREE.Vector3(px + 0.5, py + 0.5, pz + 0.5));
-        showHint('Water evaporates in the Nether');
+        minorHint('Water evaporates in the Nether');
         if (mode !== 'creative') replaceHeld(ITEM_BUCKET);
         return;
       }
@@ -17233,7 +17252,7 @@ export function createVoxelGame(
         for (let i = 0; i < 3 && !isSolid(world.getWorldBlock(hit.placeX, Math.floor(y) - 1, hit.placeZ)) && !isWater(world.getWorldBlock(hit.placeX, Math.floor(y) - 1, hit.placeZ)); i++) y--;
       }
     }
-    if (mobBlocked(x, y + 0.05, z, BOAT_HALF - 0.1, BOAT_HEIGHT - 0.1)) { showHint("There's no room for a boat there"); return false; }
+    if (mobBlocked(x, y + 0.05, z, BOAT_HALF - 0.1, BOAT_HEIGHT - 0.1)) { minorHint("There's no room for a boat there"); return false; }
     spawnBoat(x, y, z, yaw);
     playBlockSound(ITEM_PLANKS, new THREE.Vector3(x, y, z), 'place');
     consumeHeld(1);
@@ -19700,6 +19719,7 @@ export function createVoxelGame(
 
   function onKeyDown(e: KeyboardEvent) {
     if (chatOpen || dead) return; // typing in chat, reading /help, or dead: ignore game keys
+    if (!e.repeat && codeIsBound('forward', e.code)) { const t = performance.now(); if (fwdUpAt && t - fwdUpAt < 300) fwdLatch = true; }
     if (tradeOpen) { // the shop is up: the inventory key closes it, and nothing opens the inventory behind it
       if (codeIsBound('inventory', e.code) && !e.repeat) { e.preventDefault(); tradeOpen = false; tradeCallback?.(null); }
       return;
@@ -19747,9 +19767,10 @@ export function createVoxelGame(
   function onKeyUp(e: KeyboardEvent) {
     if (e.code === 'AltLeft' || e.code === 'AltRight') e.preventDefault();
     keys[e.code] = false;
+    if (codeIsBound('forward', e.code)) { fwdUpAt = performance.now(); fwdLatch = false; }
   }
   /** Alt-tabbing away (or a dialog stealing focus) must not leave a key stuck down. */
-  function onWindowBlur() { for (const k of Object.keys(keys)) keys[k] = false; cancelSpearCharge(); }
+  function onWindowBlur() { for (const k of Object.keys(keys)) keys[k] = false; fwdLatch = false; cancelSpearCharge(); }
 
   function onMouseMove(e: MouseEvent) {
     if (touchMode || !isLocked || sleeping) return; // (touch: looking comes from touchLook)
@@ -19809,7 +19830,7 @@ export function createVoxelGame(
       if (boatHit && heldItem !== ITEM_BOAT) { enterBoat(boatHit); return; }
       const pearlHit = mode !== 'spectator' ? pearlInSight(4.5) : null;
       if (pearlHit) { pullPearl(pearlHit); return; } // pearl pulling: right-click a pearl waiting in a bubble column
-      if (vill && vill.kind === 'villager' && vill.deathTime < 0) { if (vill.baby) showHint('Babies do not trade yet'); else openTrade(vill); return; }
+      if (vill && vill.kind === 'villager' && vill.deathTime < 0) { if (vill.baby) minorHint('Babies do not trade yet'); else openTrade(vill); return; }
       if (vill && vill.kind !== 'villager' && useOnMob(vill)) return; // shears, dye or food for an animal
       if (heldItem === ITEM_WAND) { wandClick(2); return; }
       if (heldItem === ITEM_WIND_CHARGE && mode !== 'spectator') { useWindCharge(); return; }
@@ -19876,7 +19897,7 @@ export function createVoxelGame(
       const h = raycastBlock();
       if (h && world.getWorldBlock(h.x, h.y, h.z) === BLOCK_TNT) { igniteTnt(h.x, h.y, h.z); punchPhase = PUNCH_DURATION; wearHeld(1); return; }
       if (h && tryLightPortal(h.placeX, h.placeY, h.placeZ)) { punchPhase = PUNCH_DURATION; wearHeld(1); }
-      else if (h) showHint('Light the inside of an obsidian frame (at least 4 wide and 5 tall)');
+      else if (h) minorHint('Light the inside of an obsidian frame (at least 4 wide and 5 tall)');
       return;
     }
     if (heldItem === ITEM_ENDER_PEARL) { throwPearl(); return; }
@@ -19928,7 +19949,7 @@ export function createVoxelGame(
     // Shovels make dirt paths out of grass, dirt and coarse dirt (and flatten snowy grass)
     if (tool?.kind === 'shovel' && (target === BLOCK_GRASS || target === BLOCK_DIRT || target === BLOCK_COARSE_DIRT || target === BLOCK_SNOWY_GRASS)) {
       const above = world.getWorldBlock(hit.x, hit.y + 1, hit.z);
-      if (above !== BLOCK_AIR && above !== BLOCK_TALL_GRASS && above !== BLOCK_SNOW_LAYER) { showHint('The path needs open air above it'); return; }
+      if (above !== BLOCK_AIR && above !== BLOCK_TALL_GRASS && above !== BLOCK_SNOW_LAYER) { minorHint('The path needs open air above it'); return; }
       if (above !== BLOCK_AIR) setBlockAndNotify(hit.x, hit.y + 1, hit.z, BLOCK_AIR);
       setBlockAndNotify(hit.x, hit.y, hit.z, BLOCK_DIRT_PATH);
       rebuildAround(hit.x, hit.z);
@@ -19962,7 +19983,7 @@ export function createVoxelGame(
     }
     // Seeds go on top of farmland
     if (heldItem === ITEM_SEEDS) {
-      if (target !== BLOCK_FARMLAND || world.getWorldBlock(hit.x, hit.y + 1, hit.z) !== BLOCK_AIR) { showHint('Plant seeds on farmland: right-click grass or dirt with a hoe first'); return; }
+      if (target !== BLOCK_FARMLAND || world.getWorldBlock(hit.x, hit.y + 1, hit.z) !== BLOCK_AIR) { minorHint('Plant seeds on farmland: right-click grass or dirt with a hoe first'); return; }
       setBlockAndNotify(hit.x, hit.y + 1, hit.z, BLOCK_WHEAT_0);
       rebuildAround(hit.x, hit.z);
       playBlockSound(BLOCK_TALL_GRASS, new THREE.Vector3(hit.x + 0.5, hit.y + 1, hit.z + 0.5), 'place');
@@ -19976,7 +19997,7 @@ export function createVoxelGame(
       const base = heldItem === ITEM_IRON_DOOR ? BLOCK_IRON_DOOR : withWood(BLOCK_DOOR_N, woodDoorItemWood(heldItem));
       const [dx, dy, dz] = isSoftTarget(target) ? [hit.x, hit.y, hit.z] : [hit.placeX, hit.placeY, hit.placeZ];
       if (!isReplaceable(world.getWorldBlock(dx, dy, dz)) || !isReplaceable(world.getWorldBlock(dx, dy + 1, dz))) return;
-      if (!isSolid(world.getWorldBlock(dx, dy - 1, dz))) { showHint('A door needs solid ground under it'); return; }
+      if (!isSolid(world.getWorldBlock(dx, dy - 1, dz))) { minorHint('A door needs solid ground under it'); return; }
       const fx = -Math.sin(yaw), fz = -Math.cos(yaw); // where you're looking
       const edge = Math.abs(fz) >= Math.abs(fx) ? (fz < 0 ? 2 : 0) : (fx < 0 ? 1 : 3);
       setBlockAndNotify(dx, dy, dz, base + edge);
@@ -19995,8 +20016,8 @@ export function createVoxelGame(
       const dir = Math.abs(lz) >= Math.abs(lx) ? (lz < 0 ? 0 : 2) : (lx > 0 ? 1 : 3);
       const [ddx, ddz] = BED_DIRS[dir];
       const hx = fx + ddx, hz = fz + ddz;
-      if (!isReplaceable(world.getWorldBlock(fx, fy, fz)) || !isReplaceable(world.getWorldBlock(hx, fy, hz))) { showHint('A bed needs two blocks of space'); return; }
-      if (!isSolid(world.getWorldBlock(fx, fy - 1, fz)) || !isSolid(world.getWorldBlock(hx, fy - 1, hz))) { showHint('A bed needs solid ground under it'); return; }
+      if (!isReplaceable(world.getWorldBlock(fx, fy, fz)) || !isReplaceable(world.getWorldBlock(hx, fy, hz))) { minorHint('A bed needs two blocks of space'); return; }
+      if (!isSolid(world.getWorldBlock(fx, fy - 1, fz)) || !isSolid(world.getWorldBlock(hx, fy - 1, hz))) { minorHint('A bed needs solid ground under it'); return; }
       const bc = bedItemColor(heldItem);
       setBlockAndNotify(fx, fy, fz, makeBed(bc, false, dir));
       setBlockAndNotify(hx, fy, hz, makeBed(bc, true, dir));
@@ -20023,7 +20044,7 @@ export function createVoxelGame(
         const side = SIDES.findIndex(([a, c]) => a === hit.x - lx && c === hit.z - lz);
         if (hit.y === ly && side >= 0 && full(target)) ladder = baseId + side;
       }
-      if (ladder < 0 || !isReplaceable(world.getWorldBlock(lx, ly, lz)) || ly < 0 || ly >= BUILD_LIMIT) { showHint('Ladders go on the side of a solid wall'); return; }
+      if (ladder < 0 || !isReplaceable(world.getWorldBlock(lx, ly, lz)) || ly < 0 || ly >= BUILD_LIMIT) { minorHint('Ladders go on the side of a solid wall'); return; }
       setBlockAndNotify(lx, ly, lz, ladder);
       rebuildAround(lx, lz);
       playBlockSound(isIronLadder(ladder) ? BLOCK_IRON_BLOCK : ITEM_PLANKS, new THREE.Vector3(lx + 0.5, ly + 0.5, lz + 0.5), 'place');
@@ -20043,7 +20064,7 @@ export function createVoxelGame(
       if (isSoftTarget(target) || fdy === -1) { if (full(world.getWorldBlock(tx, ty - 1, tz))) torch = BLOCK_TORCH; }
       else if (fdy === 1) { if (full(target)) torch = BLOCK_TORCH_CEILING; }
       else if (side >= 0 && full(target)) torch = BLOCK_TORCH_WALL + side;
-      if (torch < 0) { showHint('Torches go on a solid block: on top, on a side, or underneath'); return; }
+      if (torch < 0) { minorHint('Torches go on a solid block: on top, on a side, or underneath'); return; }
       setBlockAndNotify(tx, ty, tz, torch);
       rebuildAround(tx, tz);
       playBlockSound(ITEM_PLANKS, new THREE.Vector3(tx + 0.5, ty + 0.5, tz + 0.5), 'place');
@@ -20053,7 +20074,7 @@ export function createVoxelGame(
       return;
     }
     if (heldItem === null || !isBlockId(heldItem)) return; // ids 100-999 are items, not placeable blocks
-    if (hit.placeY >= BUILD_LIMIT && !(isSoftTarget(target))) { showHint(`You can't build higher than ${BUILD_LIMIT} blocks`); return; }
+    if (hit.placeY >= BUILD_LIMIT && !(isSoftTarget(target))) { minorHint(`You can't build higher than ${BUILD_LIMIT} blocks`); return; }
     // Two slabs of one material make the whole block: click the open side of a slab with another of the same
     if (isSlabBlock(heldItem) && isSlabBlock(target) && stepMaterial(target) === stepMaterial(heldItem) && hit.placeX === hit.x && hit.placeZ === hit.z
       && ((hit.placeY === hit.y + 1 && !stepUpsideDown(target)) || (hit.placeY === hit.y - 1 && stepUpsideDown(target)))) {
@@ -20091,7 +20112,7 @@ export function createVoxelGame(
         const m = stepMaterial(heldItem);
         placeId = isSlabBlock(heldItem) ? slabId(m, top) : stairId(m, alongZ ? (fz < 0 ? 0 : 2) : (fx > 0 ? 1 : 3), top);
       }
-      if (heldItem === BLOCK_CAMPFIRE && !isSolid(world.getWorldBlock(px, py - 1, pz))) { showHint('A campfire needs solid ground under it'); return; }
+      if (heldItem === BLOCK_CAMPFIRE && !isSolid(world.getWorldBlock(px, py - 1, pz))) { minorHint('A campfire needs solid ground under it'); return; }
       if (isHead(heldItem)) {
         // it looks back at you: one of eight ways (the four sides, or turned 45 degrees between two of them)
         const k = headKind(heldItem);
@@ -20240,9 +20261,9 @@ export function createVoxelGame(
       const dy = Math.abs(angleDiff(yaw, lastSprintYaw)); lastSprintYaw = yaw;
       turnAccum = Math.max(0, turnAccum - delta * 6) + dy;
       if (sprintingNow && turnAccum > 2.1) { sprintTurnLock = true; turnAccum = 0; }
-      if (!down('sprint') || !down('forward')) sprintTurnLock = false;
+      if (!(down('sprint') || fwdLatch) || !down('forward')) sprintTurnLock = false;
     }
-    const sprintHeld = down('sprint') && down('forward') && !down('back') && !(canBeAttacked() && hunger <= 6) && !inFluidNow && !slowedByHold && !sprintTurnLock;
+    const sprintHeld = (down('sprint') || fwdLatch) && down('forward') && !down('back') && !(canBeAttacked() && hunger <= 6) && !inFluidNow && !slowedByHold && !sprintTurnLock;
     const walkSpeed = (sprintHeld ? SPRINT_SPEED : WALK_SPEED) * (crouching ? CROUCH_SLOW : 1) * (swordBlocking ? BLOCK_SLOW : 1) * (spearCharging ? 0.65 : 1) * (1 + 0.2 * effectLevel('speed')) * Math.max(0.2, 1 - 0.15 * effectLevel('slowness'));
     // While flying, the crouch key (Left Alt) descends and the sprint key (Shift) flies faster
     const flySprint = isFlying && down('sprint');

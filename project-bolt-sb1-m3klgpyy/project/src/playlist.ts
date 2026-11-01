@@ -1,7 +1,7 @@
 // Real music files, one folder per soundtrack, in the project's public/music folder:
 //
 //   public/music/phonk/song1.mp3 ... song5.mp3
-//   public/music/classical/song1.mp3 ... song4.mp3
+//   public/music/lofi/song1.mp3 ... song4.mp3
 //   public/music/overworld/song1.mp3 ... song3.mp3
 //
 // Choosing that soundtrack in Settings > Audio plays its songs one after another, forever (mp3 is best; .ogg, .m4a and
@@ -19,7 +19,7 @@ export type Song = {
   artist?: string;
 };
 
-export type FileStyle = 'overworld' | 'classical' | 'phonk';
+export type FileStyle = 'overworld' | 'lofi' | 'phonk';
 const numbered = (n: number): Song[] => Array.from({ length: n }, (_, i) => ({ id: `song${i + 1}`, title: `Song ${i + 1}` }));
 
 export const PLAYLISTS: Record<FileStyle, Song[]> = {
@@ -28,9 +28,14 @@ export const PLAYLISTS: Record<FileStyle, Song[]> = {
     { id: 'song2', title: 'Aggressive Drift Night', artist: 'Alex Morgan' },
     { id: 'song3', title: 'Hard Phonk', artist: 'AbsoluteSound' },
     { id: 'song4', title: 'Dark Aggressive Bass', artist: 'Watermelon Beats' },
-    { id: 'song5', title: 'Phonk Aura', artist: 'MondaMusic' },
+    { id: 'song5', title: 'Neon Drift', artist: 'Vaitsez' },
   ],
-  classical: numbered(4),
+  lofi: [
+    { id: 'song1', title: 'Tokyo Lofi', artist: 'Zephira Music' },
+    { id: 'song2', title: 'Lofi Relaxing', artist: 'Velario Music' },
+    { id: 'song3', title: 'Lofi Midnight Club', artist: 'Alex Morgan' },
+    { id: 'song4', title: 'Lofi Background', artist: 'Zephira Music' },
+  ],
   overworld: [
     { id: 'song1', title: 'Rain in the Overworld', artist: 'ThatLofiShow' },
     { id: 'song2', title: 'Ambient Dreamscape', artist: 'Morgan' },

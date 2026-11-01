@@ -29,6 +29,7 @@ export type ChessBoardViewProps = {
   arrows?: Arrow[];
   squareColors?: Record<number, string>;
   fx?: Fx;
+  /** a left click while a smash or throw plays ends it */ onStopFx?: () => void;
   /** turn premoves off for this board (puzzles, analysis) */ noPremove?: boolean;
   /** show another board colour than the player's own (bot themes) */ theme?: BoardTheme;
   celebrate?: { id: number; kind: Celebration } | null;
@@ -133,7 +134,7 @@ export default function ChessBoardView(p: ChessBoardViewProps) {
       lastMove={p.prefs.highlightLast ? lastMove : null} selected={sel} targets={targets} captureTargets={captures} checkSq={check}
       hint={p.hint} arrows={p.arrows} squareColors={p.squareColors} interactive={(interactive && myTurn) || canPremove} canDrag={(sq) => (myTurn ? mine(sq) : canPremove ? own(sq) : false)}
       onSquare={onSquare} onPick={onPick} onMove={onMove} inputMode={mode} premove={[...(pending && pending.ver === p.version ? [pending] : []), ...pre]} previewMove={preview} noSlideKey={playedKey.current} onCancelPremove={() => setPre([])}
-      clearKey={p.version} fx={p.fx} animate={p.prefs.animate && !reviewing} animSpeed={p.prefs.animSpeed} showLegalDots={p.prefs.legalDots} label="Chess board"
+      clearKey={p.version} fx={p.fx} onStopFx={p.onStopFx} animate={p.prefs.animate && !reviewing} animSpeed={p.prefs.animSpeed} showLegalDots={p.prefs.legalDots} label="Chess board"
       celebrate={p.prefs.resultAnims ? p.celebrate : null} fallSq={p.prefs.resultAnims ? p.fallSq : null}>
       {promo && (
         <div className="absolute inset-0 z-20 flex items-center justify-center" style={{ background: 'rgba(10,12,16,.55)' }} data-testid="promo">

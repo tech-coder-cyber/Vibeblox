@@ -2,18 +2,16 @@
 // notes played live with the Web Audio API, so there are no audio files to load.
 // `buildTrack` is pure (just numbers), `MusicPlayer` turns the notes into sound.
 //
-// The classical pieces are old public-domain works (Bach, Pachelbel, Satie, Beethoven), written out in simplified form.
+// (Indev 38: the Classical and Ambient soundtracks were removed. Lo-fi, Phonk and Overworld play real song files from public/music; this built-in music only plays when those files are missing.)
 
-export type SoundtrackStyle = 'overworld' | 'phonk' | 'arcade' | 'classical' | 'lofi' | 'ambient';
+export type SoundtrackStyle = 'overworld' | 'phonk' | 'arcade' | 'lofi';
 /** (kept for the settings screen) */
 export type AnySoundtrack = SoundtrackStyle;
 export const SOUNDTRACKS: Array<{ value: SoundtrackStyle; label: string }> = [
   { value: 'overworld', label: 'Overworld' },
-  { value: 'classical', label: 'Classical' },
+  { value: 'lofi', label: 'Lo-fi' },
   { value: 'phonk', label: 'Phonk' },
   { value: 'arcade', label: 'Arcade' },
-  { value: 'lofi', label: 'Lo-fi' },
-  { value: 'ambient', label: 'Ambient' },
 ];
 
 export type Voice = 'piano' | 'pad' | 'pluck' | 'bass' | 'square' | 'tri' | 'kick' | 'snare' | 'hat' | 'cow';
@@ -360,11 +358,9 @@ function ambient(i: number): Track {
 
 const BUILDERS: Record<SoundtrackStyle, Array<() => Track>> = {
   overworld: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((i) => () => overworld(i)),
-  classical: [bachPrelude, canon, gymnopedie, furElise, odeToJoy],
   phonk: [0, 1, 2].map((i) => () => phonk(i)),
   arcade: [0, 1, 2].map((i) => () => arcade(i)),
   lofi: [0, 1, 2, 3].map((i) => () => lofi(i)),
-  ambient: [0, 1, 2].map((i) => () => ambient(i)),
 };
 export const trackCount = (style: SoundtrackStyle) => BUILDERS[style].length;
 export function buildTrack(style: SoundtrackStyle, index: number): Track {
@@ -566,7 +562,7 @@ export class MusicPlayer {
       const when = Math.max(ctx.currentTime, this.trackStart + e.t);
       try { playNote(ctx, this.bus, this.noise, e, when); } catch { /* a bad note must never stop the music */ }
     }
-    if (ctx.currentTime > this.trackStart + tr.length) this.nextTrack(this.style === 'classical' || this.style === 'overworld' || this.style === 'ambient' || this.style === 'lofi' ? 2.5 : 0.8);
+    if (ctx.currentTime > this.trackStart + tr.length) this.nextTrack(this.style === 'overworld' || this.style === 'lofi' ? 2.5 : 0.8);
   }
 
   pause() { if (this.ctx && this.playing) { void this.ctx.suspend(); this.playing = false; } }

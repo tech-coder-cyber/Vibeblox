@@ -22,14 +22,20 @@ export function useBoardFx(opts: { allowSlam: boolean; sound: boolean; enabled?:
   const [fx, setFx] = useState<Fx>(null);
   const idRef = useRef(0);
   const busy = useRef(false);
+  const timer = useRef<number | null>(null);
   const trigger = useCallback((kind: 'slam' | 'throw') => {
     if (busy.current) return;
     if (kind === 'slam' && !opts.allowSlam) return;
     busy.current = true;
     setFx({ id: ++idRef.current, kind });
     playSfx(kind === 'slam' ? 'slam' : 'throw', opts.sound, opts.soundTheme);
-    window.setTimeout(() => { setFx(null); busy.current = false; }, kind === 'slam' ? 2300 : 1700);
+    timer.current = window.setTimeout(() => { setFx(null); busy.current = false; timer.current = null; }, kind === 'slam' ? 2500 : 1300);
   }, [opts.allowSlam, opts.sound, opts.soundTheme]);
+  /** A left click ends the effect right away and puts the board back to normal. */
+  const stop = useCallback(() => {
+    if (timer.current !== null) { window.clearTimeout(timer.current); timer.current = null; }
+    busy.current = false; setFx(null);
+  }, []);
   useEffect(() => {
     if (opts.enabled === false) return;
     const onKey = (e: KeyboardEvent) => {
@@ -42,7 +48,7 @@ export function useBoardFx(opts: { allowSlam: boolean; sound: boolean; enabled?:
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [trigger, opts.enabled]);
-  return { fx, trigger };
+  return { fx, trigger, stop };
 }
 
 function rng(seed: number) { let s = seed >>> 0 || 1; return () => { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }; }
@@ -70,6 +76,7 @@ export type BoardProps = {
   /** a right-click or Escape cancels a queued move */ onCancelPremove?: () => void;
   /** a premove was just queued: its piece slides to the new square (k changes for each one) */ previewMove?: { from: number; to: number; k: number } | null;
   /** the real move with this key ("from-to") was already shown by a premove, so it is not slid a second time */ noSlideKey?: string;
+  /** a left click while a smash or throw plays ends it */ onStopFx?: () => void;
   /** a game-end animation: the id changes for each new one */ celebrate?: { id: number; kind: Celebration } | null;
   /** the king that falls over when the game is lost */ fallSq?: number | null;
   animSpeed?: AnimSpeed;
@@ -96,11 +103,14 @@ export default function Board(p: BoardProps) {
   useEffect(() => { setMarks({ circles: {}, arrows: [] }); }, [p.clearKey]);
   // after an effect the pieces come back
   const [ret, setRet] = useState(false);
-  const hadFx = useRef(false);
+  const hadFx = useRef<'slam' | 'throw' | null>(null);
+  const thrownRef = useRef<number | null>(null);
+  const [retSq, setRetSq] = useState<number | null>(null);
   useEffect(() => {
-    if (p.fx) { hadFx.current = true; return; }
+    if (p.fx) { hadFx.current = p.fx.kind; return; }
     if (!hadFx.current) return;
-    hadFx.current = false; setRet(true);
+    const kind = hadFx.current; hadFx.current = null;
+    setRetSq(kind === 'throw' ? thrownRef.current : null); setRet(true); // after a throw only that one piece comes back
     const id = window.setTimeout(() => setRet(false), 700);
     return () => clearTimeout(id);
   }, [p.fx]);
@@ -153,12 +163,25 @@ export default function Board(p: BoardProps) {
     const m = new Map<number, CSSProperties>();
     if (!p.fx) return m;
     const r = rng(p.fx.id * 7919 + 13);
+    if (p.fx.kind === 'throw') {
+      // T throws just one piece: it flies up off the board, spinning
+      const list = p.pieces.filter((x) => x.v !== 0);
+      const pc = list[Math.floor(r() * list.length)];
+      if (pc) {
+        thrownRef.current = pc.sq;
+        m.set(pc.sq, {
+          ['--dx' as string]: `${(r() - 0.5) * 900}%`, ['--dy' as string]: `${-(500 + r() * 500)}%`, ['--r1' as string]: `${(r() < 0.5 ? -1 : 1) * (540 + r() * 540)}deg`,
+          animation: `mg-throw 1.05s 0s cubic-bezier(.15,.6,.3,1) both`, zIndex: 20,
+        });
+      }
+      return m;
+    }
+    // F: the hand lands, every piece jumps up, then tips over onto its side
     for (const pc of p.pieces) {
-      const delay = p.fx.kind === 'slam' ? 0.5 + r() * 0.35 : r() * 0.25;
-      const dx = (r() - 0.5) * (p.fx.kind === 'slam' ? 160 : 1100), dy = p.fx.kind === 'throw' ? -(200 + r() * 700) * (r() < 0.25 ? -0.5 : 1) : 0;
+      const side = (r() < 0.5 ? -1 : 1) * (80 + r() * 20);
       m.set(pc.sq, {
-        ['--dx' as string]: `${dx}%`, ['--dy' as string]: `${dy}%`, ['--r0' as string]: `${(r() - 0.5) * 30}deg`, ['--r1' as string]: `${(r() - 0.5) * (p.fx.kind === 'slam' ? 200 : 1440)}deg`,
-        animation: p.fx.kind === 'slam' ? `mg-fall 1.15s ${delay}s cubic-bezier(.5,0,.9,.6) both` : `mg-throw ${0.9 + r() * 0.35}s ${delay}s cubic-bezier(.15,.6,.3,1) both`,
+        ['--dx' as string]: `${(r() - 0.5) * 70}%`, ['--up' as string]: `${70 + r() * 90}%`, ['--side' as string]: `${side}deg`,
+        animation: `mg-slam-piece ${1.05 + r() * 0.25}s ${0.78 + r() * 0.08}s both`,
       });
     }
     return m;
@@ -169,6 +192,7 @@ export default function Board(p: BoardProps) {
   const center = (sq: number) => { const { col, row } = colRow(sq); return { x: col + 0.5, y: row + 0.5 }; };
 
   const onPointerDown = (e: PointerEvent) => {
+    if (p.fx && e.button === 0) { p.onStopFx?.(); return; } // a left click ends the smash/throw and puts everything back
     const sq = sqAt(e.clientX, e.clientY);
     if (sq === null) return;
     if (e.button === 2) {
@@ -269,7 +293,7 @@ export default function Board(p: BoardProps) {
               style={{ ...sqPct(pc.sq), width: '12.5%', height: '12.5%', padding: p.kind === 'chess' ? '0.5%' : '5%', opacity: dragging ? 0.3 : 1,
                 transform: sl ? (sl.go ? 'translate(0,0)' : `translate(${sl.dx * 100}%, ${sl.dy * 100}%)`) : undefined,
                 transition: sl && sl.go ? `transform ${speed.ms}ms ${speed.ease}` : undefined, zIndex: sl ? 3 : undefined,
-                animation: falling ? 'mg-topple 1s .1s ease-in both' : ret ? 'mg-return .55s ease-out both' : undefined, transformOrigin: falling ? '50% 90%' : undefined, ...fxs }}>
+                animation: falling ? 'mg-topple 1s .1s ease-in both' : ret && (retSq === null || retSq === pc.sq) ? 'mg-return .55s ease-out both' : undefined, transformOrigin: falling ? '50% 90%' : undefined, ...fxs }}>
               {inner}
             </div>
           );
@@ -328,7 +352,7 @@ export default function Board(p: BoardProps) {
 function Fist() {
   return (
     <>
-      <div className="absolute pointer-events-none" style={{ left: '50%', top: '50%', width: '58%', animation: 'mg-fist 2.1s ease-in both, mg-fistout .4s 1.85s both', zIndex: 5 }} data-testid="fist">
+      <div className="absolute pointer-events-none" style={{ left: '50%', top: '50%', width: '58%', transformOrigin: '50% 100%', animation: 'mg-fist 2.1s ease-in both, mg-fistout .4s 1.95s both', zIndex: 25 }} data-testid="fist">
         <svg viewBox="0 0 120 130" width="100%" style={{ filter: 'drop-shadow(0 14px 10px rgba(0,0,0,.45))' }} aria-hidden>
           <rect x="22" y="56" width="78" height="66" rx="20" fill="#f1c9a0" stroke="#7a4a2a" strokeWidth="4" />
           <rect x="22" y="22" width="19" height="52" rx="9.5" fill="#f1c9a0" stroke="#7a4a2a" strokeWidth="4" />

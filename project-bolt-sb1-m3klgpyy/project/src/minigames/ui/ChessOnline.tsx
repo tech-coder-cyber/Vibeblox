@@ -42,7 +42,7 @@ export default function ChessOnline({ gameId, me, prefs, onReview, onBack }: { g
   const chatAfter = useRef(0);
   const fairChecked = useRef(false);
   const [fair, setFair] = useState<string | null>(null);
-  const { fx, trigger } = useBoardFx({ allowSlam: true, sound: prefs.sound, soundTheme: prefs.soundTheme });
+  const { fx, trigger, stop: stopFx } = useBoardFx({ allowSlam: true, sound: prefs.sound, soundTheme: prefs.soundTheme });
 
   const myColor: 0 | 1 | null = mg ? (me === mg.p0 ? 0 : me === mg.p1 ? 1 : null) : null;
   mgRef.current = mg;
@@ -177,7 +177,7 @@ export default function ChessOnline({ gameId, me, prefs, onReview, onBack }: { g
     <div className="grid gap-4 lg:grid-cols-[minmax(0,640px)_1fr]" data-testid="chess-online">
       <div className="min-w-0">
         {bar(topSide)}
-        <ChessBoardView game={game} version={ver} orientation={orientation} myColor={myColor} canMove={live && !error} onUserMove={(u) => void onUserMove(u)} viewPly={view} prefs={prefs} fx={fx} celebrate={!live && result === 'win' ? { id: 1, kind: prefs.celebration } : null} fallSq={!live && result === 'loss' && mg.reason === 'checkmate' && myColor !== null ? kingSquare(game.pos, myColor) : null}>
+        <ChessBoardView game={game} version={ver} orientation={orientation} myColor={myColor} canMove={live && !error} onUserMove={(u) => void onUserMove(u)} viewPly={view} prefs={prefs} fx={fx} onStopFx={stopFx} celebrate={!live && result === 'win' ? { id: 1, kind: prefs.celebration } : null} fallSq={!live && result === 'loss' && mg.reason === 'checkmate' && myColor !== null ? kingSquare(game.pos, myColor) : null}>
           {!live && (
             <div className="absolute inset-0 z-30 flex items-center justify-center p-3" style={{ background: 'rgba(10,12,16,.62)' }} data-testid="end-card">
               <div className="mg-card p-5 text-center w-full max-w-xs">

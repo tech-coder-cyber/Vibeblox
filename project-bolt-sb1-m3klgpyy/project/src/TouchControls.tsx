@@ -1,7 +1,7 @@
 // Touch controls for phones and tablets (like Minecraft Bedrock on a phone), in four layouts (Settings > Controls):
 //   classic : a joystick on the left, drag the right side to look, tap to place / use, hold still to break, HIT and USE buttons
 //   dynamic : a floating joystick (it appears under your left thumb) and a crosshair; HIT and USE buttons act on the crosshair
-//   dpad    : a D-pad (with a RUN toggle) to walk, drag to look, tap / hold on the view, HIT and USE buttons
+//   dpad    : a D-pad to walk (tap forward twice to run), drag to look, tap / hold on the view, HIT and USE buttons
 //   tap     : a clean screen: tap the view to place / use, hold still to break / attack (no HIT and USE buttons)
 //   buttons: jump (double-tap to fly in creative), sneak, inventory, drop, chat, menu. Every button reacts the moment
 //   a finger lands (not when it lifts), so they all work while the other thumb is busy walking.
@@ -32,7 +32,7 @@ export type TouchScheme = 'classic' | 'dynamic' | 'dpad' | 'tap';
 export const TOUCH_SCHEMES: Array<{ id: TouchScheme; name: string; blurb: string }> = [
   { id: 'classic', name: 'Classic', blurb: 'Fixed joystick, drag to look, tap to use, hold to break.' },
   { id: 'dynamic', name: 'Dynamic', blurb: 'A joystick that appears under your thumb, and a crosshair. HIT and USE act on the crosshair.' },
-  { id: 'dpad', name: 'D-pad', blurb: 'Arrow buttons to walk (with a RUN switch), drag to look.' },
+  { id: 'dpad', name: 'D-pad', blurb: 'Arrow buttons to walk (tap forward twice to run), drag to look.' },
   { id: 'tap', name: 'Tap to interact', blurb: 'No HIT or USE buttons: tap the view to use, hold still to break.' },
 ];
 export function loadTouchScheme(): TouchScheme {
@@ -116,6 +116,8 @@ export default function TouchControls({ getHandle, onMenu, onChat, paused, creat
     setKnob({ x: 0, y: 0 }); setFloatAt(null); setPad({ f: false, b: false, l: false, r: false });
   };
   const runRef = useRef(false);
+  // double-tap forward on the D-pad to run (there is no run button any more: it sat on top of the forward arrow)
+  const fwdWas = useRef(false), fwdUpAt = useRef(0), runLatch = useRef(false);
   runRef.current = run;
   // the RUN switch of the D-pad: keeps sprint held while you walk forward
   useEffect(() => { if (dpad) setAction('sprint', run); else if (run) { setRun(false); setAction('sprint', false); } /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [run, dpad]);
@@ -128,6 +130,9 @@ export default function TouchControls({ getHandle, onMenu, onChat, paused, creat
       const dead = 0.3;
       const f = ny < -dead, b = ny > dead, l = nx < -dead, r = nx > dead;
       setAction('forward', f); setAction('back', b); setAction('left', l); setAction('right', r);
+      const now = performance.now();
+      if (f && !fwdWas.current) { fwdWas.current = true; if (fwdUpAt.current && now - fwdUpAt.current < 320) { runLatch.current = true; setAction('sprint', true); } }
+      if (!f && fwdWas.current) { fwdWas.current = false; fwdUpAt.current = now; if (runLatch.current) { runLatch.current = false; setAction('sprint', false); } }
       setPad({ f, b, l, r });
       return;
     }
@@ -284,7 +289,6 @@ export default function TouchControls({ getHandle, onMenu, onChat, paused, creat
         </div>
       ) : dpad ? (
         <div className="absolute left-5 bottom-6 flex flex-col items-center gap-2">
-          <button className={`${btn} w-14 h-9 text-[11px] ${run ? 'bg-white/45' : ''}`} {...onTap(() => setRun((v) => !v))} data-testid="touch-run">{run ? 'RUN ON' : 'RUN'}</button>
           <div ref={stickRef} className="relative w-36 h-36 pointer-events-auto touch-none" data-testid="touch-dpad"
             onPointerDown={stickDown}
             onPointerMove={(e) => { if (stickId.current === e.pointerId) moveStick(e); }}
