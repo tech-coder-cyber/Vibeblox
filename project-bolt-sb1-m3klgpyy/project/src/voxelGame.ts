@@ -3252,12 +3252,12 @@ const TOOL_PALETTES: Record<ToolInfo['material'], Record<string, string>> = {
 };
 
 /** A hex colour made lighter (amount > 0, towards white) or darker (amount < 0). */
-function shadeHex(hex: string, amount: number): string {
+function toolShade(hex: string, amount: number): string {
   const n = parseInt(hex.slice(1), 16), c = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => Math.round(amount >= 0 ? v + (255 - v) * amount : v * (1 + amount)));
   return '#' + c.map((v) => v.toString(16).padStart(2, '0')).join('');
 }
 // every tool palette also gets: w (brightest edge), d (darkest), r/R (the spear's wrap)
-for (const pal of Object.values(TOOL_PALETTES)) { pal.w = shadeHex(pal.h, 0.55); pal.d = shadeHex(pal.H, -0.45); pal.r = '#7a3b2a'; pal.R = '#52271b'; }
+for (const pal of Object.values(TOOL_PALETTES)) { pal.w = toolShade(pal.h, 0.55); pal.d = toolShade(pal.H, -0.45); pal.r = '#7a3b2a'; pal.R = '#52271b'; }
 /** Flat pixel art for non-block items (sticks, tools). */
 const polishedItems = new Map<number, HTMLCanvasElement>();
 /**
