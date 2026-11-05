@@ -1,5 +1,5 @@
 import { setBgInterval, clearBgInterval } from './bgTimer';
-import { DEFAULT_SHADERS, cleanShaders, NEUTRAL_GRADE, type ShaderPrefs } from './shaderPrefs';
+import { DEFAULT_SHADERS, cleanShaders, NEUTRAL_GRADE, type Grade, type ShaderPrefs } from './shaderPrefs';
 import { loadVideo, cleanVideo, type VideoPrefs } from './videoPrefs';
 import type { NetDrop } from './multiplayer';
 import { SKINS, CAPES, cleanLook, DEFAULT_LOOK, CUSTOM_CAPE_ID, type PlayerLook } from './cosmetics';
@@ -540,24 +540,24 @@ function retextureModel(model: MobModel) {
 const STICK_LIGHT = '#a07a45';
 const STICK_DARK = '#5e4224';
 
-// 16x16 pixel maps. '.' = transparent. h/H = tool head light/dark,
-// s/S = handle light/dark, g = sword guard.
+// 16x16 pixel maps. '.' = transparent. w = the head's brightest edge, h/H = head light/dark, d = darkest,
+// s/S = handle light/dark, r/R = a wrap on the spear's shaft, g = sword guard. (Indev 40: redrawn for pickaxe, axe, shovel, hoe, spear and mace.)
 const PICKAXE_MAP = [
   '................',
-  '....hhhhhhh.....',
-  '..hhHHHHHHHhh...',
-  '.hH.......SsHh..',
-  '.h.......Ss..Hh.',
-  '........Ss....h.',
-  '.......Ss.......',
-  '......Ss........',
-  '.....Ss.........',
-  '....Ss..........',
-  '...Ss...........',
-  '..Ss............',
-  '.Ss.............',
-  'Ss..............',
-  '................',
+  '....wwwwww......',
+  '..wwhhhhhhHH....',
+  '.whhHHHHHHhhH...',
+  '.whH......sHhH..',
+  '.hH......sSHhH..',
+  '.H......sS..HH..',
+  '.......sS.......',
+  '......sS........',
+  '.....sS.........',
+  '....sS..........',
+  '...sS...........',
+  '..sS............',
+  '.sS.............',
+  '.S..............',
   '................',
 ];
 const SWORD_MAP = [
@@ -580,61 +580,81 @@ const SWORD_MAP = [
 ];
 const HOE_MAP = [
   '................',
-  '......hhhhh.....',
-  '.....hHHHHHs....',
-  '.....HH...Ss....',
-  '.........Ss.....',
-  '........Ss......',
-  '.......Ss.......',
-  '......Ss........',
-  '.....Ss.........',
-  '....Ss..........',
-  '...Ss...........',
-  '..Ss............',
-  '.Ss.............',
-  'Ss..............',
-  '................',
+  '......wwwwww....',
+  '.....whhhhhhH...',
+  '.....hHHHHHhH...',
+  '.....HH...sSH...',
+  '.........sS.....',
+  '........sS......',
+  '.......sS.......',
+  '......sS........',
+  '.....sS.........',
+  '....sS..........',
+  '...sS...........',
+  '..sS............',
+  '.sS.............',
+  '.S..............',
   '................',
 ];
 const AXE_MAP = [
   '................',
-  '........hhh.....',
-  '.......hHHHh....',
-  '......hHHHHH....',
-  '......hHHHSs....',
-  '.......hHSs.....',
-  '........Ss......',
-  '.......Ss.......',
-  '......Ss........',
-  '.....Ss.........',
-  '....Ss..........',
-  '...Ss...........',
-  '..Ss............',
-  '.Ss.............',
-  'Ss..............',
-  '................',
+  '.........wwww...',
+  '.......wwhhhhhH.',
+  '......whhhhhhhHH',
+  '......whhhhhhHH.',
+  '......whhhhhHH..',
+  '.......hhhsHH...',
+  '.......hHsS.....',
+  '........sS......',
+  '.......sS.......',
+  '......sS........',
+  '.....sS.........',
+  '....sS..........',
+  '...sS...........',
+  '..sS............',
+  '..S.............',
 ];
 
 // A spear: a long shaft from the bottom left, a leaf-shaped head at the top right (and a wrap where they meet)
-const SPEAR_MAP = ((): string[] => {
-  const g: string[][] = Array.from({ length: 16 }, () => Array(16).fill('.'));
-  for (let i = 0; i <= 11; i++) { g[15 - i][i] = 'S'; if (i + 1 < 16) g[15 - i][i + 1] = 's'; }
-  const put = (x: number, y: number, c: string) => { g[y][x] = c; };
-  for (const [x, y] of [[15, 0], [14, 1], [13, 2], [12, 3], [11, 4], [14, 0], [13, 1], [12, 2], [11, 3]]) put(x, y, 'h');
-  for (const [x, y] of [[15, 1], [14, 2], [13, 3], [12, 4], [10, 5], [11, 5], [10, 4], [15, 2], [14, 3], [13, 4]]) put(x, y, 'H');
-  for (const [x, y] of [[9, 6], [10, 6], [8, 7]]) put(x, y, 'g');
-  return g.map((r) => r.join(''));
-})();
+const SPEAR_MAP = [
+  '..............ww',
+  '.............whH',
+  '............whHH',
+  '...........whhHH',
+  '..........whhHH.',
+  '.........hhhHH..',
+  '........ghHH....',
+  '.......rrs......',
+  '......sSrS......',
+  '.....sS.........',
+  '....sS..........',
+  '...sS...........',
+  '..sS............',
+  '.sS.............',
+  '.S..............',
+  '................',
+]
 // A mace: a spiked iron ball on a short handle
-const MACE_MAP = ((): string[] => {
-  const g: string[][] = Array.from({ length: 16 }, () => Array(16).fill('.'));
-  for (let i = 0; i <= 9; i++) { g[15 - i][i] = 'S'; g[15 - i][i + 1] = 's'; }
-  for (let y = 2; y <= 7; y++) for (let x = 8; x <= 13; x++) g[y][x] = (x === 8 || y === 7 || x === 13) ? 'H' : 'h';
-  for (const [x, y] of [[7, 4], [7, 5], [14, 4], [14, 5], [10, 1], [11, 1], [10, 8], [11, 8], [7, 2], [14, 2], [7, 7], [14, 7], [8, 1], [13, 1]]) g[y][x] = 'g';
-  for (const [x, y] of [[10, 4], [11, 4], [10, 5], [11, 5]]) g[y][x] = 'H';
-  return g.map((r) => r.join(''));
-})();
+const MACE_MAP = [
+  '................',
+  '.....w..w.......',
+  '...w.whhh.w.....',
+  '....whhhhhH.....',
+  '...whhhhhhHH....',
+  '..whhwhhhHHHH...',
+  '...hhhhhHHHH....',
+  '....hHHHHHH.....',
+  '.....H.HH.H.....',
+  '.......sS.......',
+  '......sS........',
+  '.....sS.........',
+  '....sS..........',
+  '...sS...........',
+  '..sS............',
+  '..S.............',
+]
 const MACE_PALETTE: Record<string, string> = { h: '#aab0ba', H: '#5b616b', s: STICK_LIGHT, S: STICK_DARK, g: '#d8dde6' };
+MACE_PALETTE.w = '#dfe4ec'; MACE_PALETTE.d = '#32363d'; MACE_PALETTE.r = '#7a3b2a'; MACE_PALETTE.R = '#52271b';
 
 function drawPixelMap(map: string[], palette: Record<string, string>): HTMLCanvasElement {
   // 16x16 like Minecraft, up to 64x64 for detailed art (guns, uploaded pictures); the 3D model stays the same size
@@ -2171,9 +2191,9 @@ function drawButtonIcon(): HTMLCanvasElement {
   ctx.fillStyle = '#7a7a7a'; ctx.fillRect(4, 6, 8, 5); ctx.fillStyle = '#a4a4a4'; ctx.fillRect(4, 6, 8, 3);
   return c;
 }
-function drawPlateIcon(): HTMLCanvasElement {
+function drawPlateIcon(body = '#7a7a7a', top = '#a4a4a4'): HTMLCanvasElement {
   const c = makeCanvas(16, 16), ctx = c.getContext('2d')!;
-  ctx.fillStyle = '#7a7a7a'; ctx.fillRect(1, 9, 14, 3); ctx.fillStyle = '#a4a4a4'; ctx.fillRect(1, 9, 14, 1);
+  ctx.fillStyle = body; ctx.fillRect(1, 9, 14, 3); ctx.fillStyle = top; ctx.fillRect(1, 9, 14, 1);
   return c;
 }
 function drawRepeaterIcon(): HTMLCanvasElement {
@@ -2515,21 +2535,21 @@ function drawSnowballIcon(): HTMLCanvasElement {
 // A shovel: a small rounded blade at the top right, a long stick down to the bottom left
 const SHOVEL_MAP = [
   '................',
-  '..........hhh...',
-  '.........hHHHh..',
-  '.........hHHHh..',
-  '..........hHh...',
-  '..........Ss....',
-  '.........Ss.....',
-  '........Ss......',
-  '.......Ss.......',
-  '......Ss........',
-  '.....Ss.........',
-  '....Ss..........',
-  '...Ss...........',
-  '..Ss............',
-  '.Ss.............',
-  '................',
+  '..........wwww..',
+  '.........whhhhH.',
+  '.........whhhhHH',
+  '.........hhhhhHH',
+  '..........hhhHH.',
+  '..........HsHH..',
+  '.........sS.....',
+  '........sS......',
+  '.......sS.......',
+  '......sS........',
+  '.....sS.........',
+  '....sS..........',
+  '...sS...........',
+  '..sS............',
+  '..S.............',
 ];
 function drawSignIcon(w: number): HTMLCanvasElement {
   const P = woodPal(w);
@@ -3140,6 +3160,7 @@ export function blockFaces(id: number): FaceSet | null {
   if (isSnowyLeaves(id)) return all(f[`snowyLeaves${id - BLOCK_SNOWY_LEAVES_FIRST}`]);
   if (id === BLOCK_LAPIS_ORE) return all(f.lapisOre);
   if (id === BLOCK_REDSTONE_ORE) return all(f.redstoneOre);
+  if (id >= BLOCK_PLATE_WOOD && id <= BLOCK_PLATE_HEAVY + 1) return blockFaces(plateLooksLike(id));
   if (id === BLOCK_IRON_BLOCK) return all(f.ironBlock);
   if (id === BLOCK_BOOKSHELF) return { top: f.planks, side: f.bookshelf, bottom: f.planks };
   if (id === BLOCK_ENCHANTING_TABLE) return { top: f.enchTop, side: f.enchSide, bottom: f.enchBottom };
@@ -3230,6 +3251,13 @@ const TOOL_PALETTES: Record<ToolInfo['material'], Record<string, string>> = {
   infernium: { h: '#ff8a3a', H: '#8a1e12', s: '#3a1612', S: '#1e0a08', g: '#ffcf4a' },
 };
 
+/** A hex colour made lighter (amount > 0, towards white) or darker (amount < 0). */
+function shadeHex(hex: string, amount: number): string {
+  const n = parseInt(hex.slice(1), 16), c = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => Math.round(amount >= 0 ? v + (255 - v) * amount : v * (1 + amount)));
+  return '#' + c.map((v) => v.toString(16).padStart(2, '0')).join('');
+}
+// every tool palette also gets: w (brightest edge), d (darkest), r/R (the spear's wrap)
+for (const pal of Object.values(TOOL_PALETTES)) { pal.w = shadeHex(pal.h, 0.55); pal.d = shadeHex(pal.H, -0.45); pal.r = '#7a3b2a'; pal.R = '#52271b'; }
 /** Flat pixel art for non-block items (sticks, tools). */
 const polishedItems = new Map<number, HTMLCanvasElement>();
 /**
@@ -3362,6 +3390,9 @@ function itemCanvasBase(id: number): HTMLCanvasElement | null {
     case BLOCK_LEVER: return drawLeverIcon();
     case BLOCK_BUTTON: return drawButtonIcon();
     case BLOCK_PRESSURE_PLATE: return drawPlateIcon();
+    case BLOCK_PLATE_WOOD: return drawPlateIcon('#a67c52', '#c49a6c');
+    case BLOCK_PLATE_LIGHT: return drawPlateIcon('#e0a820', '#fbe36a');
+    case BLOCK_PLATE_HEAVY: return drawPlateIcon('#b4b4b4', '#ececec');
     case ITEM_REDSTONE_TORCH: return drawRedstoneTorchIcon();
     case BLOCK_REPEATER: return drawRepeaterIcon();
     case BLOCK_COMPARATOR: return drawComparatorIcon();
@@ -3852,7 +3883,11 @@ export const BLOCK_ITEM_FRAME = 1121; // +0..3: the wall it hangs on (north, eas
 export const BLOCK_REDSTONE_WIRE = 1130; // + power 0-15
 export const BLOCK_LEVER = 1146; // + attach*2 + on (attach 0 = on the floor, 1-4 = on a wall to the N, E, S, W)
 export const BLOCK_BUTTON = 1156; // same layout as the lever
-export const BLOCK_PRESSURE_PLATE = 1166; // +1 pressed
+export const BLOCK_PRESSURE_PLATE = 1166; // +1 pressed (stone: players and mobs)
+// Indev 40: three more plates, each followed by its pressed state
+export const BLOCK_PLATE_WOOD = 1387;   // +1 pressed: anything standing on it, even a dropped item
+export const BLOCK_PLATE_LIGHT = 1389;  // +1 pressed: gold, a light weighted plate: players, mobs and dropped items
+export const BLOCK_PLATE_HEAVY = 1391;  // +1 pressed: iron, a heavy weighted plate: only a player standing on it (not mobs, not items)
 export const BLOCK_REDSTONE_TORCH = 1168; // + attach*2 + lit
 export const BLOCK_REPEATER = 1178; // + facing*8 + (delay-1)*2 + on (facing = the way the signal goes: N, E, S, W)
 export const BLOCK_REDSTONE_LAMP = 1210; // +1 lit
@@ -4001,7 +4036,7 @@ export const ITEM_POCKET_BOX = BLOCK_POCKET_BOX, ITEM_STORAGE_BOX = BLOCK_STORAG
 export const BOX_SLOTS: Record<number, number> = { [BLOCK_POCKET_BOX]: 9, [BLOCK_STORAGE_BOX]: 27 };
 export const isBoxBlock = (b: number | null | undefined): boolean => b === BLOCK_POCKET_BOX || b === BLOCK_STORAGE_BOX;
 export const isBoxItem = isBoxBlock;
-export const LAST_BUILTIN_BLOCK = BLOCK_STORAGE_BOX; // 1386
+export const LAST_BUILTIN_BLOCK = BLOCK_PLATE_HEAVY + 1; // 1392 (the storage box is 1386, then the new pressure plates)
 /** The five trees. Index 0 is oak (its blocks keep the old ids); 1-4 use the 1010/1020/1030 families. */
 export const WOODS = [
   { key: 'oak', name: 'Oak', color: '#c19a5b' }, { key: 'spruce', name: 'Spruce', color: '#73532f' }, { key: 'birch', name: 'Birch', color: '#d4c48a' },
@@ -4123,7 +4158,12 @@ export const isItemFrame = (b: number) => b >= BLOCK_ITEM_FRAME && b <= BLOCK_IT
 export const isWire = (b: number) => b >= BLOCK_REDSTONE_WIRE && b <= BLOCK_REDSTONE_WIRE + 15;
 export const isLever = (b: number) => b >= BLOCK_LEVER && b <= BLOCK_LEVER + 9;
 export const isButton = (b: number) => b >= BLOCK_BUTTON && b <= BLOCK_BUTTON + 9;
-export const isPlate = (b: number) => b === BLOCK_PRESSURE_PLATE || b === BLOCK_PRESSURE_PLATE + 1;
+export const isPlate = (b: number) => b === BLOCK_PRESSURE_PLATE || b === BLOCK_PRESSURE_PLATE + 1 || (b >= BLOCK_PLATE_WOOD && b <= BLOCK_PLATE_HEAVY + 1);
+/** The plate's unpressed block (what you place and get back when you break it). */
+export const plateBase = (b: number) => (b >= BLOCK_PLATE_WOOD ? BLOCK_PLATE_WOOD + 2 * Math.floor((b - BLOCK_PLATE_WOOD) / 2) : BLOCK_PRESSURE_PLATE);
+export const platePressed = (b: number) => (b >= BLOCK_PLATE_WOOD ? (b - BLOCK_PLATE_WOOD) % 2 === 1 : b === BLOCK_PRESSURE_PLATE + 1);
+/** A block the plate is made to look like. */
+const plateLooksLike = (b: number) => { const base = plateBase(b); return base === BLOCK_PLATE_WOOD ? ITEM_PLANKS : base === BLOCK_PLATE_LIGHT ? BLOCK_GOLD_BLOCK : base === BLOCK_PLATE_HEAVY ? BLOCK_IRON_BLOCK : BLOCK_STONE; };
 export const isRedstoneTorch = (b: number) => b >= BLOCK_REDSTONE_TORCH && b <= BLOCK_REDSTONE_TORCH + 9;
 export const isRepeater = (b: number) => b >= BLOCK_REPEATER && b <= BLOCK_REPEATER + 31;
 export const isLamp = (b: number) => b === BLOCK_REDSTONE_LAMP || b === BLOCK_REDSTONE_LAMP + 1;
@@ -4143,7 +4183,7 @@ export const isRedstoneComponent = (b: number) => (b >= BLOCK_REDSTONE_WIRE && b
 export const wirePower = (b: number) => (isWire(b) ? b - BLOCK_REDSTONE_WIRE : 0);
 /** Lever, button and torch: 0 = on the floor, 1-4 = on a wall (N, E, S, W). */
 export function attachOf(b: number): number { const base = isLever(b) ? BLOCK_LEVER : isButton(b) ? BLOCK_BUTTON : BLOCK_REDSTONE_TORCH; return (b - base) >> 1; }
-export function switchOn(b: number): boolean { return isLever(b) || isButton(b) || isRedstoneTorch(b) ? ((b - (isLever(b) ? BLOCK_LEVER : isButton(b) ? BLOCK_BUTTON : BLOCK_REDSTONE_TORCH)) & 1) === 1 : isPlate(b) ? b === BLOCK_PRESSURE_PLATE + 1 : isLamp(b) ? b === BLOCK_REDSTONE_LAMP + 1 : false; }
+export function switchOn(b: number): boolean { return isLever(b) || isButton(b) || isRedstoneTorch(b) ? ((b - (isLever(b) ? BLOCK_LEVER : isButton(b) ? BLOCK_BUTTON : BLOCK_REDSTONE_TORCH)) & 1) === 1 : isPlate(b) ? platePressed(b) : isLamp(b) ? b === BLOCK_REDSTONE_LAMP + 1 : false; }
 export const repeaterFacing = (b: number) => (b - BLOCK_REPEATER) >> 3;
 export const repeaterDelay = (b: number) => (((b - BLOCK_REPEATER) >> 1) & 3) + 1;
 export const repeaterOn = (b: number) => ((b - BLOCK_REPEATER) & 1) === 1;
@@ -4321,7 +4361,7 @@ function newBlockShape(b: number, at: (dx: number, dy: number, dz: number) => nu
     const a = attachOf(b);
     return a === 0 ? shape : toWall(shape, a - 1);
   }
-  if (isPlate(b)) return [[P(1), 0, P(1), P(15), b === BLOCK_PRESSURE_PLATE ? P(1) : P(0.5), P(15)]];
+  if (isPlate(b)) return [[P(1), 0, P(1), P(15), platePressed(b) ? P(0.5) : P(1), P(15)]];
   if (isRedstoneTorch(b)) {
     const a = attachOf(b);
     if (a === 0) return [[P(7), 0, P(7), P(9), P(10), P(9)]];
@@ -4689,6 +4729,7 @@ function flowLevel(b: number): number {
 const BLOCK_FLAGS = new Uint8Array(MAX_BLOCK_ID); // bit 1 = solid, bit 2 = opaque
 /** Newer blocks: 'cube' = solid and opaque, 'see' = solid but not a full cube, 'pass' = you walk through it. */
 function newBlockKind(b: number): 'cube' | 'see' | 'pass' | null {
+  if (b >= BLOCK_PLATE_WOOD && b <= BLOCK_PLATE_HEAVY + 1) return 'pass'; // you walk over a pressure plate
   if (b === BLOCK_BARRIER) return 'see'; // solid, but not a cube you can see
   if (isLadder(b)) return 'pass'; // you walk into a ladder (and climb it)
   if (b >= BLOCK_SNOW_LAYER && b <= LAST_BUILTIN_BLOCK) return b === BLOCK_SNOW_LAYER ? 'pass' : isTarget(b) ? 'cube' : isSnowyLeaves(b) || b === BLOCK_DIRT_PATH ? 'see' : 'cube'; // (a dirt path is a bit lower than a block: solid, but its neighbours still draw their faces)
@@ -5154,6 +5195,9 @@ DYE_COLORS.forEach((d, i) => { if (i !== BED_RED) ITEM_INFO[ITEM_BED_DYED_FIRST 
   hide(BLOCK_LEVER, 10, 'Lever', '#7a7a7a');
   hide(BLOCK_BUTTON, 10, 'Stone Button', '#8a8a8a');
   hide(BLOCK_PRESSURE_PLATE, 2, 'Stone Pressure Plate', '#8a8a8a');
+  hide(BLOCK_PLATE_WOOD, 2, 'Wooden Pressure Plate', '#a67c52');
+  hide(BLOCK_PLATE_LIGHT, 2, 'Light Weighted Pressure Plate', '#e0a820');
+  hide(BLOCK_PLATE_HEAVY, 2, 'Heavy Weighted Pressure Plate', '#b4b4b4');
   hide(BLOCK_REDSTONE_TORCH, 10, 'Redstone Torch', '#d42020');
   hide(BLOCK_REPEATER, 32, 'Redstone Repeater', '#9a9a9a');
   hide(BLOCK_REDSTONE_LAMP, 2, 'Redstone Lamp', '#6a4a2a');
@@ -5201,6 +5245,9 @@ Object.assign(ITEM_INFO, {
   [BLOCK_LEVER]: { name: 'Lever', color: '#7a7a7a', lore: ['Right-click to switch redstone power on or off.'] },
   [BLOCK_BUTTON]: { name: 'Stone Button', color: '#8a8a8a', lore: ['Gives power for one second.'] },
   [BLOCK_PRESSURE_PLATE]: { name: 'Stone Pressure Plate', color: '#8a8a8a', lore: ['Gives power while a player or mob stands on it.'] },
+  [BLOCK_PLATE_WOOD]: { name: 'Wooden Pressure Plate', color: '#a67c52', lore: ['Gives power while anything stands on it,', 'even a dropped item.'] },
+  [BLOCK_PLATE_LIGHT]: { name: 'Light Weighted Pressure Plate', color: '#e0a820', lore: ['Gives power while a player, a mob or an item is on it.'] },
+  [BLOCK_PLATE_HEAVY]: { name: 'Heavy Weighted Pressure Plate', color: '#b4b4b4', lore: ['Only a player standing on it gives power.', 'Mobs and dropped items do nothing.'] },
   [ITEM_REDSTONE_TORCH]: { name: 'Redstone Torch', color: '#d42020', lore: ['Always on, unless the block it stands on is powered.'] },
   [BLOCK_REPEATER]: { name: 'Redstone Repeater', color: '#9a9a9a', lore: ['Boosts a signal back to full power, one way only.', 'Right-click to change the delay.'] },
   [BLOCK_REDSTONE_LAMP]: { name: 'Redstone Lamp', color: '#6a4a2a', lore: ['Lights up when powered.'] },
@@ -5280,6 +5327,9 @@ ITEM_INFO[BLOCK_ITEM_FRAME].hidden = false;
 ITEM_INFO[BLOCK_LEVER].hidden = false;
 ITEM_INFO[BLOCK_BUTTON].hidden = false;
 ITEM_INFO[BLOCK_PRESSURE_PLATE].hidden = false;
+ITEM_INFO[BLOCK_PLATE_WOOD].hidden = false;
+ITEM_INFO[BLOCK_PLATE_LIGHT].hidden = false;
+ITEM_INFO[BLOCK_PLATE_HEAVY].hidden = false;
 ITEM_INFO[BLOCK_REPEATER].hidden = false;
 ITEM_INFO[BLOCK_REDSTONE_LAMP].hidden = false;
 for (const id of [BLOCK_COMPARATOR, BLOCK_COMMAND, BLOCK_COMMAND + 6, BLOCK_COMMAND + 12, BLOCK_REDSTONE_BLOCK, BLOCK_PISTON, BLOCK_STICKY_PISTON]) ITEM_INFO[id].hidden = false;
@@ -5841,6 +5891,9 @@ for (const b of [BLOCK_COAL_ORE, BLOCK_DIAMOND_ORE, BLOCK_EMERALD_ORE, BLOCK_QUA
     { id: 'lever', name: 'Lever', pattern: [S, ST], width: 1, height: 2, output: { id: BLOCK_LEVER, count: 1 }, needsTable: false },
     sl('stone_button', 'Stone Button', [ST], BLOCK_BUTTON),
     { id: 'pressure_plate', name: 'Stone Pressure Plate', pattern: [ST, ST], width: 2, height: 1, output: { id: BLOCK_PRESSURE_PLATE, count: 1 }, needsTable: false },
+    { id: 'plate_wood', name: 'Wooden Pressure Plate', pattern: [PL, PL], width: 2, height: 1, output: { id: BLOCK_PLATE_WOOD, count: 1 }, needsTable: false },
+    { id: 'plate_light', name: 'Light Weighted Pressure Plate', pattern: [ITEM_GOLD_INGOT, ITEM_GOLD_INGOT], width: 2, height: 1, output: { id: BLOCK_PLATE_LIGHT, count: 1 }, needsTable: false },
+    { id: 'plate_heavy', name: 'Heavy Weighted Pressure Plate', pattern: [I, I], width: 2, height: 1, output: { id: BLOCK_PLATE_HEAVY, count: 1 }, needsTable: false },
     { id: 'repeater', name: 'Redstone Repeater', pattern: [ITEM_REDSTONE_TORCH, R, ITEM_REDSTONE_TORCH, ST, ST, ST], width: 3, height: 2, output: { id: BLOCK_REPEATER, count: 1 }, needsTable: true },
     { id: 'comparator', name: 'Redstone Comparator', pattern: [null, ITEM_REDSTONE_TORCH, null, ITEM_REDSTONE_TORCH, ITEM_QUARTZ, ITEM_REDSTONE_TORCH, ST, ST, ST], width: 3, height: 3, output: { id: BLOCK_COMPARATOR, count: 1 }, needsTable: true },
     { id: 'redstone_block', name: 'Block of Redstone', pattern: [R, R, R, R, R, R, R, R, R], width: 3, height: 3, output: { id: BLOCK_REDSTONE_BLOCK, count: 1 }, needsTable: true },
@@ -6452,6 +6505,7 @@ function woodBlockMat(block: number, f: number): number {
   return NF(isDoorBottom(o) ? `door${w}Lo` : `door${w}Hi`);
 }
 function matIndexFor(block: number, f: number): number {
+  if (block >= BLOCK_PLATE_WOOD && block <= BLOCK_PLATE_HEAVY + 1) return matIndexFor(plateLooksLike(block), f);
   if (block >= WOOD_BLOCKS_FIRST && block < WOOD_BLOCKS_END) return woodBlockMat(block, f);
   if (isTrapdoorLow(block)) return 85;
   if (isHeadDiag(block)) return NF(`head${headKind(block)}${f === 2 ? 'top' : f === [5, 0, 4, 1][headFacing(block)] ? 'face' : 'side'}`);
@@ -9356,7 +9410,7 @@ export function createVoxelGame(
   /** Does the shader pipeline (the one Max uses) run? Max always; other levels when a shader effect is switched on. */
   function wantPost(): boolean {
     if (video.fastRender || postFailed) return false;
-    if (graphicsQuality === 'max') return true;
+    if (graphicsQuality === 'max' || graphicsQuality === 'epic') return true; // Epic now gets the shader chain too (a little lighter than Max)
     const sp = S();
     return !!sp && (sp.bloom > 0 || sp.godRays !== 'off' || sp.globalIllumination !== 'off' || sp.eyeAdaptation > 0 || sp.volumetricFog || sp.motionBlur || !!sp.pack?.grade || !!sp.pack?.glsl);
   }
@@ -10219,6 +10273,8 @@ export function createVoxelGame(
   let ownSkin = 'classic';
   /** Sideways momentum you keep on ice (blocks per second). On normal ground it fades away at once. */
   const slideVel = new THREE.Vector3();
+  /** Walking momentum (blocks per second), like Minecraft: you speed up and slow down over about a tenth of a second on the ground, and keep your speed in the air. */
+  const hVel = new THREE.Vector3();
   // ---- Breath: 15 seconds under water, then drowning (2 damage a second) ----
   const AIR_MAX = 15;
   let air = AIR_MAX;
@@ -10506,7 +10562,7 @@ export function createVoxelGame(
     if (isWire(block)) return ITEM_REDSTONE;
     if (isLever(block)) return BLOCK_LEVER;
     if (isButton(block)) return BLOCK_BUTTON;
-    if (isPlate(block)) return BLOCK_PRESSURE_PLATE;
+    if (isPlate(block)) return plateBase(block);
     if (isTarget(block)) return BLOCK_TARGET;
     if (isArrowTrap(block)) return BLOCK_ARROW_TRAP;
     if (isRedstoneTorch(block)) return ITEM_REDSTONE_TORCH;
@@ -15445,8 +15501,11 @@ export function createVoxelGame(
       const c = w.getChunk(cx, cz);
       if (mg && w === world) { const k = `${x},${y},${z}`; if (b === BLOCK_AIR || isEgg(b)) mg.placed.delete(k); else mg.placed.add(k); } // someone else's blocks can be broken too
       if (c && c.generated) {
+        const was = w.getWorldBlock(x, y, z);
         w.setWorldBlock(x, y, z, b);
         if (w === world) { world.scheduleAround(x, y, z); markDirty(x, z, dirty); }
+        // Someone else flipped a trapdoor above your waiting pearl (a stasis chamber): it lets your pearl go and pulls you to it
+        if (w === world && !dead && isTrapdoor(was) && isTrapdoor(b) && was !== b) pullPearlAtTrapdoor(x, y, z);
       } else {
         const k = `${dimKey}|${w.key(cx, cz)}`;
         let arr = pendingEdits.get(k);
@@ -15661,7 +15720,7 @@ export function createVoxelGame(
   function placeSpecial(hit: { x: number; y: number; z: number; placeX: number; placeY: number; placeZ: number }, target: number): boolean {
     const id = heldItem!;
     const attachable = id === BLOCK_ITEM_FRAME || id === BLOCK_LEVER || id === BLOCK_BUTTON || id === ITEM_REDSTONE_TORCH;
-    const floorOnly = id === ITEM_REDSTONE || id === BLOCK_PRESSURE_PLATE || id === BLOCK_REPEATER || id === BLOCK_COMPARATOR || isFlower(id) || id === BLOCK_SUGAR_CANE || id === BLOCK_ANVIL;
+    const floorOnly = id === ITEM_REDSTONE || isPlate(id) || id === BLOCK_REPEATER || id === BLOCK_COMPARATOR || isFlower(id) || id === BLOCK_SUGAR_CANE || id === BLOCK_ANVIL;
     if (isCommandBlock(id)) return placeCommandBlock(hit, target, id);
     if (id === BLOCK_PISTON || id === BLOCK_STICKY_PISTON) return placePiston(hit, target, id);
     if (!attachable && !floorOnly) return false;
@@ -15677,7 +15736,7 @@ export function createVoxelGame(
     const side = SIDES.findIndex(([a, b]) => a === fdx && b === fdz);
     const wallOk = fdy === 0 && side >= 0 && isOpaque(world.getWorldBlock(hit.x, hit.y, hit.z));
     let place = -1;
-    if (id === ITEM_REDSTONE || id === BLOCK_PRESSURE_PLATE || id === BLOCK_REPEATER || id === BLOCK_COMPARATOR || id === BLOCK_ANVIL) {
+    if (id === ITEM_REDSTONE || isPlate(id) || id === BLOCK_REPEATER || id === BLOCK_COMPARATOR || id === BLOCK_ANVIL) {
       if (!solidBelow) { minorHint(`${ITEM_INFO[id].name} needs a solid block under it`); return true; }
       place = id === ITEM_REDSTONE ? BLOCK_REDSTONE_WIRE : id === BLOCK_REPEATER ? makeRepeater(looking, 1, false) : id === BLOCK_COMPARATOR ? makeComparator(looking, false, false) : id === BLOCK_ANVIL ? BLOCK_ANVIL + (alongZ ? 0 : 1) : id;
     } else if (isFlower(id)) {
@@ -16243,11 +16302,14 @@ export function createVoxelGame(
   }
 
   /** Is something standing on this pressure plate (you, a mob, or another player)? */
-  function plateOccupied(x: number, y: number, z: number): boolean {
+  /** Is something standing on this plate? Players always count; mobs count for every plate but the heavy one; dropped items only for the wooden and light weighted plates. */
+  function plateOccupied(x: number, y: number, z: number, base: number = BLOCK_PRESSURE_PLATE): boolean {
     const inCell = (px: number, py: number, pz: number, r: number) => px + r > x && px - r < x + 1 && pz + r > z && pz - r < z + 1 && py >= y - 0.1 && py < y + 0.6;
     if (mode !== 'spectator' && !dead && inCell(camera.position.x, camera.position.y - PLAYER_EYE, camera.position.z, 0.3)) return true;
-    for (const m of mobs) if (m.deathTime < 0 && inCell(m.pos.x, m.pos.y, m.pos.z, infoOf(m).width / 2)) return true;
     for (const rp of remotePlayers.values()) if (rp.mode !== 'spectator' && inCell(rp.pos.x, rp.pos.y, rp.pos.z, 0.3)) return true;
+    if (base === BLOCK_PLATE_HEAVY) return false; // players only
+    for (const m of mobs) if (m.deathTime < 0 && inCell(m.pos.x, m.pos.y, m.pos.z, infoOf(m).width / 2)) return true;
+    if (base === BLOCK_PLATE_WOOD || base === BLOCK_PLATE_LIGHT) for (const it of droppedItems) if (inCell(it.pos.x, it.pos.y, it.pos.z, 0.15)) return true;
     return false;
   }
 
@@ -16350,11 +16412,11 @@ export function createVoxelGame(
         const t = (rsTargetTimers.get(k) ?? 1) - 1; // a hit target stays powered for a moment, then goes quiet
         if (t <= 0) { rsTargetTimers.delete(k); changes.set(k, BLOCK_TARGET); } else rsTargetTimers.set(k, t);
       } else if (isPlate(b)) {
-        const occ = plateOccupied(x, y, z);
-        if (occ) { rsPlateTimers.set(k, 5); if (!switchOn(b)) changes.set(k, BLOCK_PRESSURE_PLATE + 1); }
+        const base = plateBase(b), occ = plateOccupied(x, y, z, base);
+        if (occ) { rsPlateTimers.set(k, 5); if (!switchOn(b)) changes.set(k, base + 1); }
         else if (switchOn(b)) {
           const t = (rsPlateTimers.get(k) ?? 1) - 1;
-          if (t <= 0) { rsPlateTimers.delete(k); changes.set(k, BLOCK_PRESSURE_PLATE); } else rsPlateTimers.set(k, t);
+          if (t <= 0) { rsPlateTimers.delete(k); changes.set(k, base); } else rsPlateTimers.set(k, t);
         }
       }
     }
@@ -19307,7 +19369,7 @@ export function createVoxelGame(
 
     // 4. sun rays through gaps in trees, clouds and hills
     const sp = S();
-    const rayK = sp ? ({ off: 0, low: 0.45, high: 1 } as const)[sp.godRays] : 1;
+    const rayK = sp ? ({ off: 0, low: 0.45, high: 1 } as const)[sp.godRays] : graphicsQuality === 'epic' ? 0.75 : 1.15;
     M.rays.uniforms.uSun.value.set(sx, sy); M.rays.uniforms.uStrength.value = sunOn * 0.9 * rayK; M.rays.uniforms.uAspect.value = cam.aspect;
     postPass(M.rays, p.rays);
 
@@ -19316,15 +19378,18 @@ export function createVoxelGame(
     F.uSun.value.set(sx, sy); F.uSunGlow.value = sunOn; F.uAspect.value = cam.aspect; F.uTime.value = time % 10;
     F.uSunColor.value.set(1.0, 0.62 + 0.32 * warm, 0.35 + 0.45 * warm);
     F.uUnder.value = under;
-    const bloomK = sp ? sp.bloom / 100 : 0.55;
+    const epic = graphicsQuality === 'epic';
+    const bloomK = sp ? sp.bloom / 100 : epic ? 0.62 : 0.9; // stronger glow on Max and Epic, so the difference from High is easy to see
     F.uBloom.value = under ? bloomK * 0.55 : bloomK;
-    F.uAO.value = sp ? ({ off: 0, low: 0.9, high: 1.25 } as const)[sp.globalIllumination] : 0.9;
+    F.uAO.value = sp ? ({ off: 0, low: 0.9, high: 1.25 } as const)[sp.globalIllumination] : epic ? 1.1 : 1.35; // deeper corner shading
     F.uExposure.value = 1.12 * exposureNow;
     F.uNear.value = cam.near; F.uFar.value = cam.far;
     F.uFog.value = sp?.volumetricFog && dimension === 'overworld' ? 0.55 + 0.35 * weatherAmt : 0;
     F.uFogColor.value.set(skyHorizon.r, skyHorizon.g, skyHorizon.b);
     F.uBlurDir.value.set(blurDir.x, blurDir.y);
-    const g = sp?.pack?.grade ? { ...NEUTRAL_GRADE, ...sp.pack.grade } : NEUTRAL_GRADE;
+    // a colour grade of its own on Epic and Max (richer colours, a little more contrast, a warm tint and a soft vignette), unless a shader pack brings its own
+    const tierGrade: Grade = epic ? { saturation: 1.08, contrast: 1.05, brightness: 1, warmth: 0.025, vignette: 0.06 } : { saturation: 1.16, contrast: 1.1, brightness: 1, warmth: 0.05, vignette: 0.14 };
+    const g = sp?.pack?.grade ? { ...NEUTRAL_GRADE, ...sp.pack.grade } : sp ? NEUTRAL_GRADE : tierGrade;
     F.uSat.value = g.saturation; F.uCon.value = g.contrast; F.uBri.value = g.brightness; F.uWarm.value = g.warmth;
     F.uVignette.value = 0.55 + g.vignette;
     postPass(M.final, null);
@@ -19348,8 +19413,8 @@ export function createVoxelGame(
       low: 1,
       medium: Math.min(1.5, dpr),
       high: Math.min(2, dpr),
-      epic: dpr,
-      max: Math.min(2, dpr), // Max draws the world into its own (bigger) buffers and then onto the screen
+      epic: Math.min(2, dpr), // Epic and Max draw the world into their own (bigger) buffers and then onto the screen
+      max: Math.min(2, dpr),
     };
     renderer.setPixelRatio(fast ? 1 : pixelRatioByTier[q]);
 
@@ -20403,10 +20468,30 @@ export function createVoxelGame(
     }
     if (gliding) { moveVec.set(0, 0, 0); slideVel.set(0, 0, 0); playerKnock.set(0, 0, 0); }
     let walkBlocked = false; // pushing against a wall: on a ladder that climbs
-    if (moveVec.lengthSq() > 0 && !riding) {
-      moveVec.normalize().multiplyScalar(speed * delta);
-      const wr = moveHoriz(moveVec.x, moveVec.z, true, stuckInside);
-      walkBlocked = wr.bx || wr.bz;
+    // Minecraft-style movement. On the ground you reach your walking speed in about a tenth of a second (and stop just as quickly);
+    // in the air you keep the speed you had when you left the ground and can only steer a little, which is what makes sprint-jumps,
+    // gaps and parkour feel right. In water, on ladders, in webs, on ice, when flying or riding it stays the old direct movement.
+    const momentum = !isFlying && !noclip && !inFluidNow && !riding && !onLadder && !inWeb && !gliding && slip <= 0.7;
+    if (momentum) {
+      const wantMove = moveVec.lengthSq() > 0;
+      const wx = wantMove ? moveVec.x / Math.sqrt(moveVec.lengthSq()) * speed : 0, wz = wantMove ? moveVec.z / Math.sqrt(moveVec.lengthSq()) * speed : 0;
+      const rate = wasGrounded ? 15 : wantMove ? 2.6 : 1.7; // per second: how fast your speed follows what you ask for
+      const k = 1 - Math.exp(-rate * delta);
+      hVel.x += (wx - hVel.x) * k; hVel.z += (wz - hVel.z) * k;
+      if (!wantMove && hVel.lengthSq() < 0.01) hVel.set(0, 0, 0);
+      if (hVel.lengthSq() > 0) {
+        const wr = moveHoriz(hVel.x * delta, hVel.z * delta, true, stuckInside);
+        if (wr.bx) hVel.x = 0;
+        if (wr.bz) hVel.z = 0;
+        walkBlocked = wantMove && (wr.bx || wr.bz);
+      }
+    } else {
+      hVel.set(0, 0, 0);
+      if (moveVec.lengthSq() > 0 && !riding) {
+        moveVec.normalize().multiplyScalar(speed * delta);
+        const wr = moveHoriz(moveVec.x, moveVec.z, true, stuckInside);
+        walkBlocked = wr.bx || wr.bz;
+      }
     }
     // Knockback from mobs and explosions
     if (playerKnock.lengthSq() > 0.01) {

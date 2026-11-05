@@ -2,11 +2,23 @@
 // a small update to the current one is a point release (Indev 26.1, 26.2...), a big one is the next number.
 //
 // The News page in the sidebar shows this list, and a dot appears on it until the newest one has been read.
-export const GAME_VERSION = 39;
+export const GAME_VERSION = 40;
 
 export type NewsEntry = { version: number; date: string; title: string; changes: string[] };
 
 export const NEWS: NewsEntry[] = [
+  {
+    version: 40,
+    date: 'November 2, 2026',
+    title: 'Pressure plates, Minecraft movement and better looking tools',
+    changes: [
+      'New pressure plates: Wooden (2 planks, anything on it, even dropped items), Light Weighted (2 gold ingots: players, mobs and items) and Heavy Weighted (2 iron ingots: only a player standing on it, never mobs or items).',
+      'Movement feels more like Minecraft: you speed up and stop over a tenth of a second on the ground, and you keep your speed in the air, so sprint-jumps, gaps and bridging have real momentum.',
+      'Redrawn pickaxe, axe, shovel, hoe, spear and mace textures with shading and a bright edge.',
+      'Epic and Max graphics look richer: stronger glow, deeper corner shading, richer colours and a soft vignette, and Epic now uses the shader effects too.',
+      'Other players can now pull your ender pearl: when someone flips the trapdoor above your pearl in a stasis chamber, you get pulled to it.',
+    ],
+  },
   {
     version: 39,
     date: 'November 1, 2026',
