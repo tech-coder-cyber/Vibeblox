@@ -15,7 +15,7 @@ export default function LearnView({ prefs, onBack }: { prefs: Prefs; onBack: () 
   const [opening, setOpening] = useState<Opening | null>(null);
   const [done, setDone] = useState(() => loadProgress());
   const refresh = () => setDone(loadProgress());
-  if (lesson) return <LessonView lesson={lesson} prefs={prefs} onClose={() => { setLesson(null); refresh(); }} onNext={(l) => setLesson(l)} />;
+  if (lesson) return <LessonView key={lesson.id} lesson={lesson} prefs={prefs} onClose={() => { setLesson(null); refresh(); }} onNext={(l) => setLesson(l)} />;
   if (opening) return <OpeningView opening={opening} prefs={prefs} onClose={() => { setOpening(null); refresh(); }} />;
   return (
     <div data-testid="learn">

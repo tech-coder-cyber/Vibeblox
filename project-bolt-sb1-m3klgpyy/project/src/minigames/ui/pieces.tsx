@@ -1,8 +1,9 @@
-// Piece drawings. Chess pieces come in several looks (Classic, Neo, 3D Cartoon, Flat, Outline, Glass, Pixel, Letters, VibeBlox),
+// Piece drawings. Chess pieces come in several looks (Classic, Neo, 3D Cartoon, Flat, Outline, Glass, Pixel, Letters),
 // all drawn from one set of shapes we made ourselves, so nothing here is copied from another chess site.
 // Pieces are 1 pawn ... 6 king (negative = black). Checkers has matching discs.
 import type { CSSProperties, ReactElement } from 'react';
 import type { PieceSet } from '../store';
+import { classicPiece } from './classicPieces';
 
 // ---------- shapes (100 x 100 box, the foot of every piece sits at the bottom) ----------
 const FOOT = ['M19 92 Q19 85 27 85 H73 Q81 85 81 92 Z', 'M26 85 Q26 79 32 79 H68 Q74 79 74 85 Z'];
@@ -66,8 +67,8 @@ export function PieceSvg({ set, type, white, id }: { set: PieceSet; type: number
   const common = { viewBox: '2 3 96 96', width: '100%', height: '100%', 'aria-hidden': true as const, style: HIDE };
   const uid = `p${set}${type}${white ? 'w' : 'b'}${id}`;
 
-  if (set === 'blocks' || set === 'vibeblox') {
-    const rows = PIXELS[type], voxel = set === 'vibeblox', G = rows.length;
+  if (set === 'blocks') {
+    const rows = PIXELS[type], voxel = false, G = rows.length;
     const pal = voxel ? (white ? VOXEL.white : VOXEL.black) : white ? { base: '#f3eee0', light: '#f3eee0', dark: '#8d8572', eye: '#14131a', edge: '#4a4538' } : { base: '#3d3b4a', light: '#3d3b4a', dark: '#14131a', eye: '#f3eee0', edge: '#0b0a10' };
     const edge = voxel ? (white ? '#4a3f2c' : '#120c24') : (pal as { edge: string }).edge;
     const on = (x: number, y: number) => x >= 0 && y >= 0 && x < G && y < G && rows[y][x] !== '.';
@@ -86,6 +87,9 @@ export function PieceSvg({ set, type, white, id }: { set: PieceSet; type: number
       } else if (!voxel) cells.push(<rect key={`g${x}-${y}`} x={x} y={y} width="1.02" height="1.02" fill="none" stroke={pal.dark} strokeWidth="0.08" />);
     }
     return <svg {...common} viewBox="-0.4 -0.4 20.8 20.8" shapeRendering="crispEdges">{voxel && <rect x="2" y="19" width="16" height="0.8" fill="#000" opacity="0.22" />}{cells}</svg>;
+  }
+  if (set === 'classic') {
+    return <span aria-hidden style={{ ...HIDE, width: '100%', height: '100%' }} dangerouslySetInnerHTML={{ __html: classicPiece(type, white) }} />;
   }
   if (set === 'letters') {
     return (
@@ -147,8 +151,8 @@ export function Disc({ set, red, king, id }: { set: PieceSet; red: boolean; king
   const base = red ? { a: '#e9604f', b: '#a52a22', ring: '#7d1b16' } : { a: '#fbf6e9', b: '#d6ccb0', ring: '#9d9275' };
   const dark = set === 'flat' || set === 'letters' || set === 'neo';
   const g = `d${id}`;
-  if (set === 'vibeblox' || set === 'blocks') {
-    const vox = set === 'vibeblox';
+  if (set === 'blocks') {
+    const vox = false;
     const c = red ? { base: '#d4503f', light: '#f0806e', dark: '#8f2a20' } : { base: '#efe7d2', light: '#fffdf2', dark: '#b9ad8c' };
     return (
       <svg viewBox="0 0 100 100" width="100%" height="100%" aria-hidden style={HIDE} shapeRendering="crispEdges">

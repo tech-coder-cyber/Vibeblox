@@ -173,7 +173,7 @@ function BotGrid({ bots, open, crowns, pickedId, onPick }: { bots: ChessBot[]; o
                     className="rounded-lg p-1 flex flex-col items-center disabled:opacity-50" style={{ background: pickedId === b.id ? '#4b4a47' : 'transparent', outline: pickedId === b.id ? '2px solid #81b64c' : 'none' }}>
                     <span className="w-12 h-12 rounded-lg flex items-center justify-center text-2xl relative" style={{ background: b.color + '55' }}>{b.emoji}{!unlocked && <span className="absolute inset-0 rounded-lg flex items-center justify-center text-base" style={{ background: 'rgba(20,20,20,.55)' }}>🔒</span>}</span>
                     <span className="text-[11px] mt-0.5 truncate max-w-full">{b.name}</span>
-                    <span className="text-[10px]" style={{ color: unlocked ? '#f2b84b' : '#77756f' }}>{unlocked ? crownText(crowns[b.id] ?? 0) : b.rating}</span>
+                    <span className="text-[10px]" style={{ color: unlocked && crowns[b.id] ? '#f2b84b' : '#77756f' }}>{unlocked && crowns[b.id] ? crownText(crowns[b.id]) : b.rating}</span>
                   </button>
                 );
               })}
@@ -492,10 +492,6 @@ function Playing({ bot, colorChoice, tc, resume, prefs, onPrefs, onReview, onNew
           <button className="mg-btn mg-btn-danger" disabled={!!done} onClick={() => setConfirm('resign')} data-testid="resign-btn">Resign</button>
           <button className="mg-btn" onClick={() => setFlip((f) => !f)} data-testid="flip-btn" style={{ gridColumn: 'span 2' }}>Flip board</button>
           {note && <div className="text-xs mg-mute col-span-2 text-center" data-testid="bot-note">{note}</div>}
-        </div>
-        <div className="mg-card p-3">
-          <Toggle on={evalOn} onChange={toggleEval} label="Evaluation bar (counts as a hint)" testid="opt-eval" />
-          {!isEngine && <Toggle on={prefs.botChat} onChange={(v) => onPrefs({ ...prefs, botChat: v })} label="Bot chat" testid="opt-botchat-live" />}
         </div>
         <div className="flex gap-2"><button className="mg-btn mg-btn-ghost" onClick={() => setConfirm('new')}>Choose another bot</button><button className="mg-btn mg-btn-ghost" onClick={onBack}>Back to games</button></div>
       </div>

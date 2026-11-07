@@ -2,11 +2,25 @@
 // a small update to the current one is a point release (Indev 26.1, 26.2...), a big one is the next number.
 //
 // The News page in the sidebar shows this list, and a dot appears on it until the newest one has been read.
-export const GAME_VERSION = 40;
+export const GAME_VERSION = 41;
 
 export type NewsEntry = { version: number; date: string; title: string; changes: string[] };
 
 export const NEWS: NewsEntry[] = [
+  {
+    version: 41,
+    date: 'November 6, 2026',
+    title: 'Closer to Minecraft movement, a real VibeBlox cape and chess fixes',
+    changes: [
+      'Movement is closer to Minecraft: the jump is the same height and length, sprinting is 5.6 blocks per second, and a sprint-jump now gives you a boost, so jumping is the fast way to cross gaps.',
+      'Bots in EggWars and Bridge Duels now come down to you when you go below them: they build steps down instead of bridging at their own height forever.',
+      'The VibeBlox cape now has the real VibeBlox logo on dark cloth with a gold frame.',
+      'Chess: the Classic pieces are now traditional pieces drawn from scratch (no licence to worry about). The VibeBlox piece set, the Lichess piece set and the VibeBlox board are gone.',
+      'Chess: you now choose what a pawn becomes when it promotes (queen, rook, bishop or knight). You can switch auto-queen back on in settings.',
+      'Chess: bots only show crowns once you have beaten them. The evaluation bar and bot chat can no longer be switched on in the middle of a bot game.',
+      'Chess lessons: "Next" now opens the next lesson properly instead of showing the old board and saying you finished.',
+    ],
+  },
   {
     version: 40,
     date: 'November 2, 2026',

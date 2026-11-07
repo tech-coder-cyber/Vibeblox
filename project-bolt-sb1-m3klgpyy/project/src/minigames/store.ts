@@ -1,8 +1,8 @@
 // What the minigames remember on this device: settings, your rating while signed out, puzzle progress, crowns, history, bests.
 import { newRating, newPuzzleRating, type RatingState, type PuzzleRating } from './ratings';
 
-export type BoardTheme = 'green' | 'brown' | 'blue' | 'slate' | 'rose' | 'night' | 'grass' | 'candy' | 'sand' | 'ice' | 'vibeblox';
-export type PieceSet = 'classic' | 'neo' | 'cartoon' | 'flat' | 'outline' | 'glass' | 'blocks' | 'letters' | 'vibeblox' | 'lichess';
+export type BoardTheme = 'green' | 'brown' | 'blue' | 'slate' | 'rose' | 'night' | 'grass' | 'candy' | 'sand' | 'ice';
+export type PieceSet = 'classic' | 'neo' | 'cartoon' | 'flat' | 'outline' | 'glass' | 'blocks' | 'letters';
 export const BOARD_THEMES: Record<BoardTheme, { name: string; light: string; dark: string; accent: string; texture?: 'vibeblox' }> = {
   green: { name: 'Green', light: '#eeeed2', dark: '#769656', accent: '#f6f669' },
   brown: { name: 'Walnut', light: '#f0d9b5', dark: '#b58863', accent: '#f7ec59' },
@@ -14,9 +14,8 @@ export const BOARD_THEMES: Record<BoardTheme, { name: string; light: string; dar
   candy: { name: 'Candy', light: '#fff1f7', dark: '#b794f4', accent: '#fbd38d' },
   sand: { name: 'Sand', light: '#efe3c6', dark: '#c4a574', accent: '#f4e27a' },
   ice: { name: 'Ice', light: '#e8f1f8', dark: '#7da3c6', accent: '#8fe3ff' },
-  vibeblox: { name: 'VibeBlox', light: '#d9b87c', dark: '#5fa34a', accent: '#ffe066', texture: 'vibeblox' },
 };
-export const PIECE_SETS: Record<PieceSet, string> = { classic: 'Classic', neo: 'Neo', cartoon: '3D Cartoon', flat: 'Flat', outline: 'Outline', glass: 'Glass', blocks: 'Pixel', letters: 'Letters', vibeblox: 'VibeBlox', lichess: 'Lichess' };
+export const PIECE_SETS: Record<PieceSet, string> = { classic: 'Classic', neo: 'Neo', cartoon: '3D Cartoon', flat: 'Flat', outline: 'Outline', glass: 'Glass', blocks: 'Pixel', letters: 'Letters' };
 
 export type AnimSpeed = 'slow' | 'medium' | 'fast' | 'natural' | 'arcade' | 'dynamic';
 export const ANIM_SPEEDS: Record<AnimSpeed, { name: string; ms: number; ease: string; trail?: boolean }> = {
@@ -41,7 +40,7 @@ export type Prefs = {
   celebration: Celebration;
 };
 export const DEFAULT_PREFS: Prefs = {
-  boardTheme: 'green', pieceSet: 'neo', coords: true, sound: true, botChat: true, legalDots: true, autoQueen: true, highlightLast: true, engine: 'stockfish', animate: true, showEval: false,
+  boardTheme: 'green', pieceSet: 'neo', coords: true, sound: true, botChat: true, legalDots: true, autoQueen: false, highlightLast: true, engine: 'stockfish', animate: true, showEval: false,
   premoves: true, moveInput: 'both', animSpeed: 'medium', soundTheme: 'default', showcaseTheme: true, specialThemes: true, resultAnims: true, celebration: 'confetti',
 };
 
@@ -87,11 +86,13 @@ export function loadPrefs(): Prefs {
   if (p.animSpeed && p.animSpeed in ANIM_SPEEDS) out.animSpeed = p.animSpeed;
   if (p.soundTheme && p.soundTheme in SOUND_THEMES) out.soundTheme = p.soundTheme;
   if (p.celebration && p.celebration in CELEBRATIONS) out.celebration = p.celebration;
+  // Indev 41: you now choose the piece when a pawn promotes (the old "always queen" default is switched off once; you can turn it back on in settings)
+  if (((p as { v?: number }).v ?? 0) < 4) out.autoQueen = false;
   // before Indev 37.1 the default engine was the built-in one: move people over to Stockfish unless they picked it themselves
   if (!(p as { v?: number }).v && p.engine === 'builtin') out.engine = 'stockfish';
   return out;
 }
-export function savePrefs(p: Prefs) { write(PREF_KEY, { ...p, v: 3 }); }
+export function savePrefs(p: Prefs) { write(PREF_KEY, { ...p, v: 4 }); }
 
 export function loadProgress(): Progress {
   const p = read<Partial<Progress>>(PROG_KEY) ?? {};

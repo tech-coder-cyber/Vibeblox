@@ -314,8 +314,56 @@ function playerSkinCanvases(skinId: string) {
   return { face, side, top, body, arms, legs };
 }
 
+// ---- The VibeBlox cape: the real VibeBlox logo on dark cloth, framed in gold (40 x 64 pixels, drawn on the back of a 10x16 strip) ----
+let vibeCapePlain: HTMLCanvasElement | null = null;
+let vibeCapeFinal: HTMLCanvasElement | null = null;
+let vibeCapeLoading: Promise<HTMLCanvasElement | null> | null = null;
+function paintVibeCape(logo: CanvasImageSource | null): HTMLCanvasElement {
+  const W = 40, H = 64, c = makeCanvas(W, H), ctx = c.getContext('2d')!;
+  ctx.imageSmoothingEnabled = true;
+  const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#121b2a'); g.addColorStop(1, '#070b12');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // the gold frame: a dark outer line, a bright gold band, a pale inner line, and gold studs in the corners
+  ctx.fillStyle = '#7a5a0e'; ctx.fillRect(0, 0, W, 1); ctx.fillRect(0, H - 1, W, 1); ctx.fillRect(0, 0, 1, H); ctx.fillRect(W - 1, 0, 1, H);
+  ctx.fillStyle = '#e8b923'; ctx.fillRect(1, 1, W - 2, 2); ctx.fillRect(1, H - 3, W - 2, 2); ctx.fillRect(1, 1, 2, H - 2); ctx.fillRect(W - 3, 1, 2, H - 2);
+  ctx.fillStyle = '#ffe58a'; ctx.fillRect(3, 3, W - 6, 1); ctx.fillRect(3, H - 4, W - 6, 1); ctx.fillRect(3, 3, 1, H - 6); ctx.fillRect(W - 4, 3, 1, H - 6);
+  ctx.fillStyle = '#fff3b8'; for (const [x, y] of [[5, 5], [W - 7, 5], [5, H - 7], [W - 7, H - 7]]) ctx.fillRect(x, y, 2, 2);
+  // the logo in the middle, a little glow behind it
+  const rg = ctx.createRadialGradient(W / 2, 27, 2, W / 2, 27, 20); rg.addColorStop(0, 'rgba(0,230,150,.30)'); rg.addColorStop(1, 'rgba(0,230,150,0)');
+  ctx.fillStyle = rg; ctx.fillRect(4, 8, W - 8, 40);
+  if (logo) ctx.drawImage(logo, 2, 8, 36, 36); // the picture has empty margins, so it is drawn a little bigger than the space it fills
+  else { // until the picture has loaded: a simple neon cube
+    ctx.strokeStyle = '#00e676'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(20, 13); ctx.lineTo(32, 20); ctx.lineTo(32, 34); ctx.lineTo(20, 41); ctx.lineTo(8, 34); ctx.lineTo(8, 20); ctx.closePath(); ctx.moveTo(8, 20); ctx.lineTo(20, 27); ctx.lineTo(32, 20); ctx.moveTo(20, 27); ctx.lineTo(20, 41); ctx.stroke();
+  }
+  // a gold bar and diamond under it, and a gold hem
+  ctx.fillStyle = '#e8b923'; ctx.fillRect(9, 48, 22, 1); ctx.fillRect(18, 46, 4, 5); ctx.fillStyle = '#fff3b8'; ctx.fillRect(19, 47, 2, 3);
+  ctx.fillStyle = '#e8b923'; for (let x = 7; x < W - 7; x += 4) ctx.fillRect(x, H - 9, 2, 2);
+  RAW_SKIN_CANVASES.add(c); // used exactly as drawn
+  return c;
+}
+/** The cape as it is right now: with the logo once it has loaded, with a plain cube before that. */
+function vibeCapeNow(): HTMLCanvasElement {
+  if (vibeCapeFinal) return vibeCapeFinal;
+  if (!vibeCapePlain) vibeCapePlain = paintVibeCape(null);
+  void loadVibeCape();
+  return vibeCapePlain;
+}
+function loadVibeCape(): Promise<HTMLCanvasElement | null> {
+  if (vibeCapeFinal) return Promise.resolve(vibeCapeFinal);
+  if (vibeCapeLoading) return vibeCapeLoading;
+  if (typeof Image === 'undefined') return Promise.resolve(null);
+  vibeCapeLoading = new Promise<HTMLCanvasElement | null>((resolve) => {
+    const img = new Image();
+    img.onload = () => { try { vibeCapeFinal = paintVibeCape(img); resolve(vibeCapeFinal); } catch { resolve(null); } };
+    img.onerror = () => resolve(null);
+    img.src = 'images/logo.png';
+  }).finally(() => { vibeCapeLoading = null; });
+  return vibeCapeLoading;
+}
+
 /** A cape texture (8x8, drawn on the back of a 10x16 strip). */
 function capeCanvas(capeId: string): HTMLCanvasElement {
+  if (capeId === 'vibeblox') return vibeCapeNow();
   const c = CAPES[capeId] ?? CAPES.crimson;
   return mobTex(c.base, [c.base], 0.15, (ctx) => {
     ctx.fillStyle = c.accent;
@@ -471,7 +519,13 @@ export function applyPlayerLook(model: MobModel, look: Partial<PlayerLook>) {
         if (c && now && now.cape === CUSTOM_CAPE_ID && now.capeData === url) { setModelTexture(model, parts.cape, c); parts.capePivot.visible = true; } // still wearing it
       });
     }
-  } else if (L.cape !== 'none' && (!prev || prev.cape !== L.cape)) setModelTexture(model, parts.cape, capeCanvas(L.cape));
+  } else if (L.cape !== 'none' && (!prev || prev.cape !== L.cape)) {
+    setModelTexture(model, parts.cape, capeCanvas(L.cape));
+    if (L.cape === 'vibeblox' && !vibeCapeFinal) void loadVibeCape().then((c) => { // swap in the picture once it has loaded (if still wearing it)
+      const now = model.root.userData.look as PlayerLook | undefined;
+      if (c && now && now.cape === 'vibeblox') setModelTexture(model, parts.cape, c);
+    });
+  }
   parts.capePivot.visible = capeShown;
   model.root.userData.look = L;
 }
@@ -10289,10 +10343,11 @@ export function createVoxelGame(
     const bubbles = Math.ceil((air / AIR_MAX) * 10);
     if (bubbles !== airShown) { airShown = bubbles; airCallback?.(bubbles); }
   }
-  const GRAVITY = -25;
-  const JUMP_FORCE = 8;
-  const WALK_SPEED = 4.4;   // a little slower than before (was 5) so ninja/speed bridging feels natural
-  const SPRINT_SPEED = 6.6; // (was 7.5)
+  const GRAVITY = -28;      // with a jump of 8.4 this is Minecraft's jump: 1.25 blocks high and 0.6 seconds in the air
+  const JUMP_FORCE = 8.4;
+  const SPRINT_JUMP_BOOST = 1.7; // blocks per second added along where you face when you jump while sprinting (Minecraft's sprint-jump boost): a sprint-jump now goes about 4 blocks
+  const WALK_SPEED = 4.3;   // Minecraft: 4.3 blocks per second
+  const SPRINT_SPEED = 5.6; // Minecraft: 5.6 (it was 6.6, and jumping gave no speed). Sprint-jumping is now what makes you fast
   const FLY_BASE_SPEED = 5; // flying keeps its old pace
   const keys: Record<string, boolean> = {};
   /** Is the key bound to this action held right now? */
@@ -13359,6 +13414,9 @@ export function createVoxelGame(
       const bx = Math.floor(ax), bz = Math.floor(az);
       const goalAhead = mg.teams.some((t) => t.idx !== m.team && inGoal(ax, az, t));
       const voidAhead = !isSolid(world.getWorldBlock(bx, gy, bz));
+      // Its target is well below it (you went down under its bridge): it stops bridging at its own height and builds steps down toward you instead
+      const tgtY = enemyPos ? enemyPos.y : b.target ? b.target.y : m.pos.y;
+      const wantDown = mg.phase === 'playing' && m.pos.y - tgtY >= 2.2 && dh < 14;
       // still out on its own bridge (the void just beyond the block it placed): stay crouched and facing back
       const far = !isSolid(world.getWorldBlock(Math.floor(m.pos.x + (mvx / ml) * 1.9), gy, Math.floor(m.pos.z + (mvz / ml) * 1.9)));
       if (!voidAhead && b.bridgeHold > 0 && far && !goalAhead) {
@@ -13372,15 +13430,16 @@ export function createVoxelGame(
         b.bridgeHold = 0.8;
         yawT = yawToward(-mvx, -mvz); // facing back the way it came
         if (b.pauseTimer > 0) return { x: 0, z: 0, yaw: yawT, jump: false }; // a moment to line the next one up
-        if (b.blocks > 0 && b.placeTimer <= 0 && isReplaceable(world.getWorldBlock(bx, gy, bz))) {
-          setBlocksQuiet([[bx, gy, bz, team.wool]]);
-          playBlockSound(team.wool, new THREE.Vector3(bx + 0.5, gy + 0.5, bz + 0.5), 'place');
+        const py = wantDown && gy - 1 >= arena.buildMin ? gy - 1 : gy; // the step goes one lower when it is heading down
+        if (b.blocks > 0 && b.placeTimer <= 0 && isReplaceable(world.getWorldBlock(bx, py, bz))) {
+          setBlocksQuiet([[bx, py, bz, team.wool]]);
+          playBlockSound(team.wool, new THREE.Vector3(bx + 0.5, py + 0.5, bz + 0.5), 'place');
           b.blocks--;
           b.placeTimer = (1 / (D.bridgeRate * S.bridge)) * (0.85 + Math.random() * 0.4);
           if (Math.random() < 0.08 * S.pause) b.pauseTimer = 0.3 + Math.random() * 0.5;
           m.attackAnim = 0.25;
         }
-        if (!isSolid(world.getWorldBlock(bx, gy, bz))) { mvx = 0; mvz = 0; }
+        if (!isSolid(world.getWorldBlock(bx, py, bz))) { mvx = 0; mvz = 0; }
         else {
           // sneaking speed while on the edge
           const cap = (1.3 + D.speed * 0.9) * S.cap;
@@ -20475,7 +20534,7 @@ export function createVoxelGame(
     if (momentum) {
       const wantMove = moveVec.lengthSq() > 0;
       const wx = wantMove ? moveVec.x / Math.sqrt(moveVec.lengthSq()) * speed : 0, wz = wantMove ? moveVec.z / Math.sqrt(moveVec.lengthSq()) * speed : 0;
-      const rate = wasGrounded ? 15 : wantMove ? 2.6 : 1.7; // per second: how fast your speed follows what you ask for
+      const rate = wasGrounded ? 15 : 1.9; // per second (in the air it is Minecraft's 9% drag per tick): how fast your speed follows what you ask for
       const k = 1 - Math.exp(-rate * delta);
       hVel.x += (wx - hVel.x) * k; hVel.z += (wz - hVel.z) * k;
       if (!wantMove && hVel.lengthSq() < 0.01) hVel.set(0, 0, 0);
@@ -20671,7 +20730,10 @@ export function createVoxelGame(
     if (isGrounded) {
       camera.position.y = (landTop as number) + PLAYER_EYE;
       velocityY = 0;
-      if (down('jump') && !arenaFrozen() && !onLadder) velocityY = JUMP_FORCE + effectLevel('jump_boost') * 1.8;
+      if (down('jump') && !arenaFrozen() && !onLadder) {
+        velocityY = JUMP_FORCE + effectLevel('jump_boost') * 1.8;
+        if (sprintHeld && down('forward') && hVel.lengthSq() > 4) { hVel.x += forward.x * SPRINT_JUMP_BOOST; hVel.z += forward.z * SPRINT_JUMP_BOOST; }
+      }
     } else {
       camera.position.y = nextY;
     }
